@@ -1763,7 +1763,9 @@ mod tests {
     use std::ptr::{self, null, null_mut};
 
     use libc::{c_ulonglong, c_void};
-    use sspi::U16CString;
+    use num_traits::ToPrimitive;
+    use sspi::SecurityStatus::ContinueNeeded;
+    use sspi::{ErrorKind, U16CString, Utf16String, Utf16StringExt};
 
     use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
@@ -1776,14 +1778,143 @@ mod tests {
         QuerySecurityPackageInfoW, SecPkgInfoA, SecPkgInfoW,
     };
     use crate::sspi::sec_winnt_auth_identity::{
-        SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SecWinntAuthIdentityA, SecWinntAuthIdentityW,
+        SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SEC_WINNT_AUTH_IDENTITY_VERSION,
+        SecWinntAuthIdentityA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
     };
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
 
-    /// This test simulates initialize security context function call. It's better to run it using Miri
-    /// https://github.com/rust-lang/miri
-    /// cargo +nightly miri test
+    fn initialize_negotiate_security_context_with_package_list(pkg_list: &str) -> u32 {
+        let mut pkg_name = "Negotiate\0".encode_utf16().collect::<Vec<_>>();
+        let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+
+        let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info) };
+        assert_eq!(status, 0);
+
+        // We left all `println`s on purpose to simulate any memory access to the allocated memory.
+        println!("{:?}", unsafe { &*pkg_info });
+        let name_ptr = unsafe { (*pkg_info).name };
+        println!("{:?}", unsafe { Utf16String::from_pcwstr(name_ptr) });
+        let comment_ptr = unsafe { (*pkg_info).comment };
+        println!("{:?}", unsafe { Utf16String::from_pcwstr(comment_ptr) });
+
+        let cb_max_token = unsafe { (*pkg_info).cb_max_token };
+
+        let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
+        assert_eq!(status, 0);
+
+        let user = "user".encode_utf16().collect::<Vec<_>>();
+        let domain = "domain".encode_utf16().collect::<Vec<_>>();
+        let password = "password".encode_utf16().collect::<Vec<_>>();
+
+        let pkg_list = pkg_list.encode_utf16().collect::<Vec<_>>();
+
+        let mut credentials = SecWinntAuthIdentityExW {
+            version: SEC_WINNT_AUTH_IDENTITY_VERSION,
+            length: size_of::<SecWinntAuthIdentityExW>() as u32,
+            user: user.as_ptr(),
+            user_length: user.len() as u32,
+            domain: domain.as_ptr(),
+            domain_length: domain.len() as u32,
+            password: password.as_ptr(),
+            password_length: password.len() as u32,
+            flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
+            package_list: pkg_list.as_ptr(),
+            package_list_length: pkg_list.len() as u32,
+        };
+
+        let mut cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let status = unsafe {
+            AcquireCredentialsHandleW(
+                null_mut(),
+                pkg_name.as_mut_ptr(),
+                2, /* SECPKG_CRED_OUTBOUND */
+                null::<c_void>(),
+                (&raw mut credentials).cast(),
+                dummy,
+                null::<c_void>(),
+                &mut cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let mut sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut new_sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut target_name = "TERMSRV/test_user@example.com\0".encode_utf16().collect::<Vec<_>>();
+        let mut attrs = 0;
+
+        let mut out_buffer = vec![0; cb_max_token as usize];
+        let mut out_sec_buffer = SecBuffer {
+            cb_buffer: cb_max_token,
+            buffer_type: 2,
+            pv_buffer: out_buffer.as_mut_ptr(),
+        };
+        let mut out_buffer_desk = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut out_sec_buffer,
+        };
+
+        let mut in_buffer_desk = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 0,
+            p_buffers: null_mut::<SecBuffer>(),
+        };
+
+        let initialize_status = unsafe {
+            InitializeSecurityContextW(
+                &mut cred_handle,
+                &mut sec_context,
+                target_name.as_mut_ptr(),
+                0,
+                0,
+                0x10,
+                &mut in_buffer_desk,
+                0,
+                &mut new_sec_context,
+                &mut out_buffer_desk,
+                &mut attrs,
+                null_mut(),
+            )
+        };
+
+        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
+        assert_eq!(status, 0);
+
+        if initialize_status == ContinueNeeded.to_u32().unwrap() {
+            let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
+            assert_eq!(status, 0);
+        }
+
+        initialize_status
+    }
+
+    #[test]
+    fn initialize_negotiate_security_context_fail() {
+        let status = initialize_negotiate_security_context_with_package_list("N");
+        assert_eq!(status, ErrorKind::NoCredentials.to_u32().unwrap());
+    }
+
+    #[test]
+    fn initialize_negotiate_security_context_success() {
+        let status = initialize_negotiate_security_context_with_package_list("NTLM,N");
+        assert_eq!(status, ContinueNeeded.to_u32().unwrap());
+    }
+
+    // This test simulates initialize security context function call. It's better to run it using Miri
+    // https://github.com/rust-lang/miri
+    // cargo +nightly miri test
     #[test]
     fn initialize_security_context_w() {
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();

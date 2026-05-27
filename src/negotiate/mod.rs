@@ -224,10 +224,21 @@ impl PackageListConfig {
         let mut pku2u: bool = true;
 
         if let Some(package_list) = &package_list {
+            let mut use_default_packages_configuration = true;
+
             for package in package_list.split(',') {
                 let (package_name, enabled) = if let Some(package_name) = package.strip_prefix('!') {
                     (package_name.to_lowercase(), false)
                 } else {
+                    // If client requested at least one package, then we need to disable the default packages configuration.
+                    if use_default_packages_configuration {
+                        ntlm = false;
+                        kerberos = false;
+                        pku2u = false;
+
+                        use_default_packages_configuration = false;
+                    }
+
                     let package_name = package.to_lowercase();
                     (package_name, true)
                 };
@@ -459,6 +470,13 @@ impl Negotiate {
             kerberos: is_kerberos,
             pku2u: is_pku2u,
         } = package_list;
+
+        if !is_ntlm && !is_kerberos && !is_pku2u {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "all security packages are disabled or invalid",
+            ));
+        }
 
         match &negotiated_protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
