@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 pub use config::{NegotiateConfig, ProtocolConfig};
 use picky::oids;
 use picky_krb::gss_api::MechType;
+use widestring::Utf16String;
 
 use crate::builders::{EmptyAcceptSecurityContext, FilledAcceptSecurityContext, FilledInitializeSecurityContext};
 use crate::generator::{
@@ -31,6 +32,7 @@ use crate::{
 };
 
 pub const PKG_NAME: &str = "Negotiate";
+const GUEST_USERNAME: &str = "/GUEST";
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     capabilities: PackageCapabilities::empty(),
@@ -338,7 +340,7 @@ impl Negotiate {
     }
 
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
-    fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType) -> Result<()> {
+    fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType, username: Option<&Utf16String>) -> Result<()> {
         let enabled_packages = self.package_list;
 
         if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
@@ -391,15 +393,23 @@ impl Negotiate {
                     NegotiatedProtocol::Ntlm(Ntlm::with_config(NtlmConfig::new(self.client_computer_name.clone())));
             }
 
-            // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
-            // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC
-            // > in AUTHENTICATE_MESSAGE ([MS-NLMP] section 2.2.1.3), then the mechListMIC field becomes
-            // > mandatory in order for the authentication to succeed.
-            //
-            // We always include NTLM MIC token inside AUTHENTICATE_MESSAGE. So, we need to perform
-            // SPNEGO `mechListMIC` exchange.
-            self.mic_needed = true;
-            self.mic_verified = false;
+            if let Some(user) = username
+                && user.to_string().eq_ignore_ascii_case(GUEST_USERNAME)
+            {
+                // Do not require `mechListMIC` exchange when the user tries to log on under the guest account.
+                self.mic_needed = false;
+                self.mic_verified = false;
+            } else {
+                // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
+                // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC
+                // > in AUTHENTICATE_MESSAGE ([MS-NLMP] section 2.2.1.3), then the mechListMIC field becomes
+                // > mandatory in order for the authentication to succeed.
+                //
+                // We always include NTLM MIC token inside AUTHENTICATE_MESSAGE. So, we need to perform
+                // SPNEGO `mechListMIC` exchange.
+                self.mic_needed = true;
+                self.mic_verified = false;
+            }
 
             return Ok(());
         }
