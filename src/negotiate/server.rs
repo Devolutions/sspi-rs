@@ -5,12 +5,12 @@ use picky_krb::gss_api::{NegTokenTarg, NegTokenTarg1};
 
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
-use crate::negotiate::NegotiateState;
 use crate::negotiate::extractors::{decode_initial_neg_init, negotiate_mech_type};
 use crate::negotiate::generators::{generate_final_neg_token_targ, generate_neg_token_targ, generate_neg_token_targ_1};
+use crate::negotiate::{GUEST_USERNAME, NegotiateState};
 use crate::{
-    AcceptSecurityContextResult, BufferType, Error, ErrorKind, Negotiate, NegotiatedProtocol, Result, SecurityBuffer,
-    SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
+    AcceptSecurityContextResult, BufferType, ContextNames, Error, ErrorKind, Negotiate, NegotiatedProtocol, Result,
+    SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl,
 };
 
 /// Performs one authentication step.
@@ -156,13 +156,18 @@ pub(crate) async fn accept_security_context(
                     negotiate.mic_verified = true;
                 }
 
-                if mech_list_mic.is_none()
+                if negotiate.mic_needed
+                    && mech_list_mic.is_none()
                     && neg_result.0.as_ref().map(|neg_result| neg_result.0.0.as_slice()) == Some(&ACCEPT_COMPLETE)
                 {
-                    if negotiate.mic_needed {
-                        warn!(
-                            "The SPNEGO server expected the `mechListMIC` exchange, but the client has skipped it. Skipping MIC exchange on the server side too..."
-                        );
+                    // We should skip `mechListMIC` exchange when the client tries guest logon.
+                    let ContextNames { username } = negotiate.protocol.query_context_names()?;
+
+                    if !username.inner().eq_ignore_ascii_case(GUEST_USERNAME) {
+                        return Err(Error::new(
+                            ErrorKind::InvalidToken,
+                            "the client skipped `mechListMIC` exchange, but it is required for non-guest logon",
+                        ));
                     }
 
                     negotiate.mic_needed = false;

@@ -169,6 +169,14 @@ impl NegotiatedProtocol {
 
         Ok(result)
     }
+
+    fn query_context_names(&mut self) -> Result<ContextNames> {
+        match self {
+            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names(),
+            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_names(),
+            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -307,11 +315,7 @@ impl Negotiate {
             ));
         };
 
-        let ContextNames { username } = match &mut self.protocol {
-            NegotiatedProtocol::Pku2u(pku2u) => pku2u.query_context_names()?,
-            NegotiatedProtocol::Kerberos(kerberos) => kerberos.query_context_names()?,
-            NegotiatedProtocol::Ntlm(ntlm) => ntlm.query_context_names()?,
-        };
+        let ContextNames { username } = self.protocol.query_context_names()?;
 
         let candidates: Vec<Credentials> = auth_data
             .iter()
