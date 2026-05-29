@@ -734,6 +734,12 @@ impl SspiImpl for SspiContext {
                             "smart card auth is not supported in NTLM",
                         ));
                     }
+                    Some(Credentials::Keytab(_)) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "keytab auth is not supported in NTLM",
+                        ));
+                    }
                     None => None,
                 };
                 builder
@@ -849,6 +855,12 @@ impl<'a> SspiContext {
                         return Err(Error::new(
                             ErrorKind::UnknownCredentials,
                             "smart card auth is not supported in NTLM",
+                        ));
+                    }
+                    Some(Some(CredentialsBuffers::Keytab(_))) => {
+                        return Err(Error::new(
+                            ErrorKind::UnknownCredentials,
+                            "keytab auth is not supported in NTLM",
                         ));
                     }
                     Some(None) => None,

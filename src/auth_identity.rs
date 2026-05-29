@@ -153,6 +153,24 @@ pub struct AuthIdentity {
     pub password: Secret<String>,
 }
 
+/// Client credentials backed by a pre-derived Kerberos long-term key.
+///
+/// Unlike [`AuthIdentity`], no password is supplied: the raw long-term key
+/// (as stored in a keytab) is used directly to encrypt the PA-ENC-TIMESTAMP
+/// pre-authentication value and to decrypt the AS-REP, skipping the
+/// string-to-key derivation. This is the credential a service uses when it
+/// acts as a Kerberos *client* (e.g. inter-service authentication) without a
+/// human password.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct KeytabIdentity {
+    /// Client principal, e.g. `"svc@REALM"` or `"svc/host@REALM"`.
+    pub principal: Username,
+    /// Raw long-term key bytes for `key_enctype`.
+    pub key: Secret<Vec<u8>>,
+    /// Kerberos enctype number of `key` (e.g. 18 = aes256-cts-hmac-sha1-96).
+    pub key_enctype: u8,
+}
+
 /// Auth identity buffers for password-based logon.
 #[derive(Clone, Eq, PartialEq, Default)]
 pub struct AuthIdentityBuffers {
@@ -485,13 +503,14 @@ pub enum CredentialsBuffers {
     #[cfg(feature = "scard")]
     /// Raw smart card identity buffers for the smart card based authentication
     SmartCard(SmartCardIdentityBuffers),
+    /// Pre-derived Kerberos long-term key for keytab-based client authentication
+    Keytab(KeytabIdentity),
 }
 
 impl CredentialsBuffers {
     pub fn into_auth_identity(self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -499,7 +518,6 @@ impl CredentialsBuffers {
     pub fn to_auth_identity(&self) -> Option<AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity.clone()),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -507,7 +525,6 @@ impl CredentialsBuffers {
     pub fn as_auth_identity(&self) -> Option<&AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -515,7 +532,6 @@ impl CredentialsBuffers {
     pub fn as_mut_auth_identity(&mut self) -> Option<&mut AuthIdentityBuffers> {
         match self {
             CredentialsBuffers::AuthIdentity(identity) => Some(identity),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -529,13 +545,14 @@ pub enum Credentials {
     /// Smart card identity for the smart card based authentication
     #[cfg(feature = "scard")]
     SmartCard(Box<SmartCardIdentity>),
+    /// Pre-derived Kerberos long-term key for keytab-based client authentication
+    Keytab(KeytabIdentity),
 }
 
 impl Credentials {
     pub fn to_auth_identity(&self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity.clone()),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -543,7 +560,6 @@ impl Credentials {
     pub fn auth_identity(self) -> Option<AuthIdentity> {
         match self {
             Credentials::AuthIdentity(identity) => Some(identity),
-            #[cfg(feature = "scard")]
             _ => None,
         }
     }
@@ -562,6 +578,12 @@ impl From<AuthIdentity> for Credentials {
     }
 }
 
+impl From<KeytabIdentity> for Credentials {
+    fn from(value: KeytabIdentity) -> Self {
+        Self::Keytab(value)
+    }
+}
+
 impl TryFrom<Credentials> for CredentialsBuffers {
     type Error = Error;
 
@@ -570,6 +592,7 @@ impl TryFrom<Credentials> for CredentialsBuffers {
             Credentials::AuthIdentity(identity) => Self::AuthIdentity(identity.into()),
             #[cfg(feature = "scard")]
             Credentials::SmartCard(identity) => Self::SmartCard((*identity).try_into()?),
+            Credentials::Keytab(identity) => Self::Keytab(identity),
         })
     }
 }

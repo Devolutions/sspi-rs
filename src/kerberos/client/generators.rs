@@ -182,6 +182,54 @@ pub struct GenerateAsPaDataOptions<'a> {
     pub with_pre_auth: bool,
 }
 
+/// Build the PA-ENC-TIMESTAMP pre-auth value, encrypting the current time with
+/// an already-derived long-term `key` of type `encryption_type`.
+fn encode_enc_timestamp_pa_data(key: &[u8], encryption_type: &CipherSuite) -> Result<PaData> {
+    let cipher = encryption_type.cipher();
+
+    let current_date = OffsetDateTime::now_utc();
+    let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
+
+    let timestamp = PaEncTsEnc {
+        patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
+        pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
+            microseconds.to_be_bytes().to_vec(),
+        )))),
+    };
+    let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
+
+    trace!(?key, ?encryption_type, "AS timestamp encryption params",);
+
+    let encrypted_timestamp = cipher.encrypt(key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes)?;
+
+    trace!(
+        ?current_date,
+        ?microseconds,
+        ?timestamp_bytes,
+        ?encrypted_timestamp,
+        "Encrypted timestamp params",
+    );
+
+    Ok(PaData {
+        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&EncryptedData {
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
+            kvno: Optional::from(None),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_timestamp)),
+        })?)),
+    })
+}
+
+/// Build the PA-PAC-REQUEST pre-auth value (always requests a PAC).
+fn encode_pac_request_pa_data() -> Result<PaData> {
+    Ok(PaData {
+        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
+        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
+            include_pac: ExplicitContextTag0::from(true),
+        })?)),
+    })
+}
+
 #[instrument(level = "trace", ret, skip_all, fields(options.salt, options.enc_params, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
@@ -191,52 +239,42 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
         with_pre_auth,
     } = options;
 
-    let mut pa_datas = if *with_pre_auth {
-        let current_date = OffsetDateTime::now_utc();
-        let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
+    let mut pa_datas = Vec::new();
 
-        let timestamp = PaEncTsEnc {
-            patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-            pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
-                microseconds.to_be_bytes().to_vec(),
-            )))),
-        };
-        let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
-
+    if *with_pre_auth {
         let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let cipher = encryption_type.cipher();
+        let key = encryption_type.cipher().generate_key_from_password(password.as_bytes(), salt)?;
+        pa_datas.push(encode_enc_timestamp_pa_data(&key, encryption_type)?);
+    }
 
-        let key = cipher.generate_key_from_password(password.as_bytes(), salt)?;
-        trace!(?key, ?encryption_type, "AS timestamp encryption params",);
+    pa_datas.push(encode_pac_request_pa_data()?);
 
-        let encrypted_timestamp = cipher.encrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes)?;
+    Ok(pa_datas)
+}
 
-        trace!(
-            ?current_date,
-            ?microseconds,
-            ?timestamp_bytes,
-            ?encrypted_timestamp,
-            "Encrypted timestamp params",
-        );
+/// Parameters for generating pa-datas for an [AsReq] using a pre-derived
+/// long-term key (keytab-based client authentication).
+#[derive(Debug)]
+pub struct GenerateKeytabPaDataOptions {
+    /// Raw long-term key bytes.
+    pub key: Vec<u8>,
+    /// Kerberos enctype number of `key` (e.g. 18 = aes256-cts-hmac-sha1-96).
+    pub key_enctype: u8,
+    /// Flag that indicates whether to generate the PA-ENC-TIMESTAMP pa-data.
+    pub with_pre_auth: bool,
+}
 
-        vec![PaData {
-            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
-            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
-                kvno: Optional::from(None),
-                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted_timestamp)),
-            })?)),
-        }]
-    } else {
-        Vec::new()
-    };
+#[instrument(level = "trace", ret, skip_all, fields(options.key_enctype, options.with_pre_auth))]
+pub fn generate_pa_datas_for_as_req_with_key(options: &GenerateKeytabPaDataOptions) -> Result<Vec<PaData>> {
+    let encryption_type = CipherSuite::try_from(usize::from(options.key_enctype))?;
 
-    pa_datas.push(PaData {
-        padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_PAC_REQUEST_TYPE.to_vec())),
-        padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(picky_asn1_der::to_vec(&KerbPaPacRequest {
-            include_pac: ExplicitContextTag0::from(true),
-        })?)),
-    });
+    let mut pa_datas = Vec::new();
+
+    if options.with_pre_auth {
+        pa_datas.push(encode_enc_timestamp_pa_data(&options.key, &encryption_type)?);
+    }
+
+    pa_datas.push(encode_pac_request_pa_data()?);
 
     Ok(pa_datas)
 }
@@ -292,9 +330,15 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions<'_>) -> Result<Kd
         ))),
         cname: Optional::from(Some(ExplicitContextTag1::from(PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![*cname_type])),
-            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
-                IA5String::from_string((*username).into())?,
-            )])),
+            // A Kerberos principal name is a sequence of `/`-separated
+            // components (RFC 1964 §2.1.1). Service principals such as
+            // `kafka/host` carry two components; user principals carry one.
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
+                username
+                    .split('/')
+                    .map(|c| Ok(KerberosStringAsn1::from(IA5String::from_string(c.to_owned())?)))
+                    .collect::<Result<Vec<_>>>()?,
+            )),
         }))),
         realm: ExplicitContextTag2::from(Realm::from(IA5String::from_string((*realm).into())?)),
         sname: Optional::from(Some(ExplicitContextTag3::from(PrincipalName {
@@ -914,5 +958,68 @@ mod tests {
 
         let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@test.tbt.com", "");
         assert_eq!(realm, "STAGE.TBT.COM");
+    }
+
+    fn cname_components(username: &str) -> Vec<String> {
+        let body = generate_as_req_kdc_body(&GenerateAsReqOptions {
+            realm: "CRABKA.TEST",
+            username,
+            cname_type: NT_PRINCIPAL,
+            snames: &["krbtgt", "CRABKA.TEST"],
+            nonce: &[0, 0, 0, 1],
+            hostname: "host",
+            context_requirements: ClientRequestFlags::empty(),
+        })
+        .expect("generate as-req body");
+
+        body.cname
+            .0
+            .expect("cname present")
+            .0
+            .name_string
+            .0
+            .0
+            .iter()
+            .map(|s| s.0.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn single_component_cname() {
+        assert_eq!(cname_components("alice"), vec!["alice".to_string()]);
+    }
+
+    #[test]
+    fn service_principal_cname_is_split_on_slash() {
+        // A `kafka/host` service principal must be encoded as two name-string
+        // components, or MIT KDC rejects the principal as unknown.
+        assert_eq!(
+            cname_components("kafka/host"),
+            vec!["kafka".to_string(), "host".to_string()]
+        );
+    }
+
+    #[test]
+    fn keytab_pa_datas_without_pre_auth_is_just_pac_request() {
+        let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
+            key: vec![0u8; 32],
+            key_enctype: 18,
+            with_pre_auth: false,
+        })
+        .expect("generate keytab pa-datas");
+        // No pre-auth requested: only the PA-PAC-REQUEST is emitted.
+        assert_eq!(pa_datas.len(), 1);
+    }
+
+    #[test]
+    fn keytab_pa_datas_with_pre_auth_includes_enc_timestamp() {
+        let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
+            key: vec![0u8; 32],
+            key_enctype: 18,
+            with_pre_auth: true,
+        })
+        .expect("generate keytab pa-datas");
+        // PA-ENC-TIMESTAMP plus PA-PAC-REQUEST.
+        assert_eq!(pa_datas.len(), 2);
     }
 }

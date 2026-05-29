@@ -41,6 +41,35 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// Decrypts the AS-REP enc-part with an already-derived long-term `key` and
+/// returns the embedded session key.
+fn decode_as_rep_session_key(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Secret<Vec<u8>>> {
+    let cipher = enc_params
+        .encryption_type
+        .as_ref()
+        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
+        .cipher();
+
+    let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
+
+    // RFC 4120 5.4.2: AS-REP enc-part MAY be tagged EncTGSRepPart (APPLICATION 26);
+    // clients MUST accept either. MIT KDC emits tag 26. Upstream sspi only accepts
+    // tag 25 (EncAsRepPart); try that first, then fall back to tag 26.
+    let key_value = match picky_asn1_der::from_bytes::<EncAsRepPart>(&enc_data) {
+        Ok(part) => part.0.key.0.key_value.0.to_vec(),
+        Err(_) => {
+            let part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
+            part.0.key.0.key_value.0.to_vec()
+        }
+    };
+
+    Ok(key_value.into())
+}
+
 /// Extracts a session from the [AsRep].
 #[instrument(level = "trace", ret, skip(password))]
 pub fn extract_session_key_from_as_rep(
@@ -57,11 +86,18 @@ pub fn extract_session_key_from_as_rep(
 
     let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
 
-    let enc_data = cipher.decrypt(&key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
+    decode_as_rep_session_key(as_rep, &key, enc_params)
+}
 
-    let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
-
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
+/// Extracts a session key from the [AsRep] using a pre-derived long-term key
+/// (keytab-based client authentication).
+#[instrument(level = "trace", ret, skip(key))]
+pub fn extract_session_key_from_as_rep_with_key(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<Secret<Vec<u8>>> {
+    decode_as_rep_session_key(as_rep, key, enc_params)
 }
 
 /// Extracts a session from the [TgsRep].
