@@ -41,10 +41,10 @@ fn test_readonly_buffers_encryption(client: &mut SspiContext, server: &mut SspiC
     assert_eq!(plain_message, message[2].data());
 }
 
-fn run_ntlm(config: NtlmConfig, target_name: Option<&str>) {
+fn run_ntlm(config: NtlmConfig, target_name: Option<&str>, username: &str, password: &str) {
     let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::parse("test_user").unwrap(),
-        password: Secret::from("test_password".to_owned()),
+        username: Username::parse(username).unwrap(),
+        password: Secret::from(password.to_owned()),
     });
 
     let mut client = SspiContext::Ntlm(Ntlm::with_config(config.clone()));
@@ -122,6 +122,8 @@ fn ntlm_with_computer_name() {
             client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
         },
         Some(TARGET_NAME),
+        "test_user",
+        "test_password",
     );
 }
 
@@ -132,6 +134,20 @@ fn ntlm_without_computer_name() {
             client_computer_name: None,
         },
         Some(TARGET_NAME),
+        "test_user",
+        "test_password",
+    );
+}
+
+#[test]
+fn ntlm_guest_logon() {
+    run_ntlm(
+        NtlmConfig {
+            client_computer_name: None,
+        },
+        Some("cifs/DESKTOP-8F33RFH.example.com"),
+        "/GUEST",
+        "",
     );
 }
 
@@ -142,5 +158,7 @@ fn ntlm_without_target_name() {
             client_computer_name: None,
         },
         None,
+        "test_user",
+        "test_password",
     );
 }

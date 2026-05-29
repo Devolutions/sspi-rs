@@ -11,13 +11,13 @@ use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryp
 
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 
-fn run_spnego_ntlm(target_name: Option<&str>) {
+fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mic_expected: bool) {
     let ntlm_config = NtlmConfig {
         client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
     let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::parse("test_user@example.com").unwrap(),
-        password: Secret::from("test_password".to_owned()),
+        username: Username::parse(username).unwrap(),
+        password: Secret::from(password.to_owned()),
     });
 
     let mut client = SspiContext::Negotiate(
@@ -96,9 +96,22 @@ fn run_spnego_ntlm(target_name: Option<&str>) {
         }
 
         if status == SecurityStatus::Ok {
+            let negotiate_client = match &client {
+                SspiContext::Negotiate(negotiate) => negotiate,
+                _ => unreachable!(),
+            };
+            assert_eq!(negotiate_client.mic_needed(), mic_expected);
+
+            let negotiate_server = match &server {
+                SspiContext::Negotiate(negotiate) => negotiate,
+                _ => unreachable!(),
+            };
+            assert_eq!(negotiate_server.mic_needed(), mic_expected);
+
             test_encryption(&mut client, &mut server);
             test_stream_buffer_encryption(&mut client, &mut server);
             test_rpc_request_encryption(&mut client, &mut server);
+
             return;
         }
     }
@@ -108,10 +121,15 @@ fn run_spnego_ntlm(target_name: Option<&str>) {
 
 #[test]
 fn spnego_ntlm_client_server() {
-    run_spnego_ntlm(Some(TARGET_NAME));
+    run_spnego_ntlm(Some(TARGET_NAME), "test_user@example.com", "test_password", true);
+}
+
+#[test]
+fn spnego_ntlm_guest_logon() {
+    run_spnego_ntlm(Some(TARGET_NAME), "/GUEST", "", false);
 }
 
 #[test]
 fn spnego_ntlm_without_target_name() {
-    run_spnego_ntlm(None);
+    run_spnego_ntlm(None, "test_user@example.com", "test_password", true);
 }

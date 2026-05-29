@@ -93,7 +93,6 @@ pub(crate) async fn initialize_security_context<'a>(
                 negotiate.mic_verified = false;
             } else {
                 negotiate.mic_needed = false;
-                negotiate.mic_verified = true;
             }
 
             let result = negotiate

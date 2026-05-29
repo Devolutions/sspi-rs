@@ -290,6 +290,11 @@ impl Negotiate {
         })
     }
 
+    #[cfg(feature = "__test-data")]
+    pub fn mic_needed(&self) -> bool {
+        self.mic_needed
+    }
+
     fn protocol_name(&self) -> &str {
         self.protocol.protocol_name()
     }
@@ -398,7 +403,6 @@ impl Negotiate {
             {
                 // Do not require `mechListMIC` exchange when the user tries to log on under the guest account.
                 self.mic_needed = false;
-                self.mic_verified = false;
             } else {
                 // [MS-SPNG](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-spng/f377a379-c24f-4a0f-a3eb-0d835389e28a):
                 // > If NTLM authentication is most preferred by the client and the server, and the client includes a MIC

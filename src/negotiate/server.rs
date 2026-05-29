@@ -128,7 +128,7 @@ pub(crate) async fn accept_security_context(
         NegotiateState::InProgress => {
             let neg_token_targ: NegTokenTarg1 = picky_asn1_der::from_bytes(&input_token.buffer)?;
             let NegTokenTarg {
-                neg_result: _,
+                neg_result,
                 supported_mech: _,
                 response_token,
                 mech_list_mic,
@@ -154,6 +154,18 @@ pub(crate) async fn accept_security_context(
                     negotiate.verify_mic_token(mech_list_mic.as_deref())?;
 
                     negotiate.mic_verified = true;
+                }
+
+                if mech_list_mic.is_none()
+                    && neg_result.0.as_ref().map(|neg_result| neg_result.0.0.as_slice()) == Some(&ACCEPT_COMPLETE)
+                {
+                    if negotiate.mic_needed {
+                        warn!(
+                            "The SPNEGO server expected the `mechListMIC` exchange, but the client has skipped it. Skipping MIC exchange on the server side too..."
+                        );
+                    }
+
+                    negotiate.mic_needed = false;
                 }
 
                 let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
