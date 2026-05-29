@@ -93,7 +93,6 @@ pub(crate) async fn initialize_security_context<'a>(
                 negotiate.mic_verified = false;
             } else {
                 negotiate.mic_needed = false;
-                negotiate.mic_verified = true;
             }
 
             let result = negotiate
@@ -188,7 +187,14 @@ pub(crate) async fn initialize_security_context<'a>(
                 let mech_type: String = (&selected_mech.0).into();
                 debug!("The remote server has selected {mech_type} mechanism id.");
 
-                negotiate.negotiate_protocol_by_mech_type(selected_mech)?;
+                negotiate.negotiate_protocol_by_mech_type(
+                    selected_mech,
+                    builder
+                        .credentials_handle
+                        .as_ref()
+                        .and_then(|handle| handle.as_ref().map(|handle| handle.as_auth_identity()))
+                        .and_then(|identity| identity.map(|identity| &identity.user)),
+                )?;
             }
 
             let input_token = SecurityBuffer::find_buffer_mut(input, BufferType::Token)?;
