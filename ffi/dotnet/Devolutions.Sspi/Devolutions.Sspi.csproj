@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Company>Devolutions</Company>
     <Description>Portable Rust SSPI library</Description>
-    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <TargetFramework>net6.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Version>2025.10.9.0</Version>
     <ImplicitUsings>disable</ImplicitUsings>
