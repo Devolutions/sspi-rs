@@ -408,7 +408,17 @@ impl Sspi for Kerberos {
         // RFC 4752 security-layer negotiation reply, so the acceptor must
         // accept it instead of demanding confidentiality.
         if wrap_token.flags & 0b10 != 0b10 {
-            let aes_size = self.encryption_params.aes_size().unwrap_or(AesSize::Aes256);
+            // The integrity-only checksum is the AES-SHA1 keyed HMAC
+            // (`checksum_sha_aes`), which is only defined for the AES cipher
+            // suites. Reject non-AES contexts (e.g. `Des3CbcSha1Kd`) explicitly
+            // rather than silently treating them as AES-256, which would produce
+            // incorrect checksum validation.
+            let aes_size = self.encryption_params.aes_size().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::UnsupportedFunction,
+                    "integrity-only WRAP tokens are only supported for AES cipher suites",
+                )
+            })?;
             return decrypt_integrity_only_wrap(&wrap_token, key.as_ref(), &aes_size, key_usage, message);
         }
 

@@ -198,7 +198,7 @@ fn encode_enc_timestamp_pa_data(key: &[u8], encryption_type: &CipherSuite) -> Re
     };
     let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
 
-    trace!(?key, ?encryption_type, "AS timestamp encryption params",);
+    trace!(?encryption_type, "AS timestamp encryption params",);
 
     let encrypted_timestamp = cipher.encrypt(key, PA_ENC_TIMESTAMP_KEY_USAGE, &timestamp_bytes)?;
 
@@ -257,7 +257,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
 #[derive(Debug)]
 pub struct GenerateKeytabPaDataOptions {
     /// Raw long-term key bytes.
-    pub key: Vec<u8>,
+    pub key: Secret<Vec<u8>>,
     /// Kerberos enctype number of `key` (e.g. 18 = aes256-cts-hmac-sha1-96).
     pub key_enctype: u8,
     /// Flag that indicates whether to generate the PA-ENC-TIMESTAMP pa-data.
@@ -271,7 +271,7 @@ pub fn generate_pa_datas_for_as_req_with_key(options: &GenerateKeytabPaDataOptio
     let mut pa_datas = Vec::new();
 
     if options.with_pre_auth {
-        pa_datas.push(encode_enc_timestamp_pa_data(&options.key, &encryption_type)?);
+        pa_datas.push(encode_enc_timestamp_pa_data(options.key.as_ref(), &encryption_type)?);
     }
 
     pa_datas.push(encode_pac_request_pa_data()?);
@@ -1002,7 +1002,7 @@ mod tests {
     #[test]
     fn keytab_pa_datas_without_pre_auth_is_just_pac_request() {
         let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
-            key: vec![0u8; 32],
+            key: vec![0u8; 32].into(),
             key_enctype: 18,
             with_pre_auth: false,
         })
@@ -1014,7 +1014,7 @@ mod tests {
     #[test]
     fn keytab_pa_datas_with_pre_auth_includes_enc_timestamp() {
         let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
-            key: vec![0u8; 32],
+            key: vec![0u8; 32].into(),
             key_enctype: 18,
             with_pre_auth: true,
         })

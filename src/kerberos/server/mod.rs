@@ -316,7 +316,7 @@ pub async fn accept_security_context(
 
             let now = OffsetDateTime::now_utc();
             let client_time = OffsetDateTime::try_from(ctime.0 .0.clone())
-                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("clint time is not valid: {err:?}")))?;
+                .map_err(|err| Error::new(ErrorKind::InvalidToken, format!("client time is not valid: {err:?}")))?;
             let max_time_skew = server_data.max_time_skew;
 
             if (now - client_time).abs() > max_time_skew {

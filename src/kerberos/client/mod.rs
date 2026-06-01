@@ -185,7 +185,7 @@ pub async fn initialize_security_context<'a>(
                     })
                 }
                 CredentialsBuffers::Keytab(keytab) => AsReqPaDataOptions::Keytab(GenerateKeytabPaDataOptions {
-                    key: keytab.key.as_ref().clone(),
+                    key: keytab.key.clone(),
                     key_enctype: keytab.key_enctype,
                     with_pre_auth: false,
                 }),
