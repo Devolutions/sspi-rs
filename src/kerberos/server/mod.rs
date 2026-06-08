@@ -128,10 +128,10 @@ impl ServerProperties {
     /// RFC 4120 §6.2). Returns the matching key, or `None` if no configured
     /// service principal matches.
     pub fn ticket_decryption_key_for(&self, ticket_sname: &PrincipalName) -> Option<&Secret<Vec<u8>>> {
-        if self.service_name.name_string.0 == ticket_sname.name_string.0 {
-            if let Some(key) = self.ticket_decryption_key.as_ref() {
-                return Some(key);
-            }
+        if self.service_name.name_string.0 == ticket_sname.name_string.0
+            && let Some(key) = self.ticket_decryption_key.as_ref()
+        {
+            return Some(key);
         }
         self.additional_service_keys
             .iter()
@@ -295,12 +295,12 @@ pub async fn accept_security_context(
             // own initiator value, so the acceptor's per-message tokens must be
             // numbered from it or the initiator rejects them as "gap" tokens.
             let authenticator_seq_number: Option<u32> = seq_number.0.as_ref().map(|seq| {
-                let raw = &seq.0 .0;
+                let seq_number_bytes = &seq.0 .0;
                 // IntegerAsn1 is big-endian and may carry a leading 0x00 sign
                 // byte; take the low 4 octets.
                 let mut buf = [0u8; 4];
-                let start = raw.len().saturating_sub(4);
-                let slice = &raw[start..];
+                let start = seq_number_bytes.len().saturating_sub(4);
+                let slice = &seq_number_bytes[start..];
                 buf[4 - slice.len()..].copy_from_slice(slice);
                 u32::from_be_bytes(buf)
             });

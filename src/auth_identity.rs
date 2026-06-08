@@ -1,6 +1,8 @@
 use std::fmt;
 use std::ops::Not;
 
+use picky_krb::crypto::CipherSuite;
+
 use crate::utf16string::ZeroizedUtf16String;
 use crate::{Error, Secret, Utf16String, Utf16StringExt};
 
@@ -167,8 +169,8 @@ pub struct KeytabIdentity {
     pub principal: Username,
     /// Raw long-term key bytes for `key_enctype`.
     pub key: Secret<Vec<u8>>,
-    /// Kerberos enctype number of `key` (e.g. 18 = aes256-cts-hmac-sha1-96).
-    pub key_enctype: u8,
+    /// Kerberos encryption type of `key` (e.g. aes256-cts-hmac-sha1-96).
+    pub key_enctype: CipherSuite,
 }
 
 /// Auth identity buffers for password-based logon.

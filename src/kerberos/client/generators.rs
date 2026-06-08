@@ -258,20 +258,18 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
 pub struct GenerateKeytabPaDataOptions {
     /// Raw long-term key bytes.
     pub key: Secret<Vec<u8>>,
-    /// Kerberos enctype number of `key` (e.g. 18 = aes256-cts-hmac-sha1-96).
-    pub key_enctype: u8,
+    /// Kerberos encryption type of `key` (e.g. aes256-cts-hmac-sha1-96).
+    pub key_enctype: CipherSuite,
     /// Flag that indicates whether to generate the PA-ENC-TIMESTAMP pa-data.
     pub with_pre_auth: bool,
 }
 
 #[instrument(level = "trace", ret, skip_all, fields(options.key_enctype, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req_with_key(options: &GenerateKeytabPaDataOptions) -> Result<Vec<PaData>> {
-    let encryption_type = CipherSuite::try_from(usize::from(options.key_enctype))?;
-
     let mut pa_datas = Vec::new();
 
     if options.with_pre_auth {
-        pa_datas.push(encode_enc_timestamp_pa_data(options.key.as_ref(), &encryption_type)?);
+        pa_datas.push(encode_enc_timestamp_pa_data(options.key.as_ref(), &options.key_enctype)?);
     }
 
     pa_datas.push(encode_pac_request_pa_data()?);
@@ -1003,7 +1001,7 @@ mod tests {
     fn keytab_pa_datas_without_pre_auth_is_just_pac_request() {
         let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
             key: vec![0u8; 32].into(),
-            key_enctype: 18,
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
             with_pre_auth: false,
         })
         .expect("generate keytab pa-datas");
@@ -1015,7 +1013,7 @@ mod tests {
     fn keytab_pa_datas_with_pre_auth_includes_enc_timestamp() {
         let pa_datas = generate_pa_datas_for_as_req_with_key(&GenerateKeytabPaDataOptions {
             key: vec![0u8; 32].into(),
-            key_enctype: 18,
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
             with_pre_auth: true,
         })
         .expect("generate keytab pa-datas");

@@ -611,8 +611,7 @@ fn decrypt_integrity_only_wrap(
     // Checksum input: plaintext followed by the 16-octet header with the EC and
     // RRC fields zeroed (RFC 4121 §4.2.4).
     let mut header = wrap_token.header();
-    header[4..6].copy_from_slice(&[0, 0]);
-    header[6..8].copy_from_slice(&[0, 0]);
+    header[4..8].copy_from_slice(&[0, 0, 0, 0]);
 
     let mut to_sign = plaintext.to_vec();
     to_sign.extend_from_slice(&header);

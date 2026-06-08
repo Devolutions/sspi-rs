@@ -56,18 +56,12 @@ fn decode_as_rep_session_key(
 
     let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
 
-    // RFC 4120 5.4.2: AS-REP enc-part MAY be tagged EncTGSRepPart (APPLICATION 26);
-    // clients MUST accept either. MIT KDC emits tag 26. Upstream sspi only accepts
-    // tag 25 (EncAsRepPart); try that first, then fall back to tag 26.
-    let key_value = match picky_asn1_der::from_bytes::<EncAsRepPart>(&enc_data) {
-        Ok(part) => part.0.key.0.key_value.0.to_vec(),
-        Err(_) => {
-            let part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
-            part.0.key.0.key_value.0.to_vec()
-        }
-    };
+    // This function extracts the session key from an AS-REP, so the enc-part is
+    // expected to be tagged EncASRepPart (APPLICATION 25). We do not accept
+    // EncTGSRepPart here: that tag belongs to the TGS exchange.
+    let as_rep_enc_part = picky_asn1_der::from_bytes::<EncAsRepPart>(&enc_data)?;
 
-    Ok(key_value.into())
+    Ok(as_rep_enc_part.0.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts a session from the [AsRep].
