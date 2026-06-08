@@ -14,6 +14,7 @@ use std::sync::LazyLock;
 
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
+use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
 use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
@@ -399,11 +400,26 @@ impl Sspi for Kerberos {
         //        1   Sealed           When set in Wrap tokens, this flag
         //                             indicates confidentiality is provided
         //                             for.  It SHALL NOT be set in MIC tokens.
+        //
+        // When the Sealed flag is clear, this is an integrity-only Wrap token
+        // (GSS_Wrap with conf_req_flag == FALSE, RFC 4121 §4.2.4): the data is
+        // carried in cleartext followed by the checksum, rather than encrypted.
+        // Stock SASL/GSSAPI clients (e.g. Java/Kafka) use conf=false for the
+        // RFC 4752 security-layer negotiation reply, so the acceptor must
+        // accept it instead of demanding confidentiality.
         if wrap_token.flags & 0b10 != 0b10 {
-            return Err(Error::new(
-                ErrorKind::InvalidToken,
-                "the Sealed flag has to be set in WRAP token",
-            ));
+            // The integrity-only checksum is the AES-SHA1 keyed HMAC
+            // (`checksum_sha_aes`), which is only defined for the AES cipher
+            // suites. Reject non-AES contexts (e.g. `Des3CbcSha1Kd`) explicitly
+            // rather than silently treating them as AES-256, which would produce
+            // incorrect checksum validation.
+            let aes_size = self.encryption_params.aes_size().ok_or_else(|| {
+                Error::new(
+                    ErrorKind::UnsupportedFunction,
+                    "integrity-only WRAP tokens are only supported for AES cipher suites",
+                )
+            })?;
+            return decrypt_integrity_only_wrap(&wrap_token, key.as_ref(), &aes_size, key_usage, message);
         }
 
         let mut checksum = wrap_token.checksum;
@@ -550,6 +566,65 @@ impl Sspi for Kerberos {
             "verify_signature is not supported. use decrypt_message to verify signatures instead",
         ))
     }
+}
+
+/// Verifies an integrity-only (GSS_Wrap conf_req_flag == FALSE) Wrap token and
+/// returns its cleartext payload in the message buffers.
+///
+/// Per RFC 4121 §4.2.4, an unsealed Wrap token carries the data in the clear
+/// followed by the checksum: `{header | plaintext | checksum}`, right-rotated
+/// by RRC. The checksum is computed over `plaintext | header`, where the EC and
+/// RRC fields of the 16-octet header are zeroed for the computation. Wrap tokens
+/// — sealed or not — use the SEAL key usage (the SIGN usage is reserved for MIC
+/// tokens), so `key_usage` is the same value the sealed path uses. The checksum
+/// itself is the keyed get_mic checksum (Kc-derived), not the Ki-derived
+/// encryption integrity hash used for the confidential path.
+fn decrypt_integrity_only_wrap(
+    wrap_token: &WrapToken,
+    key: &[u8],
+    aes_size: &AesSize,
+    key_usage: i32,
+    message: &mut [SecurityBufferRef<'_>],
+) -> Result<DecryptionFlags> {
+    // `WrapToken::decode` stores everything after the 16-octet header in
+    // `checksum`; for an unsealed token that is `plaintext | trailing-checksum`.
+    let mut data = wrap_token.checksum.clone();
+    if data.is_empty() {
+        return Err(Error::new(ErrorKind::DecryptFailure, "empty integrity-only WRAP token"));
+    }
+
+    // Undo the sender's right rotation. For integrity-only tokens the rotation
+    // is by RRC alone (the EC octets are checksum, not filler).
+    let rotate = usize::from(wrap_token.rrc) % data.len();
+    data.rotate_left(rotate);
+
+    let ec = usize::from(wrap_token.ec);
+    if data.len() < ec {
+        return Err(Error::new(
+            ErrorKind::DecryptFailure,
+            "integrity-only WRAP token shorter than its checksum",
+        ));
+    }
+    let plaintext_len = data.len() - ec;
+    let (plaintext, received_checksum) = data.split_at(plaintext_len);
+
+    // Checksum input: plaintext followed by the 16-octet header with the EC and
+    // RRC fields zeroed (RFC 4121 §4.2.4).
+    let mut header = wrap_token.header();
+    header[4..8].copy_from_slice(&[0, 0, 0, 0]);
+
+    let mut to_sign = plaintext.to_vec();
+    to_sign.extend_from_slice(&header);
+
+    let calculated = checksum_sha_aes(key, key_usage, &to_sign, aes_size)?;
+
+    if calculated.as_slice() != received_checksum {
+        return Err(picky_krb::crypto::KerberosCryptoError::IntegrityCheck.into());
+    }
+
+    save_decrypted_data(plaintext, message)?;
+
+    Ok(DecryptionFlags::empty())
 }
 
 impl SspiImpl for Kerberos {
@@ -733,6 +808,7 @@ pub mod test_data {
                     KerberosStringAsn1::from(IA5String::from_string("VM1.example.com".to_owned()).unwrap()),
                 ])),
             },
+            additional_service_keys: Vec::new(),
             user: None,
             client: None,
             authenticators_cache: Default::default(),

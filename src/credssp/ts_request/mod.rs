@@ -300,6 +300,12 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
             picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
             write_smart_card_credentials(creds)?,
         ),
+        CredentialsBuffers::Keytab(_) => {
+            return Err(Error::new(
+                ErrorKind::UnsupportedPreAuth,
+                "keytab credentials are not supported in CredSSP",
+            ));
+        }
     };
 
     let ts_creds = TsCredentials {

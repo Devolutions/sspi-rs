@@ -21,9 +21,9 @@ use self::extractors::{
 };
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
-    GenerateAuthenticatorOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep, generate_ap_req,
-    generate_as_req_kdc_body, generate_authenticator, generate_tgs_req, get_client_principal_name_type,
-    get_client_principal_realm,
+    GenerateAuthenticatorOptions, GenerateKeytabPaDataOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep,
+    generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_tgs_req,
+    get_client_principal_name_type, get_client_principal_realm,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
@@ -146,6 +146,16 @@ pub async fn initialize_security_context<'a>(
 
                     (username, password, realm.to_uppercase(), cname_type)
                 }
+                CredentialsBuffers::Keytab(keytab) => {
+                    let username = keytab.principal.account_name().to_string();
+                    let domain = keytab.principal.domain_name().unwrap_or_default().to_string();
+
+                    let realm = get_client_principal_realm(&username, &domain);
+                    let cname_type = get_client_principal_name_type(&username, &domain);
+
+                    // No password: the keytab key is used directly for pre-auth.
+                    (username, String::new(), realm, cname_type)
+                }
             };
             client.realm = Some(realm.clone());
 
@@ -174,6 +184,11 @@ pub async fn initialize_security_context<'a>(
                         with_pre_auth: false,
                     })
                 }
+                CredentialsBuffers::Keytab(keytab) => AsReqPaDataOptions::Keytab(GenerateKeytabPaDataOptions {
+                    key: keytab.key.clone(),
+                    key_enctype: keytab.key_enctype.clone(),
+                    with_pre_auth: false,
+                }),
                 #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(scard_identity_buffer) => {
                     use sha1::{Digest, Sha1};
@@ -232,6 +247,10 @@ pub async fn initialize_security_context<'a>(
                     salt: &salt,
                     password: &password,
                     enc_params: &mut client.encryption_params,
+                },
+                CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
+                    key: keytab.key.as_ref(),
+                    enc_params: &client.encryption_params,
                 },
                 #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
