@@ -513,7 +513,12 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             client_nonce,
             peer_version,
         )?;
-        context.encrypt_public_key(self.public_key.as_ref(), EndpointType::Server, client_nonce, peer_version)
+        context.encrypt_public_key(
+            self.public_key.as_ref(),
+            EndpointType::Server,
+            client_nonce,
+            peer_version,
+        )
     }
 
     #[instrument(fields(state = ?self.state), skip_all)]
@@ -621,10 +626,8 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                         ts_request
                     );
                     let client_nonce = ts_request.client_nonce;
-                    let pub_key_auth = try_cred_ssp_server!(
-                        self.exchange_pub_key_auth(pub_key_auth, &client_nonce),
-                        ts_request
-                    );
+                    let pub_key_auth =
+                        try_cred_ssp_server!(self.exchange_pub_key_auth(pub_key_auth, &client_nonce), ts_request);
                     ts_request.nego_tokens = None;
                     ts_request.pub_key_auth = Some(pub_key_auth);
 
