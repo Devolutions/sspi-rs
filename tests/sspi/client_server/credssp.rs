@@ -110,6 +110,54 @@ fn credssp_ntlm() {
 }
 
 #[test]
+fn credssp_negotiate_ntlm() {
+    // NTLM wrapped in SPNEGO on both sides — the pairing RDP requires (Windows RDP servers
+    // reject bare NTLM inside CredSSP). Because the client always includes an NTLM MIC, the
+    // SPNEGO `mechListMIC` exchange is mandatory ([MS-SPNG]): the client defers `pubKeyAuth`
+    // until it has verified the server's final SPNEGO token, so the handshake takes four
+    // client legs (NEGOTIATE, AUTHENTICATE+mechListMIC, pubKeyAuth, authInfo) instead of
+    // NTLM-only's three. Regression test for #687: the server used to drop its final SPNEGO
+    // token and demand `pubKeyAuth` on the AUTHENTICATE leg, failing the handshake.
+    let auth_identity = AuthIdentity {
+        username: Username::parse("test_user").unwrap(),
+        password: Secret::from("test_password".to_owned()),
+    };
+    let credentials = Credentials::AuthIdentity(auth_identity.clone());
+
+    let mut client = CredSspClient::new(
+        PUBLIC_KEY.to_vec(),
+        credentials.clone(),
+        CredSspMode::WithCredentials,
+        ClientMode::Negotiate(NegotiateConfig::new(
+            Box::new(NtlmConfig {
+                client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
+            }),
+            Some("ntlm,!kerberos,!pku2u".to_owned()),
+            "DESKTOP-3D83IAN.example.com".to_owned(),
+        )),
+        TARGET_NAME.to_owned(),
+    )
+    .unwrap();
+
+    let mut server = CredSspServer::new(
+        PUBLIC_KEY.to_vec(),
+        CredentialsProxyImpl::new(&auth_identity),
+        ServerMode::Negotiate(NegotiateConfig::new(
+            Box::new(NtlmConfig {
+                client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
+            }),
+            Some("ntlm,!kerberos,!pku2u".to_owned()),
+            "SERVER.example.com".to_owned(),
+        )),
+    )
+    .unwrap();
+
+    let mut network_client = NetworkClientMock { kdc: KdcMock::empty() };
+
+    run_credssp(&mut client, &mut server, &auth_identity, &mut network_client);
+}
+
+#[test]
 fn credssp_kerberos() {
     // CredSSP with Kerberos inside requires SPNEGO. We cannot use Kerberos inside CredSSP without SPNEGO.
 

@@ -454,6 +454,10 @@ pub struct CredSspServer<C: CredentialsProxy<AuthenticationData = AuthIdentity>>
     credentials_handle: Option<CredentialsBuffers>,
     ts_request_version: u32,
     context_config: Option<ServerMode>,
+    /// Set when the security context completed but the final SPNEGO token (accept-completed +
+    /// `mechListMIC`) still had to be sent to the client: the client cannot send `pubKeyAuth`
+    /// until it has verified that token, so `pubKeyAuth` arrives on the *next* leg.
+    awaiting_pub_key_auth: bool,
 }
 
 impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServer<C> {
@@ -466,6 +470,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             credentials_handle: None,
             ts_request_version: TS_REQUEST_VERSION,
             context_config: Some(client_mode),
+            awaiting_pub_key_auth: false,
         })
     }
 
@@ -483,7 +488,32 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             credentials_handle: None,
             ts_request_version,
             context_config: Some(client_mode),
+            awaiting_pub_key_auth: false,
         })
+    }
+
+    /// Decrypts and verifies the client's `pubKeyAuth`, returning the server-side `pubKeyAuth`
+    /// to send back.
+    fn exchange_pub_key_auth(
+        &mut self,
+        pub_key_auth: Vec<u8>,
+        client_nonce: &Option<[u8; NONCE_SIZE]>,
+    ) -> crate::Result<Vec<u8>> {
+        let peer_version = self
+            .context
+            .as_ref()
+            .unwrap()
+            .peer_version
+            .expect("an decrypt public key server function cannot be fired without any incoming TSRequest");
+        let context = self.context.as_mut().unwrap();
+        context.decrypt_public_key(
+            self.public_key.as_ref(),
+            pub_key_auth.as_ref(),
+            EndpointType::Server,
+            client_nonce,
+            peer_version,
+        )?;
+        context.encrypt_public_key(self.public_key.as_ref(), EndpointType::Server, client_nonce, peer_version)
     }
 
     #[instrument(fields(state = ?self.state), skip_all)]
@@ -576,6 +606,34 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                 Ok(ServerState::Finished(auth_identity))
             }
             CredSspState::NegoToken => {
+                if self.awaiting_pub_key_auth {
+                    // The SPNEGO `mechListMIC` exchange deferred the client's `pubKeyAuth` by one
+                    // leg: the security context is already established and the final SPNEGO token
+                    // has been sent, so this TSRequest carries `pubKeyAuth` alone. Calling the
+                    // acceptor again would be out-of-sequence.
+                    let pub_key_auth = try_cred_ssp_server!(
+                        ts_request.pub_key_auth.take().ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::InvalidToken,
+                                String::from("CredSSP server expected an encrypted public key"),
+                            )
+                        }),
+                        ts_request
+                    );
+                    let client_nonce = ts_request.client_nonce;
+                    let pub_key_auth = try_cred_ssp_server!(
+                        self.exchange_pub_key_auth(pub_key_auth, &client_nonce),
+                        ts_request
+                    );
+                    ts_request.nego_tokens = None;
+                    ts_request.pub_key_auth = Some(pub_key_auth);
+
+                    self.awaiting_pub_key_auth = false;
+                    self.state = CredSspState::AuthInfo;
+
+                    return Ok(ServerState::ReplyNeeded(ts_request));
+                }
+
                 let input = ts_request.nego_tokens.take().unwrap_or_default();
                 let mut input_token = vec![SecurityBuffer::new(input, BufferType::Token)];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
@@ -628,42 +686,38 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
                             ts_request
                         );
-                        ts_request.nego_tokens = None;
 
-                        let pub_key_auth = try_cred_ssp_server!(
-                            ts_request.pub_key_auth.take().ok_or_else(|| {
-                                Error::new(
-                                    ErrorKind::InvalidToken,
-                                    String::from("CredSSP server expected an encrypted public key"),
-                                )
-                            }),
-                            ts_request
-                        );
-                        let peer_version = self.context.as_ref().unwrap().peer_version.expect(
-                            "an decrypt public key server function cannot be fired without any incoming TSRequest",
-                        );
-                        try_cred_ssp_server!(
-                            self.context.as_mut().unwrap().decrypt_public_key(
-                                self.public_key.as_ref(),
-                                pub_key_auth.as_ref(),
-                                EndpointType::Server,
-                                &ts_request.client_nonce,
-                                peer_version,
-                            ),
-                            ts_request
-                        );
-                        let pub_key_auth = try_cred_ssp_server!(
-                            self.context.as_mut().unwrap().encrypt_public_key(
-                                self.public_key.as_ref(),
-                                EndpointType::Server,
-                                &ts_request.client_nonce,
-                                peer_version,
-                            ),
-                            ts_request
-                        );
-                        ts_request.pub_key_auth = Some(pub_key_auth);
+                        let final_token = output_token.remove(0).buffer;
+                        if ts_request.pub_key_auth.is_none() && !final_token.is_empty() {
+                            // SPNEGO `mechListMIC` exchange ([MS-SPNG] 3.3.5.5 / RFC 4178 §5): the
+                            // security context is established, but the client cannot send
+                            // `pubKeyAuth` until it has received and verified our final SPNEGO
+                            // token (accept-completed + `mechListMIC`), so that token must reach
+                            // the wire instead of being dropped. `pubKeyAuth` arrives on the next
+                            // leg.
+                            ts_request.nego_tokens = Some(final_token);
+                            self.awaiting_pub_key_auth = true;
+                        } else {
+                            ts_request.nego_tokens = None;
 
-                        self.state = CredSspState::AuthInfo;
+                            let pub_key_auth = try_cred_ssp_server!(
+                                ts_request.pub_key_auth.take().ok_or_else(|| {
+                                    Error::new(
+                                        ErrorKind::InvalidToken,
+                                        String::from("CredSSP server expected an encrypted public key"),
+                                    )
+                                }),
+                                ts_request
+                            );
+                            let client_nonce = ts_request.client_nonce;
+                            let pub_key_auth = try_cred_ssp_server!(
+                                self.exchange_pub_key_auth(pub_key_auth, &client_nonce),
+                                ts_request
+                            );
+                            ts_request.pub_key_auth = Some(pub_key_auth);
+
+                            self.state = CredSspState::AuthInfo;
+                        }
                     }
                     result => {
                         try_cred_ssp_server!(
