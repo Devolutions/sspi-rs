@@ -101,16 +101,18 @@ jobs:
           - manifest: crates/dpapi-native-transport/Cargo.toml
             crate-name: dpapi-native-transport
 
-          # Per-OS feature overrides for specific manifests
+          # Per-OS feature overrides for specific manifests.
+          # `__test-data` enables the `tests/sspi/client_server` suite (gated on
+          # `all(network_client, __test-data)`), which otherwise never runs in CI.
           - os: win
             manifest: Cargo.toml
-            additional-args: --features network_client,dns_resolver,scard,tsssp
+            additional-args: --features network_client,dns_resolver,scard,tsssp,__test-data
           - os: osx
             manifest: Cargo.toml
-            additional-args: --features network_client,scard
+            additional-args: --features network_client,scard,__test-data
           - os: linux
             manifest: Cargo.toml
-            additional-args: --features network_client,dns_resolver,scard
+            additional-args: --features network_client,dns_resolver,scard,__test-data
 
           - os: win
             manifest: ffi/Cargo.toml
