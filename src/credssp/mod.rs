@@ -166,6 +166,7 @@ impl EarlyUserAuthResult {
 enum CredSspState {
     NegoToken,
     AuthInfo,
+    PubKeyInfo,
     Final,
 }
 
@@ -412,7 +413,7 @@ impl CredSspClient {
 
                 Ok(ClientState::FinalMessage(ts_request))
             }
-            CredSspState::Final => Err(Error::new(
+            CredSspState::Final | CredSspState::PubKeyInfo => Err(Error::new(
                 ErrorKind::OutOfSequence,
                 "CredSSP client's 'process' method must not be fired after the 'Finished' state",
             )),
@@ -484,6 +485,31 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             ts_request_version,
             context_config: Some(client_mode),
         })
+    }
+
+    fn exchange_pub_key_auth(
+        &mut self,
+        pub_key_auth: &[u8],
+        client_nonce: &Option<[u8; NONCE_SIZE]>,
+    ) -> crate::Result<Vec<u8>> {
+        let peer_version = self
+            .context
+            .as_ref()
+            .unwrap()
+            .peer_version
+            .expect("an decrypt public key server function cannot be fired without any incoming TSRequest");
+
+        let context = self.context.as_mut().unwrap();
+
+        context.decrypt_public_key(
+            &self.public_key,
+            pub_key_auth,
+            EndpointType::Server,
+            client_nonce,
+            peer_version,
+        )?;
+
+        context.encrypt_public_key(&self.public_key, EndpointType::Server, client_nonce, peer_version)
     }
 
     #[instrument(fields(state = ?self.state), skip_all)]
@@ -628,42 +654,22 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                             self.context.as_mut().unwrap().sspi_context.complete_auth_token(&mut []),
                             ts_request
                         );
-                        ts_request.nego_tokens = None;
 
-                        let pub_key_auth = try_cred_ssp_server!(
-                            ts_request.pub_key_auth.take().ok_or_else(|| {
-                                Error::new(
-                                    ErrorKind::InvalidToken,
-                                    String::from("CredSSP server expected an encrypted public key"),
-                                )
-                            }),
-                            ts_request
-                        );
-                        let peer_version = self.context.as_ref().unwrap().peer_version.expect(
-                            "an decrypt public key server function cannot be fired without any incoming TSRequest",
-                        );
-                        try_cred_ssp_server!(
-                            self.context.as_mut().unwrap().decrypt_public_key(
-                                self.public_key.as_ref(),
-                                pub_key_auth.as_ref(),
-                                EndpointType::Server,
-                                &ts_request.client_nonce,
-                                peer_version,
-                            ),
-                            ts_request
-                        );
-                        let pub_key_auth = try_cred_ssp_server!(
-                            self.context.as_mut().unwrap().encrypt_public_key(
-                                self.public_key.as_ref(),
-                                EndpointType::Server,
-                                &ts_request.client_nonce,
-                                peer_version,
-                            ),
-                            ts_request
-                        );
-                        ts_request.pub_key_auth = Some(pub_key_auth);
+                        if let Some(pub_key_auth) = ts_request.pub_key_auth.as_ref() {
+                            ts_request.nego_tokens = None;
 
-                        self.state = CredSspState::AuthInfo;
+                            let pub_key_auth = try_cred_ssp_server!(
+                                self.exchange_pub_key_auth(pub_key_auth, &ts_request.client_nonce),
+                                ts_request
+                            );
+                            ts_request.pub_key_auth = Some(pub_key_auth);
+
+                            self.state = CredSspState::AuthInfo;
+                        } else {
+                            ts_request.nego_tokens = Some(output_token.remove(0).buffer);
+
+                            self.state = CredSspState::PubKeyInfo;
+                        }
                     }
                     result => {
                         try_cred_ssp_server!(
@@ -675,7 +681,31 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                         )
                     }
                 };
+
                 self.credentials_handle = credentials_handle;
+
+                Ok(ServerState::ReplyNeeded(ts_request))
+            }
+            CredSspState::PubKeyInfo => {
+                ts_request.nego_tokens = None;
+
+                let pub_key_auth = try_cred_ssp_server!(
+                    ts_request.pub_key_auth.take().ok_or_else(|| {
+                        Error::new(
+                            ErrorKind::InvalidToken,
+                            String::from("CredSSP server expected an encrypted public key"),
+                        )
+                    }),
+                    ts_request
+                );
+
+                let pub_key_auth = try_cred_ssp_server!(
+                    self.exchange_pub_key_auth(&pub_key_auth, &ts_request.client_nonce),
+                    ts_request
+                );
+                ts_request.pub_key_auth = Some(pub_key_auth);
+
+                self.state = CredSspState::AuthInfo;
 
                 Ok(ServerState::ReplyNeeded(ts_request))
             }

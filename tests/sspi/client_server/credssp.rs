@@ -178,3 +178,44 @@ fn credssp_kerberos() {
 
     run_credssp(&mut client, &mut server, &identity_1, &mut network_client);
 }
+
+#[test]
+fn credssp_negotiate_ntlm() {
+    let auth_identity = AuthIdentity {
+        username: Username::parse("test_user").unwrap(),
+        password: Secret::from("test_password".to_owned()),
+    };
+    let credentials = Credentials::AuthIdentity(auth_identity.clone());
+
+    let mut client = CredSspClient::new(
+        PUBLIC_KEY.to_vec(),
+        credentials.clone(),
+        CredSspMode::WithCredentials,
+        ClientMode::Negotiate(NegotiateConfig::new(
+            Box::new(NtlmConfig {
+                client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
+            }),
+            Some("ntlm,!kerberos,!pku2u".to_owned()),
+            "DESKTOP-3D83IAN.example.com".to_owned(),
+        )),
+        TARGET_NAME.to_owned(),
+    )
+    .unwrap();
+
+    let mut server = CredSspServer::new(
+        PUBLIC_KEY.to_vec(),
+        CredentialsProxyImpl::new(&auth_identity),
+        ServerMode::Negotiate(NegotiateConfig::new(
+            Box::new(NtlmConfig {
+                client_computer_name: Some("DESKTOP-3D83IAN.example.com".to_owned()),
+            }),
+            Some("ntlm,!kerberos,!pku2u".to_owned()),
+            "SERVER.example.com".to_owned(),
+        )),
+    )
+    .unwrap();
+
+    let mut network_client = NetworkClientMock { kdc: KdcMock::empty() };
+
+    run_credssp(&mut client, &mut server, &auth_identity, &mut network_client);
+}
