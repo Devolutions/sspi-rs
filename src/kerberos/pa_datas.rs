@@ -1,9 +1,11 @@
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 
-use crate::kerberos::client::extractors::extract_session_key_from_as_rep;
+use crate::kerberos::client::extractors::{extract_session_key_from_as_rep, extract_session_key_from_as_rep_with_key};
 use crate::kerberos::client::generators::{
-    GenerateAsPaDataOptions as AuthIdentityPaDataOptions, generate_pa_datas_for_as_req as generate_password_based,
+    GenerateAsPaDataOptions as AuthIdentityPaDataOptions, GenerateKeytabPaDataOptions,
+    generate_pa_datas_for_as_req as generate_password_based,
+    generate_pa_datas_for_as_req_with_key as generate_keytab_based,
 };
 use crate::kerberos::encryption_params::EncryptionParams;
 #[cfg(feature = "scard")]
@@ -18,6 +20,7 @@ pub(crate) enum AsReqPaDataOptions<'a> {
     AuthIdentity(AuthIdentityPaDataOptions<'a>),
     #[cfg(feature = "scard")]
     SmartCard(Box<SmartCardPaDataOptions<'a>>),
+    Keytab(GenerateKeytabPaDataOptions),
 }
 
 impl AsReqPaDataOptions<'_> {
@@ -26,6 +29,7 @@ impl AsReqPaDataOptions<'_> {
             AsReqPaDataOptions::AuthIdentity(options) => generate_password_based(options),
             #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(options) => generate_private_key_based(options),
+            AsReqPaDataOptions::Keytab(options) => generate_keytab_based(options),
         }
     }
 
@@ -34,6 +38,7 @@ impl AsReqPaDataOptions<'_> {
             AsReqPaDataOptions::AuthIdentity(options) => options.with_pre_auth = pre_auth,
             #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(options) => options.with_pre_auth = pre_auth,
+            AsReqPaDataOptions::Keytab(options) => options.with_pre_auth = pre_auth,
         }
     }
 
@@ -42,6 +47,8 @@ impl AsReqPaDataOptions<'_> {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,
             #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(_) => {}
+            // The keytab key is pre-derived; the KDC-supplied salt is irrelevant.
+            AsReqPaDataOptions::Keytab(_) => {}
         }
     }
 }
@@ -53,6 +60,10 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
     AuthIdentity {
         salt: &'a str,
         password: &'a str,
+        enc_params: &'a EncryptionParams,
+    },
+    Keytab {
+        key: &'a [u8],
         enc_params: &'a EncryptionParams,
     },
     #[cfg(feature = "scard")]
@@ -71,6 +82,9 @@ impl AsRepSessionKeyExtractor<'_> {
                 password,
                 enc_params,
             } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
+            AsRepSessionKeyExtractor::Keytab { key, enc_params } => {
+                extract_session_key_from_as_rep_with_key(as_rep, key, enc_params)
+            }
             #[cfg(feature = "scard")]
             AsRepSessionKeyExtractor::SmartCard {
                 dh_parameters,

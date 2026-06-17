@@ -179,3 +179,91 @@ fn rpc_request_encryption() {
     assert_eq!(message[1].data(), plaintext);
     assert_eq!(trailer[..], message[2].data()[..]);
 }
+
+#[test]
+fn integrity_only_wrap_decryption() {
+    // A standards-compliant SASL/GSSAPI peer (RFC 4752 / RFC 4121 §4.2.4) may
+    // send an integrity-only (conf=false) Wrap token: the payload is carried in
+    // the clear followed by the get_mic checksum, right-rotated by RRC. This
+    // exercises the unsealed WRAP verification path (RRC undo, EC/RRC header
+    // zeroing for the checksum input, and checksum validation) by feeding a
+    // known-good token built the way a compliant sender would and asserting the
+    // cleartext is recovered.
+    use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
+    use picky_krb::gss_api::WrapToken;
+
+    // Arbitrary AES-256 session key.
+    let session_key = [
+        0x9e, 0x8f, 0x7d, 0x6c, 0x5b, 0x4a, 0x39, 0x28, 0x17, 0x06, 0xf5, 0xe4, 0xd3, 0xc2, 0xb1, 0xa0, 0x10, 0x21,
+        0x32, 0x43, 0x54, 0x65, 0x76, 0x87, 0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f,
+    ];
+
+    let plaintext: &[u8] = b"GSSAPI integrity-only payload";
+
+    // The acceptor sends the token; a client (initiator) decrypts it with the
+    // ACCEPTOR_SEAL key usage. Wrap tokens — sealed or not — use the SEAL usage.
+    let key_usage = ACCEPTOR_SEAL;
+    let aes_size = AesSize::Aes256;
+
+    // The checksum is computed over `plaintext | header`, with the EC and RRC
+    // fields of the 16-octet header zeroed.
+    let seq_num = 42;
+    let mut wrap_token = WrapToken::with_seq_number(seq_num);
+    // SentByAcceptor (0x01) set, Sealed (0x02) clear -> integrity-only.
+    wrap_token.flags = 0x01;
+    wrap_token.ec = 0;
+    wrap_token.rrc = 0;
+
+    let mut to_sign = plaintext.to_vec();
+    to_sign.extend_from_slice(&wrap_token.header());
+    let checksum = checksum_sha_aes(&session_key, key_usage, &to_sign, &aes_size).unwrap();
+
+    // For unsealed tokens, EC encodes the trailing checksum length (RFC 4121
+    // §4.2.3). The sender right-rotates `plaintext | checksum` by RRC.
+    let rrc = u16::try_from(checksum.len()).unwrap();
+    let mut payload = plaintext.to_vec();
+    payload.extend_from_slice(&checksum);
+    payload.rotate_right(usize::from(rrc));
+
+    wrap_token.ec = rrc;
+    wrap_token.rrc = rrc;
+    wrap_token.checksum = payload;
+
+    let mut token_bytes = Vec::new();
+    wrap_token.encode(&mut token_bytes).unwrap();
+
+    let mut kerberos_client = Kerberos {
+        state: KerberosState::Final,
+        config: KerberosConfig {
+            kdc_url: None,
+            client_computer_name: "hostname".into(),
+        },
+        auth_identity: None,
+        encryption_params: EncryptionParams {
+            encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+            session_key: None,
+            sub_session_key: Some(session_key.to_vec().into()),
+            sspi_encrypt_key_usage: INITIATOR_SEAL,
+            sspi_decrypt_key_usage: ACCEPTOR_SEAL,
+            ec: 0,
+        },
+        seq_number: 0,
+        realm: None,
+        kdc_url: None,
+        channel_bindings: None,
+        #[cfg(feature = "scard")]
+        dh_parameters: None,
+        krb5_user_to_user: false,
+        server: None,
+    };
+
+    let mut buffer = token_bytes;
+    let mut message = [
+        SecurityBufferRef::stream_buf(&mut buffer),
+        SecurityBufferRef::data_buf(&mut []),
+    ];
+
+    kerberos_client.decrypt_message(&mut message).unwrap();
+
+    assert_eq!(message[1].data(), plaintext);
+}

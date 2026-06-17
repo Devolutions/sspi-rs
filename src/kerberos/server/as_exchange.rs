@@ -61,6 +61,12 @@ pub(crate) async fn request_tgt(
                 "smart card credentials are not supported in Kerberos application server",
             ));
         }
+        CredentialsBuffers::Keytab(_) => {
+            return Err(Error::new(
+                ErrorKind::UnsupportedPreAuth,
+                "keytab credentials are not supported in Kerberos application server",
+            ));
+        }
     };
     server.realm = Some(realm.clone());
 
@@ -95,6 +101,12 @@ pub(crate) async fn request_tgt(
             return Err(Error::new(
                 ErrorKind::UnsupportedPreAuth,
                 "smart card credentials are not supported in Kerberos application server",
+            ));
+        }
+        CredentialsBuffers::Keytab(_) => {
+            return Err(Error::new(
+                ErrorKind::UnsupportedPreAuth,
+                "keytab credentials are not supported in Kerberos application server",
             ));
         }
     };
