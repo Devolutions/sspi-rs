@@ -243,7 +243,9 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
 
     if *with_pre_auth {
         let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
-        let key = encryption_type.cipher().generate_key_from_password(password.as_bytes(), salt)?;
+        let key = encryption_type
+            .cipher()
+            .generate_key_from_password(password.as_bytes(), salt)?;
         pa_datas.push(encode_enc_timestamp_pa_data(&key, encryption_type)?);
     }
 
@@ -269,7 +271,10 @@ pub fn generate_pa_datas_for_as_req_with_key(options: &GenerateKeytabPaDataOptio
     let mut pa_datas = Vec::new();
 
     if options.with_pre_auth {
-        pa_datas.push(encode_enc_timestamp_pa_data(options.key.as_ref(), &options.key_enctype)?);
+        pa_datas.push(encode_enc_timestamp_pa_data(
+            options.key.as_ref(),
+            &options.key_enctype,
+        )?);
     }
 
     pa_datas.push(encode_pac_request_pa_data()?);

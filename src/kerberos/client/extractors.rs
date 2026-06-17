@@ -43,11 +43,7 @@ pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
 
 /// Decrypts the AS-REP enc-part with an already-derived long-term `key` and
 /// returns the embedded session key.
-fn decode_as_rep_session_key(
-    as_rep: &AsRep,
-    key: &[u8],
-    enc_params: &EncryptionParams,
-) -> Result<Secret<Vec<u8>>> {
+fn decode_as_rep_session_key(as_rep: &AsRep, key: &[u8], enc_params: &EncryptionParams) -> Result<Secret<Vec<u8>>> {
     let cipher = enc_params
         .encryption_type
         .as_ref()

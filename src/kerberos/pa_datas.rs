@@ -1,9 +1,7 @@
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 
-use crate::kerberos::client::extractors::{
-    extract_session_key_from_as_rep, extract_session_key_from_as_rep_with_key,
-};
+use crate::kerberos::client::extractors::{extract_session_key_from_as_rep, extract_session_key_from_as_rep_with_key};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions, GenerateKeytabPaDataOptions,
     generate_pa_datas_for_as_req as generate_password_based,
