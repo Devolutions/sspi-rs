@@ -143,6 +143,7 @@ fn credssp_kerberos() {
         max_time_skew: MAX_TIME_SKEW,
         ticket_decryption_key: None,
         service_name: target_service_name,
+        additional_service_keys: Vec::new(),
         user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
         client: None,
         authenticators_cache: HashSet::new(),
