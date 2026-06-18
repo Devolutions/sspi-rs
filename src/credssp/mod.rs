@@ -674,7 +674,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
                                 try_cred_ssp_server!(
                                     Err(Error::new(
                                         ErrorKind::InvalidToken,
-                                        String::from("CredSSP server expected an encrypted public key"),
+                                        "CredSSP server error: the security package returned an empty token",
                                     )),
                                     ts_request
                                 );
