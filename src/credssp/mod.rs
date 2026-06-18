@@ -497,7 +497,7 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
             .as_ref()
             .unwrap()
             .peer_version
-            .expect("an decrypt public key server function cannot be fired without any incoming TSRequest");
+            .expect("a decrypt public key server function cannot be fired without any incoming TSRequest");
 
         let context = self.context.as_mut().unwrap();
 
@@ -666,9 +666,19 @@ impl<C: CredentialsProxy<AuthenticationData = AuthIdentity> + Send> CredSspServe
 
                             self.state = CredSspState::AuthInfo;
                         } else {
-                            ts_request.nego_tokens = Some(output_token.remove(0).buffer);
-
-                            self.state = CredSspState::PubKeyInfo;
+                            let output = output_token.remove(0).buffer;
+                            if !output.is_empty() {
+                                ts_request.nego_tokens = Some(output);
+                                self.state = CredSspState::PubKeyInfo;
+                            } else {
+                                try_cred_ssp_server!(
+                                    Err(Error::new(
+                                        ErrorKind::InvalidToken,
+                                        "CredSSP server error: the security package returned an empty token",
+                                    )),
+                                    ts_request
+                                );
+                            }
                         }
                     }
                     result => {
