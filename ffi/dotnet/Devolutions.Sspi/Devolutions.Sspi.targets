@@ -3,13 +3,15 @@
   <PropertyGroup>
     <IsPowerShell Condition="$(DefineConstants.Contains('__POWERSHELL__'))">true</IsPowerShell>
     <IsAndroid Condition="$(TargetFramework.ToUpper().Contains('ANDROID'))">true</IsAndroid>
-    <IsIOS Condition="'$(Platform)' == 'iPhone' or '$(Platform)' == 'iPhoneSimulator' or $(TargetFramework.Contains('-ios'))">true</IsIOS>
+    <IsIOS Condition="'$(Platform)' == 'iPhone' or '$(Platform)' == 'iPhoneSimulator' or $(TargetFramework.Contains('-ios')) or $(TargetFramework.Contains('-iossimulator'))">true</IsIOS>
+    <IsIOSSimulator Condition="'$(Platform)' == 'iPhoneSimulator' or '$(RuntimeIdentifier)' == 'iossimulator-arm64' or $(RuntimeIdentifiers.Contains('iossimulator-arm64')) or $(TargetFramework.Contains('-iossimulator'))">true</IsIOSSimulator>
     <IsNet6Mac Condition="$(TargetFramework.Contains('-macos'))">true</IsNet6Mac>
   </PropertyGroup>
   <Target Name="DebugMessage" BeforeTargets="Build" >
     <Message Text="PowerShell: $(IsPowerShell)" Importance="high"/>
     <Message Text="Android: $(IsAndroid)" Importance="high"/>
     <Message Text="iOS: $(IsIOS)" Importance="high"/>
+    <Message Text="iOS Simulator: $(IsIOSSimulator)" Importance="high"/>
     <Message Text="Net6Mac: $(IsNet6Mac)" Importance="high"/>
   </Target>
   <ItemGroup>
@@ -92,8 +94,13 @@
       <SmartLink>False</SmartLink>
     </NativeReference>
   </ItemGroup>
-  <ItemGroup Condition="'$(IsIOS)' == 'true'">
-    <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\ios-universal\native\libDevolutionsSspi.framework">
+  <ItemGroup Condition="'$(IsIOS)' == 'true' AND '$(IsIOSSimulator)' != 'true'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\ios-arm64\native\libDevolutionsSspi.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsIOSSimulator)' == 'true'">
+    <NativeReference Include="$(MSBuildThisFileDirectory)..\runtimes\iossimulator-arm64\native\libDevolutionsSspi.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>

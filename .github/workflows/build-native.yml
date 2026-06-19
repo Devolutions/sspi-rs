@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ win, osx, linux, ios, android ]
+        os: [ win, osx, linux, ios, iossimulator, android ]
         arch: [ x86, x64, arm, arm64 ]
         build: [ debug, release ]
         include:
@@ -43,6 +43,8 @@ jobs:
           - os: linux
             runner: ubuntu-22.04
           - os: ios
+            runner: macos-14
+          - os: iossimulator
             runner: macos-14
           - os: android
             runner: ubuntu-22.04
@@ -63,6 +65,14 @@ jobs:
             os: linux
           - arch: x86
             os: ios
+          - arch: x64
+            os: ios
+          - arch: arm
+            os: iossimulator
+          - arch: x86
+            os: iossimulator
+          - arch: x64
+            os: iossimulator
 
     steps:
       - name: Checkout ${{ github.repository }}
@@ -93,7 +103,7 @@ jobs:
           Install-Module VsDevShell -Force
 
       - name: Install dependencies
-        if: matrix.os == 'ios'
+        if: matrix.os == 'ios' || matrix.os == 'iossimulator'
         run: cargo install --force --locked bindgen-cli
 
       - name: Setup build environment
@@ -103,6 +113,10 @@ jobs:
             echo "MACOSX_DEPLOYMENT_TARGET=10.10" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
           } elseif ('${{ matrix.os }}' -Eq 'ios') {
             echo "IPHONEOS_DEPLOYMENT_TARGET=12.1" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+          } elseif ('${{ matrix.os }}' -Eq 'iossimulator') {
+            echo "IPHONESIMULATOR_DEPLOYMENT_TARGET=12.1" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+            $SimulatorSdk = xcrun --sdk iphonesimulator --show-sdk-path
+            echo "SDKROOT=$SimulatorSdk" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
           }
 
       - name: Setup LLVM
@@ -135,11 +149,11 @@ jobs:
             'x86'='i386';'arm'='arm'}[$DotNetArch]
           $MsvcArch = @{'x64'='x64';'arm64'='arm64'}[$DotNetArch]
           $RustPlatform = @{'win'='pc-windows-msvc';
-            'osx'='apple-darwin';'ios'='apple-ios';
+            'osx'='apple-darwin';'ios'='apple-ios';'iossimulator'='apple-ios-sim';
             'linux'='unknown-linux-gnu';'android'='linux-android'}[$DotNetOs]
-          $LibPrefix = @{'win'='';'osx'='lib';'ios'='lib';
+          $LibPrefix = @{'win'='';'osx'='lib';'ios'='lib';'iossimulator'='lib';
             'linux'='lib';'android'='lib'}[$DotNetOs]
-          $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.dylib';
+          $LibSuffix = @{'win'='.dll';'osx'='.dylib';'ios'='.dylib';'iossimulator'='.dylib';
             'linux'='.so';'android'='.so'}[$DotNetOs]
           $RustTarget = "$RustArch-$RustPlatform"
           $TargetFolder = @{'debug'='debug';'release'='ffi-production'}[$BuildType]
@@ -239,7 +253,7 @@ jobs:
               Write-Warning "PDB file not found: $PdbFile"
               Get-ChildItem $TargetDir -Filter "*.pdb" | ForEach-Object { Write-Host "Found PDB: $($_.FullName)" }
             }
-          } elseif ($DotNetOs -eq 'osx' -or $DotNetOs -eq 'ios') {
+          } elseif ($DotNetOs -eq 'osx' -or $DotNetOs -eq 'ios' -or $DotNetOs -eq 'iossimulator') {
             # macOS/iOS: Generate dSYM bundle using dsymutil
             $DylibFile = Join-Path $TargetDir "${LibPrefix}sspi.dylib"
             $DsymOutput = Join-Path $SymbolsPath "libDevolutionsSspi.dylib.dSYM"
@@ -298,7 +312,7 @@ jobs:
           if ($DotNetOs -eq 'win') {
             # Windows: DLL is already separate from PDB, no stripping needed
             Write-Host "Windows binaries are already compact (PDB is separate)"
-          } elseif ($DotNetOs -eq 'osx' -or $DotNetOs -eq 'ios') {
+          } elseif ($DotNetOs -eq 'osx' -or $DotNetOs -eq 'ios' -or $DotNetOs -eq 'iossimulator') {
             $DylibFile = Join-Path $RuntimePath "${LibPrefix}DevolutionsSspi.dylib"
             if (Test-Path $DylibFile) {
               & strip -Sx $DylibFile
@@ -322,6 +336,51 @@ jobs:
             }
           }
 
+      - name: Framework (${{matrix.os}}-${{matrix.arch}}) (${{matrix.build}})
+        if: matrix.os == 'ios' || matrix.os == 'iossimulator'
+        shell: pwsh
+        run: |
+          $Version = '${{ needs.preflight.outputs.project-version }}'
+          $ShortVersion = '${{ needs.preflight.outputs.package-version }}'
+          $BundleName = "libDevolutionsSspi"
+          $RuntimesDir = Join-Path "dependencies" "runtimes" "${{ matrix.os }}-${{ matrix.arch }}" "native"
+          $FrameworkDir = Join-Path "$RuntimesDir" "$BundleName.framework"
+          New-Item -Path $FrameworkDir -ItemType "directory" -Force
+          $FrameworkExecutable = Join-Path $FrameworkDir $BundleName
+          Copy-Item -Path (Join-Path "$RuntimesDir" "$BundleName.dylib") -Destination $FrameworkExecutable -Force
+
+          $RPathCmd = $(@('install_name_tool', '-id', "@rpath/$BundleName.framework/$BundleName", "$FrameworkExecutable")) -Join ' '
+          Write-Host $RPathCmd
+          Invoke-Expression $RPathCmd
+
+          [xml] $InfoPlistXml = Get-Content "Info.plist"
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleIdentifier']/following-sibling::string[1]" |
+          %{
+          $_.Node.InnerXml = "com.devolutions.sspi"
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleExecutable']/following-sibling::string[1]" |
+          %{
+          $_.Node.InnerXml = $BundleName
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleVersion']/following-sibling::string[1]" |
+          %{
+          $_.Node.InnerXml = $Version
+          }
+          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleShortVersionString']/following-sibling::string[1]" |
+          %{
+          $_.Node.InnerXml = $ShortVersion
+          }
+
+          # Write the plist *without* a BOM
+          $Encoding = New-Object System.Text.UTF8Encoding($false)
+          $Writer = New-Object System.IO.StreamWriter((Join-Path $FrameworkDir "Info.plist"), $false, $Encoding)
+          $InfoPlistXml.Save($Writer)
+          $Writer.Close()
+
+          # .NET XML document inserts two square brackets at the end of the DOCTYPE tag
+          # It's perfectly valid XML, but we're dealing with plists here and dyld will not be able to read the file
+          ((Get-Content -Path (Join-Path $FrameworkDir "Info.plist") -Raw) -Replace 'PropertyList-1.0.dtd"\[\]', 'PropertyList-1.0.dtd"') | Set-Content -Path (Join-Path $FrameworkDir "Info.plist")
+
       - name: Upload native components
         uses: actions/upload-artifact@v7
         with:
@@ -342,7 +401,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ osx, ios ]
+        os: [ osx ]
         build: [ debug, release ]
 
     steps:
@@ -391,62 +450,6 @@ jobs:
           $LipoCmd = $(@('lipo', '-create', '-output', (Join-Path -Path $OutputPath -ChildPath "libDevolutionsSspi.dylib")) + $Libraries) -Join ' '
           Write-Host $LipoCmd
           Invoke-Expression $LipoCmd
-
-      - name: Framework (${{matrix.build}})
-        shell: pwsh
-        if: ${{ matrix.os == 'ios' }}
-        run: |
-          $Version = '${{ needs.preflight.outputs.project-version }}'
-          $ShortVersion = '${{ needs.preflight.outputs.package-version }}'
-          $BundleName = "libDevolutionsSspi"
-          $RuntimesDir = Join-Path "dependencies" "runtimes" "ios-universal" "native"
-          $FrameworkDir = Join-Path "$RuntimesDir" "$BundleName.framework"
-          New-Item -Path $FrameworkDir -ItemType "directory" -Force
-          $FrameworkExecutable = Join-Path $FrameworkDir $BundleName
-          Copy-Item -Path (Join-Path "$RuntimesDir" "$BundleName.dylib") -Destination $FrameworkExecutable -Force
-
-          $RPathCmd = $(@('install_name_tool', '-id', "@rpath/$BundleName.framework/$BundleName", "$FrameworkExecutable")) -Join ' '
-          Write-Host $RPathCmd
-          Invoke-Expression $RPathCmd
-
-          [xml] $InfoPlistXml = Get-Content "Info.plist"
-          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleIdentifier']/following-sibling::string[1]" |
-          %{ 	
-          $_.Node.InnerXml = "com.devolutions.sspi"
-          }
-          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleExecutable']/following-sibling::string[1]" |
-          %{ 	
-          $_.Node.InnerXml = $BundleName
-          }
-          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleVersion']/following-sibling::string[1]" |
-          %{ 	
-          $_.Node.InnerXml = $Version
-          }
-          Select-Xml -xml $InfoPlistXml -XPath "/plist/dict/key[. = 'CFBundleShortVersionString']/following-sibling::string[1]" |
-          %{ 	
-          $_.Node.InnerXml = $ShortVersion
-          }
-
-          # Write the plist *without* a BOM
-          $Encoding = New-Object System.Text.UTF8Encoding($false)
-          $Writer = New-Object System.IO.StreamWriter((Join-Path $FrameworkDir "Info.plist"), $false, $Encoding)
-          $InfoPlistXml.Save($Writer)
-          $Writer.Close()
-
-          # .NET XML document inserts two square brackets at the end of the DOCTYPE tag
-          # It's perfectly valid XML, but we're dealing with plists here and dyld will not be able to read the file
-          ((Get-Content -Path (Join-Path $FrameworkDir "Info.plist") -Raw) -Replace 'PropertyList-1.0.dtd"\[\]', 'PropertyList-1.0.dtd"') | Set-Content -Path (Join-Path $FrameworkDir "Info.plist")
-
-          # Strip the framework executable (debug symbols will be in dSYM)
-          if ('${{ matrix.build }}' -eq 'release') {
-            if (-not (Test-Path "/usr/bin/apple-strip")) {
-              throw "apple-strip not found at /usr/bin/apple-strip"
-            }
-            & /usr/bin/apple-strip -Sx $FrameworkExecutable
-            Write-Host "Stripped framework executable with: /usr/bin/apple-strip -Sx"
-            $SizeMB = [math]::Round((Get-Item $FrameworkExecutable).Length / 1MB, 2)
-            Write-Host "Size after stripping: $SizeMB MB"
-          }
 
       - name: Generate universal dSYM
         if: matrix.build == 'release'
