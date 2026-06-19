@@ -266,7 +266,8 @@ jobs:
           - Windows (x64, arm64)
           - macOS (x64, arm64, universal)
           - Linux (x64, arm64)
-          - iOS (x64, arm64, universal)
+          - iOS device (arm64)
+          - iOS Simulator (arm64)
           - Android (x86, x64, arm, arm64)
 
           ### Debug Symbols
