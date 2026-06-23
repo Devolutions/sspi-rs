@@ -454,6 +454,15 @@ impl Ntlm {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
+                // Pick up a caller-supplied channel binding (e.g. tls-server-end-point)
+                // so write_authenticate can stamp it into the Type-3 message. NTLM under
+                // Strict EPA (WinRM over HTTPS) needs this. The acceptor path and the
+                // Kerberos client read the buffer the same way; without it the client
+                // ignores the CBT buffer.
+                if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, BufferType::ChannelBindings) {
+                    self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
+                }
+
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
                 client::write_authenticate(
