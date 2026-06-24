@@ -10,7 +10,7 @@ pub use change_password::change_password;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::{KrbResult, ResultExt};
+use picky_krb::data_types::{KrbResult, PrincipalName, ResultExt};
 use picky_krb::messages::{ApRep, TgsRep};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
@@ -37,6 +37,21 @@ use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
 };
+
+/// Inspects the `sname` of a ticket returned in a TGS-REP to decide whether it is a cross-realm
+/// referral TGT rather than the requested service ticket.
+///
+/// A referral TGT has an `sname` of the form `krbtgt/<NEXT_REALM>` (RFC 4120 §3.3.3.2). In that
+/// case this returns `Some(next_realm)` and the caller must re-issue the TGS-REQ to `<NEXT_REALM>`.
+/// For an actual service ticket (e.g. `TERMSRV/host`) it returns `None`.
+fn referral_target_realm(sname: &PrincipalName) -> Option<String> {
+    let names = &sname.name_string.0.0;
+
+    match names.as_slice() {
+        [service, realm] if service.to_string().eq_ignore_ascii_case(TGT_SERVICE_NAME) => Some(realm.to_string()),
+        _ => None,
+    }
+}
 
 /// Performs one authentication step.
 ///
@@ -233,15 +248,6 @@ pub async fn initialize_security_context<'a>(
 
             client.encryption_params.encryption_type = Some(encryption_type);
 
-            let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-                kdc_rep: &as_rep.0,
-                seq_num: Some(rand.next_u32()),
-                sub_key: None,
-                checksum: None,
-                channel_bindings: client.channel_bindings.as_ref(),
-                extensions: Vec::new(),
-            })?;
-
             let mut session_key_extractor = match credentials {
                 CredentialsBuffers::AuthIdentity(_) => AsRepSessionKeyExtractor::AuthIdentity {
                     salt: &salt,
@@ -276,34 +282,101 @@ pub async fn initialize_security_context<'a>(
                 context_requirements.set(ClientRequestFlags::USE_SESSION_KEY, true);
             }
 
-            let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
-                realm: &as_rep.0.crealm.0.to_string(),
-                service_principal,
-                session_key: &session_key_1,
-                ticket: as_rep.0.ticket.0,
-                authenticator: &mut authenticator,
-                additional_tickets: tgt_ticket.map(|ticket| vec![ticket]),
-                enc_params: &client.encryption_params,
-                context_requirements,
-            })?;
+            // Cross-realm referral chasing (RFC 4120 §3.3.3.2 / MS-KILE).
+            //
+            // * [Cross-Realm Operation](https://www.rfc-editor.org/rfc/rfc4120.html#section-1.2)
+            // * [Server Referrals](https://www.rfc-editor.org/rfc/rfc6806.html#section-8)
+            //
+            // A KDC can only issue tickets for principals in its own realm. When the requested
+            // service lives in another realm (e.g. a user in `RJM.LOCAL` targeting a host in the
+            // child realm `DEV.RJM.LOCAL`), the KDC does not return the service ticket. Instead it
+            // returns a referral TGT whose `sname` is `krbtgt/<NEXT_REALM>`, and the client must
+            // re-issue the TGS-REQ for the same service to `<NEXT_REALM>`'s KDC using that referral
+            // TGT. We loop until the returned ticket's `sname` matches the requested service (i.e.
+            // it is no longer a `krbtgt/...` referral).
+            //
+            // The referral hop is routed via `send_for_realm`, which resolves the target realm's
+            // KDC through `SSPI_KDC_URL_<REALM>` (env) / krb5.conf / DNS SRV rather than the pinned
+            // home-realm KDC, which cannot decrypt a `krbtgt/<NEXT_REALM>` referral ticket.
+            const MAX_REFERRAL_HOPS: usize = 10;
 
-            let response = client.send(yield_point, &serialize_message(&tgs_req)?).await?;
+            let mut realm = as_rep.0.crealm.0.to_string();
+            let mut ticket = as_rep.0.ticket.0.clone();
+            let mut tgt_session_key = session_key_1;
+            // KDC-REP that the AP_REQ authenticator (cname/crealm) for the next hop is built from.
+            let mut auth_rep = as_rep.0.clone();
+            // Only meaningful for U2U; carried on the first hop and dropped afterwards.
+            let mut additional_tickets = tgt_ticket.map(|ticket| vec![ticket]);
+            let mut hops = 0;
 
-            if response.len() < 4 {
-                return Err(Error::new(
-                    ErrorKind::InternalError,
-                    "the KDC reply message is too small: expected at least 4 bytes",
-                ));
-            }
+            let (tgs_rep, session_key_2) = loop {
+                let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
+                    kdc_rep: &auth_rep,
+                    seq_num: Some(rand.next_u32()),
+                    sub_key: None,
+                    checksum: None,
+                    channel_bindings: client.channel_bindings.as_ref(),
+                    extensions: Vec::new(),
+                })?;
 
-            // first 4 bytes are message len. skipping them
-            let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
-            let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
-            let tgs_rep = tgs_rep?;
+                let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
+                    realm: &realm,
+                    service_principal,
+                    session_key: &tgt_session_key,
+                    ticket,
+                    authenticator: &mut authenticator,
+                    additional_tickets: additional_tickets.take(),
+                    enc_params: &client.encryption_params,
+                    context_requirements,
+                })?;
 
-            debug!("TGS exchange finished successfully");
+                let response = client
+                    .send_for_realm(yield_point, &realm, &serialize_message(&tgs_req)?)
+                    .await?;
 
-            let session_key_2 = extract_session_key_from_tgs_rep(&tgs_rep, &session_key_1, &client.encryption_params)?;
+                if response.len() < 4 {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        "the KDC reply message is too small: expected at least 4 bytes",
+                    ));
+                }
+
+                // first 4 bytes are message len. skipping them
+                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+                let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
+                let tgs_rep = tgs_rep?;
+
+                let session_key =
+                    extract_session_key_from_tgs_rep(&tgs_rep, &tgt_session_key, &client.encryption_params)?;
+
+                // A referral TGT is identified by an `sname` of the form `krbtgt/<NEXT_REALM>`.
+                let Some(next_realm) = referral_target_realm(&tgs_rep.0.ticket.0.0.sname.0) else {
+                    debug!("TGS exchange finished successfully");
+                    break (tgs_rep, session_key);
+                };
+                debug!(%realm, %next_realm, "Received cross-realm referral TGT; chasing referral");
+
+                hops += 1;
+                if hops >= MAX_REFERRAL_HOPS {
+                    return Err(Error::new(
+                        ErrorKind::NoAuthenticatingAuthority,
+                        format!(
+                            "exceeded maximum Kerberos referral hops ({MAX_REFERRAL_HOPS}) resolving {service_principal}"
+                        ),
+                    ));
+                }
+                if next_realm.eq_ignore_ascii_case(&realm) {
+                    return Err(Error::new(
+                        ErrorKind::NoAuthenticatingAuthority,
+                        format!("Kerberos referral did not progress past realm `{realm}`"),
+                    ));
+                }
+
+                ticket = tgs_rep.0.ticket.0.clone();
+                tgt_session_key = session_key;
+                auth_rep = tgs_rep.0;
+                realm = next_realm;
+            };
 
             client.encryption_params.session_key = Some(session_key_2);
 
@@ -454,4 +527,65 @@ pub async fn initialize_security_context<'a>(
         flags: ClientResponseFlags::empty(),
         expiry: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_asn1::restricted_string::IA5String;
+    use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+    use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
+    use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
+
+    use super::referral_target_realm;
+
+    fn principal_name(name_type: u8, names: &[&str]) -> PrincipalName {
+        PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
+                names
+                    .iter()
+                    .map(|n| KerberosStringAsn1::from(IA5String::from_string((*n).to_owned()).unwrap()))
+                    .collect::<Vec<_>>(),
+            )),
+        }
+    }
+
+    #[test]
+    fn referral_target_realm_detects_cross_realm_tgt() {
+        // krbtgt/<NEXT_REALM> => chase into NEXT_REALM.
+        let sname = principal_name(NT_SRV_INST, &["krbtgt", "DEV.RJM.LOCAL"]);
+        assert_eq!(referral_target_realm(&sname), Some("DEV.RJM.LOCAL".to_owned()));
+    }
+
+    #[test]
+    fn referral_target_realm_is_case_insensitive_on_service() {
+        // The service component comparison must ignore case ("krbtgt" vs "KRBTGT").
+        let sname = principal_name(NT_SRV_INST, &["KrbTgt", "CORP.EXAMPLE.COM"]);
+        assert_eq!(referral_target_realm(&sname), Some("CORP.EXAMPLE.COM".to_owned()));
+    }
+
+    #[test]
+    fn referral_target_realm_ignores_actual_service_ticket() {
+        // A real service ticket (TERMSRV/host) is not a referral.
+        let sname = principal_name(NT_SRV_INST, &["TERMSRV", "WIN-UE7FOENEK0D.dev.rjm.local"]);
+        assert_eq!(referral_target_realm(&sname), None);
+    }
+
+    #[test]
+    fn referral_target_realm_ignores_non_two_component_names() {
+        // A lone "krbtgt" (one component) or a 3-component name is not a referral.
+        assert_eq!(referral_target_realm(&principal_name(NT_PRINCIPAL, &["krbtgt"])), None);
+        assert_eq!(
+            referral_target_realm(&principal_name(NT_SRV_INST, &["krbtgt", "A.COM", "B.COM"])),
+            None
+        );
+        assert_eq!(referral_target_realm(&principal_name(NT_SRV_INST, &[])), None);
+    }
+
+    #[test]
+    fn referral_target_realm_ignores_non_krbtgt_two_component_service() {
+        // Two components but not krbtgt (e.g. host-based service with an instance) is not a referral.
+        let sname = principal_name(NT_SRV_INST, &["cifs", "fileserver.dev.rjm.local"]);
+        assert_eq!(referral_target_realm(&sname), None);
+    }
 }

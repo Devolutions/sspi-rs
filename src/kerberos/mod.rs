@@ -167,65 +167,97 @@ impl Kerberos {
     }
 
     async fn send(&self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
-        if let Some((realm, kdc_url)) = self.get_kdc() {
-            let protocol = NetworkProtocol::from_url_scheme(kdc_url.scheme()).ok_or_else(|| {
-                Error::new(
-                    ErrorKind::InvalidParameter,
-                    format!("Invalid protocol `{}` for KDC server", kdc_url.scheme()),
-                )
-            })?;
+        let (realm, kdc_url) = self
+            .get_kdc()
+            .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))?;
+        self.send_to(yield_point, &realm, kdc_url, data).await
+    }
 
-            return match protocol {
-                NetworkProtocol::Tcp => {
-                    let request = NetworkRequest {
-                        protocol,
-                        url: kdc_url.clone(),
-                        data: data.to_vec(),
-                    };
-                    yield_point.suspend(request).await
-                }
-                NetworkProtocol::Udp => {
-                    if data.len() < 4 {
-                        return Err(Error::new(
-                            ErrorKind::InternalError,
-                            format!(
-                                "kerberos message has invalid length. expected >= 4 but got {}",
-                                data.len()
-                            ),
-                        ));
-                    }
-
-                    // First 4 bytes are message length and it’s not included when using UDP
-                    let request = NetworkRequest {
-                        protocol,
-                        url: kdc_url.clone(),
-                        data: data[4..].to_vec(),
-                    };
-                    yield_point.suspend(request).await
-                }
-                NetworkProtocol::Http | NetworkProtocol::Https => {
-                    let data = OctetStringAsn1::from(data.to_vec());
-                    let domain = KerberosStringAsn1::from(IA5String::from_string(realm)?);
-
-                    let kdc_proxy_message = KdcProxyMessage {
-                        kerb_message: ExplicitContextTag0::from(data),
-                        target_domain: Optional::from(Some(ExplicitContextTag1::from(domain))),
-                        dclocator_hint: Optional::from(None),
-                    };
-
-                    let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
-                    let request = NetworkRequest {
-                        protocol,
-                        url: kdc_url,
-                        data: message_request,
-                    };
-                    let result_bytes = yield_point.suspend(request).await?;
-                    let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
-                    Ok(message_response.kerb_message.0.0)
-                }
-            };
+    /// Sends a Kerberos message to the KDC responsible for `realm`.
+    ///
+    /// The pinned `kdc_url` (e.g. from KDC proxy settings) is authoritative only for the client's
+    /// home realm. For cross-realm referrals, the target realm's KDC is resolved via
+    /// [`detect_kdc_url`], so that `SSPI_KDC_URL_<REALM>` environment overrides (and the system
+    /// krb5.conf / DNS SRV records) are honored for the referral hop. This lets a single auth
+    /// chase a referral into a child/trusted realm without changing the pinned home-realm KDC.
+    async fn send_for_realm(&self, yield_point: &mut YieldPointLocal, realm: &str, data: &[u8]) -> Result<Vec<u8>> {
+        let kdc_url = if self.realm.as_deref() == Some(realm) {
+            self.kdc_url.clone().or_else(|| detect_kdc_url(realm))
+        } else {
+            detect_kdc_url(realm)
         }
-        Err(Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::NoAuthenticatingAuthority,
+                format!("No KDC server found for realm `{realm}`"),
+            )
+        })?;
+        self.send_to(yield_point, realm, kdc_url, data).await
+    }
+
+    async fn send_to(
+        &self,
+        yield_point: &mut YieldPointLocal,
+        realm: &str,
+        kdc_url: Url,
+        data: &[u8],
+    ) -> Result<Vec<u8>> {
+        let protocol = NetworkProtocol::from_url_scheme(kdc_url.scheme()).ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidParameter,
+                format!("Invalid protocol `{}` for KDC server", kdc_url.scheme()),
+            )
+        })?;
+
+        match protocol {
+            NetworkProtocol::Tcp => {
+                let request = NetworkRequest {
+                    protocol,
+                    url: kdc_url,
+                    data: data.to_vec(),
+                };
+                yield_point.suspend(request).await
+            }
+            NetworkProtocol::Udp => {
+                if data.len() < 4 {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        format!(
+                            "kerberos message has invalid length. expected >= 4 but got {}",
+                            data.len()
+                        ),
+                    ));
+                }
+
+                // First 4 bytes are message length and it’s not included when using UDP
+                let request = NetworkRequest {
+                    protocol,
+                    url: kdc_url,
+                    data: data[4..].to_vec(),
+                };
+                yield_point.suspend(request).await
+            }
+            NetworkProtocol::Http | NetworkProtocol::Https => {
+                let data = OctetStringAsn1::from(data.to_vec());
+                let domain = KerberosStringAsn1::from(IA5String::from_string(realm.to_owned())?);
+
+                let kdc_proxy_message = KdcProxyMessage {
+                    kerb_message: ExplicitContextTag0::from(data),
+                    target_domain: Optional::from(Some(ExplicitContextTag1::from(domain))),
+                    dclocator_hint: Optional::from(None),
+                };
+
+                let message_request = picky_asn1_der::to_vec(&kdc_proxy_message)?;
+                let request = NetworkRequest {
+                    protocol,
+                    url: kdc_url,
+                    data: message_request,
+                };
+                let result_bytes = yield_point.suspend(request).await?;
+                let message_response: KdcProxyMessage = picky_asn1_der::from_bytes(&result_bytes)?;
+                Ok(message_response.kerb_message.0.0)
+            }
+        }
     }
 }
 
