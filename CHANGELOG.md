@@ -12,8 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add support for SECPKG_ATTR_NAMES ([#676](https://github.com/Devolutions/sspi-rs/issues/676)) ([be6315d475](https://github.com/Devolutions/sspi-rs/commit/be6315d475d7c4ce4c571220e2cfd7cb0881b7c7)) 
 
-- Generate dotnet bindings with csbindgen ([#679](https://github.com/Devolutions/sspi-rs/issues/679)) ([07f280b930](https://github.com/Devolutions/sspi-rs/commit/07f280b93036b9f0fb41ade3ec587a2f1d92270f)) 
-
 - Add keytab client credentials and standards-compliant SASL/GSSAPI acceptor support ([#681](https://github.com/Devolutions/sspi-rs/issues/681)) ([d95f249622](https://github.com/Devolutions/sspi-rs/commit/d95f2496226d45fd4d02437c0c84afe870d9f510)) 
 
   Extends the `sspi` Kerberos implementation to interoperate with standards-compliant SASL/GSSAPI (RFC 4752 / RFC 4121) peers by adding keytab-backed client credentials, supporting integrity-only (unsealed) `GSS_Wrap` tokens, and allowing acceptors to validate tickets for multiple configured service principals.
@@ -26,8 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Disable `mechListMIC` for NTLM guest logon in negotiate module ([#680](https://github.com/Devolutions/sspi-rs/issues/680)) ([80bdedf387](https://github.com/Devolutions/sspi-rs/commit/80bdedf387da7341b95ff947d3bf68f48a0bc404)) 
 
-- Don't attempt to package tests during NuGet CI build ([#683](https://github.com/Devolutions/sspi-rs/issues/683)) ([958d9e5900](https://github.com/Devolutions/sspi-rs/commit/958d9e590052b496db66950de1a77ec17020dff7)) 
-
 - Server side CresSSP + SPNEGO + NTLM ([#689](https://github.com/Devolutions/sspi-rs/issues/689)) ([77c283167c](https://github.com/Devolutions/sspi-rs/commit/77c283167c2a5fe20b35c830a3f211136a6c7396)) 
 
 - Read channel bindings on the client authenticate step ([#695](https://github.com/Devolutions/sspi-rs/issues/695)) ([82741f6630](https://github.com/Devolutions/sspi-rs/commit/82741f6630c9b6038064caf8f508ac50e9f59738)) 
@@ -37,8 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add arm64 iOS simulator NuGet RID ([#693](https://github.com/Devolutions/sspi-rs/issues/693)) ([ab1c19f4a5](https://github.com/Devolutions/sspi-rs/commit/ab1c19f4a56159f0a7e6c4fe8915da3296c77edc)) 
 
 - Advance RustCrypto pins to the current rc.18/rc.33/rc.10 cluster ([#692](https://github.com/Devolutions/sspi-rs/issues/692)) ([095e3f341c](https://github.com/Devolutions/sspi-rs/commit/095e3f341c74d57daafb015bfb0226188e9e8e18)) 
-
-
 
 ## [[0.21.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.20.1...sspi-v0.21.0)] - 2026-05-06
 
