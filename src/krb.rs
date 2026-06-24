@@ -85,6 +85,20 @@ impl Krb5Conf {
         None
     }
 
+    /// Returns every value for `path`, in file order.
+    ///
+    /// Unlike [`get_value`](Self::get_value), which returns only the first match, this preserves
+    /// repeated keys — e.g. the multiple `kdc = ` lines (one host each) a realm uses to list
+    /// several KDCs for failover.
+    pub(crate) fn get_all_values(&self, path: Vec<&str>) -> Vec<String> {
+        let path = path.join("|");
+        self.values
+            .iter()
+            .filter(|(key, _)| key.eq_ignore_ascii_case(&path))
+            .map(|(_, val)| val.clone())
+            .collect()
+    }
+
     pub(crate) fn get_values_in_section(&self, path: &[&str]) -> Option<Vec<(&str, &str)>> {
         let mut values = Vec::new();
 
@@ -218,6 +232,46 @@ mod tests {
         assert_eq!(
             krb5_conf.get_value(vec!["realms", "ad.it-help.ninja", "default_domain"]),
             Some("ad.it-help.ninja".to_string())
+        );
+    }
+
+    #[test]
+    fn get_all_values_returns_every_repeated_kdc_in_order() {
+        // MIT krb5 allows one `kdc = ` per line; several lines list failover KDCs.
+        let krb5_conf_data = "
+[realms]
+	AD.IT-HELP.NINJA = {
+		kdc = dc1.ad.it-help.ninja:88
+		kdc = dc2.ad.it-help.ninja:88
+		default_domain = ad.it-help.ninja
+	}
+";
+        let krb5_conf = Krb5Conf::new_from_data(krb5_conf_data).unwrap();
+
+        // get_value still returns only the first (back-compat).
+        assert_eq!(
+            krb5_conf.get_value(vec!["realms", "ad.it-help.ninja", "kdc"]),
+            Some("dc1.ad.it-help.ninja:88".to_string())
+        );
+
+        // get_all_values returns every kdc entry, in file order.
+        assert_eq!(
+            krb5_conf.get_all_values(vec!["realms", "ad.it-help.ninja", "kdc"]),
+            vec![
+                "dc1.ad.it-help.ninja:88".to_string(),
+                "dc2.ad.it-help.ninja:88".to_string()
+            ]
+        );
+
+        // A non-repeated key yields a single-element vec; a missing key yields empty.
+        assert_eq!(
+            krb5_conf.get_all_values(vec!["realms", "ad.it-help.ninja", "default_domain"]),
+            vec!["ad.it-help.ninja".to_string()]
+        );
+        assert!(
+            krb5_conf
+                .get_all_values(vec!["realms", "ad.it-help.ninja", "admin_server"])
+                .is_empty()
         );
     }
 }
