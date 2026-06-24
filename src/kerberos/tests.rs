@@ -82,6 +82,7 @@ fn secbuffer_readonly_with_checksum() {
         iakerb_cookie: None,
         iakerb_gss_transcript: Vec::new(),
         remote_guard: None,
+        kdc_cache: std::collections::HashMap::new(),
     };
 
     // RPC header
@@ -266,6 +267,7 @@ fn integrity_only_wrap_decryption() {
         iakerb_cookie: None,
         iakerb_gss_transcript: Vec::new(),
         remote_guard: None,
+        kdc_cache: std::collections::HashMap::new(),
     };
 
     let mut buffer = token_bytes;

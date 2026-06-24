@@ -9,6 +9,7 @@ pub mod server;
 mod tests;
 pub(crate) mod utils;
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use picky_asn1::restricted_string::IA5String;
@@ -46,7 +47,7 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
     CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PACKAGE_ID_NONE,
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url, rcg,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url, detect_kdc_urls, rcg,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -113,6 +114,10 @@ pub struct Kerberos {
     pub(crate) iakerb_gss_transcript: Vec<u8>,
     /// Remote Credential Guard state. `None` unless Remote Credential Guard was explicitly enabled.
     pub(crate) remote_guard: Option<Box<rcg::RemoteGuardState>>,
+    /// KDC that last answered for a realm, keyed by the upper-cased realm name.
+    ///
+    /// Reused for the following messages of the same authentication and re-resolved only when it stops answering.
+    pub(crate) kdc_cache: HashMap<String, Url>,
 }
 
 impl Kerberos {
@@ -136,6 +141,7 @@ impl Kerberos {
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
             remote_guard: None,
+            kdc_cache: HashMap::new(),
         })
     }
 
@@ -159,6 +165,7 @@ impl Kerberos {
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
             remote_guard: None,
+            kdc_cache: HashMap::new(),
         })
     }
 
@@ -201,41 +208,101 @@ impl Kerberos {
         }
     }
 
-    async fn send(&self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
-        let (realm, kdc_url) = self
-            .get_kdc()
-            .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))?;
-        self.send_to(yield_point, &realm, kdc_url, data).await
+    async fn send(&mut self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
+        let realm = self
+            .realm
+            .clone()
+            .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "no KDC server found"))?;
+        self.send_for_realm(yield_point, &realm, data).await
     }
 
-    /// Sends a Kerberos message to the KDC responsible for `realm`.
+    /// Sends a Kerberos message to the KDC responsible for `realm`, failing over across candidates.
     ///
-    /// The pinned `kdc_url` (e.g. from KDC proxy settings) is authoritative only for the client's
-    /// home realm. For cross-realm referrals, the target realm's KDC is resolved via
-    /// [`detect_kdc_url`], so that `SSPI_KDC_URL_<REALM>` environment overrides (and the system
-    /// krb5.conf / DNS SRV records) are honored for the referral hop. This lets a single auth
-    /// chase a referral into a child/trusted realm without changing the pinned home-realm KDC.
+    /// See [`send_for_realm_with`](Self::send_for_realm_with); candidates come from [`detect_kdc_urls`].
     pub(crate) async fn send_for_realm(
-        &self,
+        &mut self,
         yield_point: &mut YieldPointLocal,
         realm: &str,
         data: &[u8],
     ) -> Result<Vec<u8>> {
-        let kdc_url = if self.realm.as_deref() == Some(realm) {
-            match &self.config.kdc_resolution {
-                KdcResolution::KdcUrl(kdc_url) => kdc_url.clone().or_else(|| detect_kdc_url(realm)),
-                KdcResolution::IAKerb => None,
+        self.send_for_realm_with(yield_point, realm, data, detect_kdc_urls)
+            .await
+    }
+
+    /// Sends a Kerberos message to the KDC responsible for `realm`, resolving candidates with `detect`.
+    ///
+    /// The KDC that last answered for `realm` is reused across the messages of an authentication and is
+    /// re-resolved only if it stops answering.
+    /// When resolving, the candidates [`select_kdc_urls`] returns are tried in order.
+    /// Failover advances on any error from [`send_to`](Self::send_to), which is mostly a transport failure
+    /// (could not connect, no reply) but also covers errors such as an unsupported URL scheme.
+    /// Any reply from a KDC, including a KRB-ERROR, is a valid answer and is returned as-is.
+    async fn send_for_realm_with(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        realm: &str,
+        data: &[u8],
+        detect: impl FnOnce(&str) -> Vec<Url>,
+    ) -> Result<Vec<u8>> {
+        let mut last_error = None;
+        let mut already_tried = None;
+        // Realms are case-insensitive, so normalize the cache key to avoid duplicate entries.
+        let cache_key = realm.to_ascii_uppercase();
+
+        // Prefer the KDC that last answered for this realm (stickiness across messages).
+        if let Some(pinned) = self.kdc_cache.get(&cache_key).cloned() {
+            match self.send_to(yield_point, realm, pinned.clone(), data).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    warn!(kdc = %pinned, %error, realm, "Pinned KDC failed; re-resolving candidates");
+                    self.kdc_cache.remove(&cache_key);
+                    already_tried = Some(pinned);
+                    last_error = Some(error);
+                }
             }
-        } else {
-            detect_kdc_url(realm)
         }
-        .ok_or_else(|| {
+
+        let kdc_urls = select_kdc_urls(realm, self.realm.as_deref(), &self.config.kdc_resolution, detect);
+        if kdc_urls.is_empty() {
+            return Err(last_error.unwrap_or_else(|| {
+                Error::new(
+                    ErrorKind::NoAuthenticatingAuthority,
+                    format!("no KDC server found for realm `{realm}`"),
+                )
+            }));
+        }
+
+        let candidate_count = kdc_urls.len();
+        for (index, kdc_url) in kdc_urls.into_iter().enumerate() {
+            // Don't immediately retry the pinned KDC we just failed over from.
+            if already_tried.as_ref() == Some(&kdc_url) {
+                continue;
+            }
+            match self.send_to(yield_point, realm, kdc_url.clone(), data).await {
+                Ok(response) => {
+                    self.kdc_cache.insert(cache_key, kdc_url);
+                    return Ok(response);
+                }
+                Err(error) => {
+                    warn!(
+                        kdc = %kdc_url,
+                        %error,
+                        candidate = index + 1,
+                        candidate_count,
+                        realm,
+                        "KDC request failed; trying next candidate if available"
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
             Error::new(
                 ErrorKind::NoAuthenticatingAuthority,
-                format!("No KDC server found for realm `{realm}`"),
+                format!("no KDC server reachable for realm `{realm}`"),
             )
-        })?;
-        self.send_to(yield_point, realm, kdc_url, data).await
+        }))
     }
 
     async fn send_to(
@@ -875,8 +942,33 @@ impl SspiEx for Kerberos {
     }
 }
 
+/// Chooses the ordered candidate KDC URLs for `target_realm`.
+///
+/// For the client's home realm, the resolution strategy decides: a configured KDC URL (e.g. a KDC proxy) is the
+/// sole candidate, an unset one falls back to `detect`, and IAKerb yields no candidate because the KDC is reached
+/// through the application server instead.
+/// Any other realm is a cross-realm referral hop and is always resolved via `detect`, which honors
+/// `SSPI_KDC_URL_<REALM>`, krb5.conf and DNS SRV records.
+/// `detect` is injected so the routing decision can be unit-tested without a live resolver.
+fn select_kdc_urls(
+    target_realm: &str,
+    home_realm: Option<&str>,
+    kdc_resolution: &KdcResolution,
+    detect: impl FnOnce(&str) -> Vec<Url>,
+) -> Vec<Url> {
+    if home_realm.is_some_and(|home| home.eq_ignore_ascii_case(target_realm)) {
+        match kdc_resolution {
+            KdcResolution::KdcUrl(Some(kdc_url)) => return vec![kdc_url.clone()],
+            KdcResolution::KdcUrl(None) => {}
+            KdcResolution::IAKerb => return Vec::new(),
+        }
+    }
+    detect(target_realm)
+}
+
 #[cfg(any(feature = "__test-data", test))]
 pub mod test_data {
+    use std::collections::HashMap;
     use std::time::Duration;
 
     use picky_asn1::restricted_string::IA5String;
@@ -933,6 +1025,7 @@ pub mod test_data {
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
             remote_guard: None,
+            kdc_cache: HashMap::new(),
         }
     }
 
@@ -983,6 +1076,224 @@ pub mod test_data {
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
             remote_guard: None,
+            kdc_cache: HashMap::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod select_kdc_urls_tests {
+    use url::Url;
+
+    use super::select_kdc_urls;
+    use crate::KdcResolution;
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn home_realm_with_configured_kdc_uses_only_the_configured_url() {
+        let configured = url("tcp://home-dc.rjm.local:88");
+        let resolution = KdcResolution::KdcUrl(Some(configured.clone()));
+        let result = select_kdc_urls("RJM.LOCAL", Some("RJM.LOCAL"), &resolution, |_| {
+            panic!("detection must not run for the configured home realm")
+        });
+        assert_eq!(result, vec![configured]);
+    }
+
+    #[test]
+    fn home_realm_match_is_case_insensitive() {
+        let configured = url("tcp://home-dc.rjm.local:88");
+        let resolution = KdcResolution::KdcUrl(Some(configured.clone()));
+        let result = select_kdc_urls("rjm.local", Some("RJM.LOCAL"), &resolution, |_| {
+            panic!("a case-only difference is still the home realm; detection must not run")
+        });
+        assert_eq!(result, vec![configured]);
+    }
+
+    #[test]
+    fn referral_realm_ignores_configured_kdc_and_uses_detection() {
+        let configured = url("tcp://home-dc.rjm.local:88");
+        let detected = url("tcp://child-dc.dev.rjm.local:88");
+        let resolution = KdcResolution::KdcUrl(Some(configured));
+        let result = select_kdc_urls("DEV.RJM.LOCAL", Some("RJM.LOCAL"), &resolution, |realm| {
+            assert_eq!(realm, "DEV.RJM.LOCAL");
+            vec![detected.clone()]
+        });
+        assert_eq!(result, vec![detected]);
+    }
+
+    #[test]
+    fn home_realm_without_configured_kdc_falls_back_to_detection() {
+        // Detection may yield several KDCs; their order is preserved for failover.
+        let detected = vec![url("tcp://dc1.rjm.local:88"), url("tcp://dc2.rjm.local:88")];
+        let result = select_kdc_urls("RJM.LOCAL", Some("RJM.LOCAL"), &KdcResolution::KdcUrl(None), |_| {
+            detected.clone()
+        });
+        assert_eq!(result, detected);
+    }
+
+    #[test]
+    fn iakerb_home_realm_has_no_kdc_candidate() {
+        let result = select_kdc_urls("RJM.LOCAL", Some("RJM.LOCAL"), &KdcResolution::IAKerb, |_| {
+            panic!("IAKerb reaches the KDC through the application server; detection must not run")
+        });
+        assert!(result.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod kdc_failover_tests {
+    use url::Url;
+
+    use super::Kerberos;
+    use super::test_data::fake_client;
+    use crate::generator::{Generator, GeneratorState, NetworkRequest};
+    use crate::{Error, ErrorKind};
+
+    const REALM: &str = "EXAMPLE.COM";
+    const DC1: &str = "tcp://dc1.example.com:88";
+    const DC2: &str = "tcp://dc2.example.com:88";
+    // Any length-prefixed message will do: the fake network never parses it.
+    const REQUEST: &[u8] = &[0, 0, 0, 2, 0x30, 0x00];
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
+    /// Fake KDC network: unreachable KDCs fail with an error naming them, the others reply with their own URL.
+    #[derive(Default)]
+    struct FakeNetwork {
+        unreachable: Vec<Url>,
+        requests: Vec<Url>,
+    }
+
+    impl FakeNetwork {
+        fn unreachable(kdcs: &[&str]) -> Self {
+            Self {
+                unreachable: kdcs.iter().map(|kdc| url(kdc)).collect(),
+                requests: Vec::new(),
+            }
+        }
+
+        fn respond(&mut self, request: &NetworkRequest) -> crate::Result<Vec<u8>> {
+            self.requests.push(request.url.clone());
+            if self.unreachable.contains(&request.url) {
+                Err(Error::new(
+                    ErrorKind::NoAuthenticatingAuthority,
+                    format!("{} is unreachable", request.url),
+                ))
+            } else {
+                Ok(request.url.as_str().as_bytes().to_vec())
+            }
+        }
+
+        fn requests(&self) -> Vec<&str> {
+            self.requests.iter().map(Url::as_str).collect()
+        }
+    }
+
+    /// Drives one `send_for_realm_with` call to completion against `network`, resolving to `candidates`.
+    fn send(kerberos: &mut Kerberos, network: &mut FakeNetwork, candidates: &[&str]) -> crate::Result<Vec<u8>> {
+        let candidates: Vec<Url> = candidates.iter().map(|kdc| url(kdc)).collect();
+        let mut generator: Generator<'_, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<Vec<u8>>> =
+            Generator::new(move |mut yield_point| async move {
+                kerberos
+                    .send_for_realm_with(&mut yield_point, REALM, REQUEST, move |_| candidates)
+                    .await
+            });
+
+        let mut state = generator.start();
+        loop {
+            match state {
+                GeneratorState::Suspended(request) => state = generator.resume(network.respond(&request)),
+                GeneratorState::Completed(result) => return result,
+            }
+        }
+    }
+
+    fn pinned(kerberos: &Kerberos) -> Option<&str> {
+        kerberos.kdc_cache.get(REALM).map(Url::as_str)
+    }
+
+    // oracle: mutant failover stops at the first candidate that answers
+    #[test]
+    fn first_answering_candidate_is_pinned_and_the_rest_are_not_tried() {
+        let mut kerberos = fake_client();
+        let mut network = FakeNetwork::default();
+
+        let response = send(&mut kerberos, &mut network, &[DC1, DC2]).unwrap();
+
+        assert_eq!(response, DC1.as_bytes());
+        assert_eq!(network.requests(), [DC1]);
+        assert_eq!(pinned(&kerberos), Some(DC1));
+    }
+
+    // oracle: mutant failover skips an unreachable candidate and pins the one that answers
+    #[test]
+    fn unreachable_candidate_fails_over_to_the_next_which_is_pinned() {
+        let mut kerberos = fake_client();
+        let mut network = FakeNetwork::unreachable(&[DC1]);
+
+        let response = send(&mut kerberos, &mut network, &[DC1, DC2]).unwrap();
+
+        assert_eq!(response, DC2.as_bytes());
+        assert_eq!(network.requests(), [DC1, DC2]);
+        assert_eq!(pinned(&kerberos), Some(DC2));
+    }
+
+    // oracle: mutant a pinned KDC is reused ahead of the candidate list
+    #[test]
+    fn pinned_kdc_is_reused_for_the_next_message() {
+        let mut kerberos = fake_client();
+        kerberos.kdc_cache.insert(REALM.to_owned(), url(DC2));
+        let mut network = FakeNetwork::default();
+
+        let response = send(&mut kerberos, &mut network, &[DC1, DC2]).unwrap();
+
+        assert_eq!(response, DC2.as_bytes());
+        assert_eq!(network.requests(), [DC2]);
+        assert_eq!(pinned(&kerberos), Some(DC2));
+    }
+
+    // oracle: mutant a failed pinned KDC is dropped, not retried, and the next answering candidate is pinned
+    #[test]
+    fn failed_pinned_kdc_is_replaced_without_being_retried() {
+        let mut kerberos = fake_client();
+        kerberos.kdc_cache.insert(REALM.to_owned(), url(DC2));
+        let mut network = FakeNetwork::unreachable(&[DC2]);
+
+        let response = send(&mut kerberos, &mut network, &[DC1, DC2]).unwrap();
+
+        assert_eq!(response, DC1.as_bytes());
+        assert_eq!(network.requests(), [DC2, DC1]);
+        assert_eq!(pinned(&kerberos), Some(DC1));
+    }
+
+    // oracle: mutant the last candidate's error is reported and nothing stays pinned
+    #[test]
+    fn all_candidates_unreachable_reports_the_last_error_and_unpins() {
+        let mut kerberos = fake_client();
+        kerberos.kdc_cache.insert(REALM.to_owned(), url(DC1));
+        let mut network = FakeNetwork::unreachable(&[DC1, DC2]);
+
+        let error = send(&mut kerberos, &mut network, &[DC1, DC2]).unwrap_err();
+
+        assert_eq!(error.description, format!("{DC2} is unreachable"));
+        assert_eq!(network.requests(), [DC1, DC2]);
+        assert_eq!(pinned(&kerberos), None);
+    }
+
+    // oracle: mutant no candidate means no authenticating authority, without touching the network
+    #[test]
+    fn no_candidate_is_no_authenticating_authority() {
+        let mut kerberos = fake_client();
+        let mut network = FakeNetwork::default();
+
+        let error = send(&mut kerberos, &mut network, &[]).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::NoAuthenticatingAuthority);
+        assert!(network.requests().is_empty());
     }
 }

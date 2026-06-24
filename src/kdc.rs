@@ -41,14 +41,27 @@ pub(crate) fn detect_kdc_hosts_from_system(domain: &str) -> Vec<String> {
     for krb5_conf_path in krb5_conf_paths {
         if krb5_conf_path.exists()
             && let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path)
-            && let Some(kdc) = krb5_conf.get_value(vec!["realms", domain, "kdc"])
         {
-            let kdc_url = format!("tcp://{}", kdc.as_str());
-            return vec![kdc_url];
+            let kdcs = krb5_conf.get_all_values(vec!["realms", domain, "kdc"]);
+            if !kdcs.is_empty() {
+                return krb5_kdc_values_to_hosts(&kdcs);
+            }
         }
     }
 
     Vec::new()
+}
+
+/// Maps krb5.conf `kdc = ` values to an ordered list of `tcp://` host URLs.
+///
+/// Per [krb5.conf] § "\[realms\]", each `kdc = ` line names exactly one host (optionally `host:port`);
+/// multiple KDCs for a realm are expressed as multiple `kdc = ` lines, which [`get_all_values`] returns in order.
+///
+/// [krb5.conf]: https://web.mit.edu/kerberos/krb5-current/doc/admin/conf_files/krb5_conf.html
+/// [`get_all_values`]: crate::krb::Krb5Conf::get_all_values
+#[cfg(not(target_os = "windows"))]
+fn krb5_kdc_values_to_hosts(kdcs: &[&str]) -> Vec<String> {
+    kdcs.iter().map(|host| format!("tcp://{host}")).collect()
 }
 
 #[instrument(ret, level = "debug")]
@@ -80,8 +93,18 @@ pub fn detect_kdc_host(domain: &str) -> Option<String> {
 }
 
 pub fn detect_kdc_url(domain: &str) -> Option<Url> {
-    let kdc_host = detect_kdc_host(domain)?;
-    Url::from_str(&kdc_host).ok()
+    detect_kdc_urls(domain).into_iter().next()
+}
+
+/// Resolves the ordered list of candidate KDC URLs for `domain`.
+///
+/// Same resolution order as [`detect_kdc_host`] (`SSPI_KDC_URL_<DOMAIN>`, then the system store, then DNS SRV), but
+/// returns every candidate rather than just the first, so callers can fail over to the next KDC when one is unreachable.
+pub fn detect_kdc_urls(domain: &str) -> Vec<Url> {
+    detect_kdc_hosts(domain)
+        .iter()
+        .filter_map(|host| Url::from_str(host).ok())
+        .collect()
 }
 
 #[cfg(test)]
@@ -98,5 +121,38 @@ mod tests {
                 println!("No KDC server found!");
             }
         }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn krb5_kdc_values_expand_to_one_host_each() {
+        use super::krb5_kdc_values_to_hosts;
+
+        // Single host.
+        assert_eq!(
+            krb5_kdc_values_to_hosts(&["dc1.example.com"]),
+            ["tcp://dc1.example.com"]
+        );
+
+        // Multiple `kdc = ` lines preserve order.
+        assert_eq!(
+            krb5_kdc_values_to_hosts(&["dc1.example.com", "dc2.example.com"]),
+            ["tcp://dc1.example.com", "tcp://dc2.example.com"]
+        );
+
+        // One host per line (MIT spec): a whitespace-separated line is not split.
+        assert_eq!(
+            krb5_kdc_values_to_hosts(&["dc1.example.com dc2.example.com"]),
+            ["tcp://dc1.example.com dc2.example.com"]
+        );
+
+        // An explicit port is preserved.
+        assert_eq!(
+            krb5_kdc_values_to_hosts(&["dc1.example.com:8888"]),
+            ["tcp://dc1.example.com:8888"]
+        );
+
+        // Nothing in, nothing out.
+        assert!(krb5_kdc_values_to_hosts(&[]).is_empty());
     }
 }
