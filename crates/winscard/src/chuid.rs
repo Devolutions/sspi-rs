@@ -36,7 +36,7 @@ pub(crate) fn build_chuid() -> WinScardResult<[u8; CHUID_LENGTH]> {
     chuid.extend_from_slice(&[tlv_tags::EXPIRATION_DATE, expiration_date_length]);
     // Section 3.1.2 of https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf
     let year_from_today = OffsetDateTime::now_utc() + Duration::weeks(48);
-    let expiration_date_format = format_description::parse("[year][month][day]").map_err(|e| {
+    let expiration_date_format = format_description::parse_borrowed::<2>("[year][month][day]").map_err(|e| {
         Error::new(
             ErrorKind::InternalError,
             format!("error while trying to parse the date format: {e}"),
