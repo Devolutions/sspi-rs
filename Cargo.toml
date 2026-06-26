@@ -89,7 +89,7 @@ sha2 = "0.11"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
-picky = { version = "=7.0.0-rc.24", default-features = false }
+picky = { version = "=7.0.0-rc.25", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
@@ -205,11 +205,11 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 pkcs1 = "=0.8.0-rc.4"
 pkcs8 = "0.11"
 signature = "3.0.0"
-p256 = "=0.14.0-rc.10"
-primefield = "=0.14.0-rc.12"
-primeorder = "=0.14.0-rc.10"
-p384 = "=0.14.0-rc.10"
-p521 = "=0.14.0-rc.10"
+p256 = "=0.14.0-rc.14"
+primefield = "0.14.0"
+primeorder = "=0.14.0-rc.14"
+p384 = "=0.14.0-rc.14"
+p521 = "=0.14.0-rc.14"
 
 # "Zero-knowledge Cryptography in Rust" crates
 ff = { version = "0.14", default-features = false }
@@ -219,8 +219,8 @@ rustcrypto-ff_derive = "=0.14.0-rc.0"
 rustcrypto-group = "=0.14.0-rc.1"
 
 # "dalek cryptography" crates
-ed25519-dalek = "=3.0.0-rc.0"
-curve25519-dalek = "=5.0.0-rc.0"
+ed25519-dalek = "=3.0.0-rc.1"
+curve25519-dalek = "=5.0.0-rc.1"
 
 [dev-dependencies]
 base64.workspace = true
