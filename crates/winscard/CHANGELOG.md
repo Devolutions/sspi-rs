@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.3.3](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.2...winscard-v0.3.3)] - 2026-06-26
+
+### <!-- 7 -->Build
+
+- Update RC and crypto dependencies to latest versions ([#699](https://github.com/Devolutions/sspi-rs/issues/699)) ([c5922db0f4](https://github.com/Devolutions/sspi-rs/commit/c5922db0f4921323856a041c5e2987e569e62056)) 
+
+
+
 ## [[0.3.2](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.1...winscard-v0.3.2)] - 2026-04-29
 
 ### <!-- 7 -->Build
