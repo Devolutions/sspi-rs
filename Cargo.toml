@@ -203,17 +203,12 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
 pkcs1 = "=0.8.0-rc.4"
-pkcs8 = "0.11"
-signature = "3.0.0"
 p256 = "=0.14.0-rc.14"
-primefield = "0.14.0"
 primeorder = "=0.14.0-rc.14"
 p384 = "=0.14.0-rc.14"
 p521 = "=0.14.0-rc.14"
 
 # "Zero-knowledge Cryptography in Rust" crates
-ff = { version = "0.14", default-features = false }
-group = "0.14"
 rustcrypto-ff = "=0.14.0-rc.1"
 rustcrypto-ff_derive = "=0.14.0-rc.0"
 rustcrypto-group = "=0.14.0-rc.1"

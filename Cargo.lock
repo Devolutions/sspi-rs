@@ -700,7 +700,6 @@ dependencies = [
 name = "dpapi"
 version = "0.0.0"
 dependencies = [
- "aead",
  "aes-gcm",
  "aes-kw",
  "bitflags 2.13.0",
@@ -712,12 +711,9 @@ dependencies = [
  "dpapi-pdu",
  "dpapi-transport",
  "ecdsa",
- "ed25519",
  "ed25519-dalek",
  "elliptic-curve",
- "ff",
  "getrandom 0.4.3",
- "group",
  "hmac",
  "kbkdf",
  "num-derive",
@@ -726,26 +722,21 @@ dependencies = [
  "p384",
  "p521",
  "paste",
- "pbkdf2",
  "picky-asn1",
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
  "pkcs1",
- "pkcs8",
- "primefield",
  "primeorder",
  "rand 0.10.1",
  "rand_core 0.10.1",
  "regex",
- "rfc6979 0.5.0",
  "rsa",
  "rustcrypto-ff",
  "rustcrypto-ff_derive",
  "rustcrypto-group",
  "sha1 0.11.0",
  "sha2",
- "signature",
  "sspi",
  "thiserror",
  "tracing",
@@ -854,7 +845,7 @@ dependencies = [
  "der",
  "digest 0.11.3",
  "elliptic-curve",
- "rfc6979 0.6.0-pre.0",
+ "rfc6979",
  "signature",
  "spki",
  "zeroize",
@@ -866,7 +857,6 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29fcf32e6c73d1079f83ab4d782de2d81620346a5f38c6237a86a22f8368980a"
 dependencies = [
- "pkcs8",
  "signature",
 ]
 
@@ -2567,16 +2557,6 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 
 [[package]]
 name = "rfc6979"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5236ce872cac07e0fb3969b0cbf468c7d2f37d432f1b627dcb7b8d34563fb0c3"
-dependencies = [
- "hmac",
- "subtle",
-]
-
-[[package]]
-name = "rfc6979"
 version = "0.6.0-pre.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9935425142ac6e252364413291d96c8bc9898d0876a801824c7af4eae397b689"
@@ -3046,10 +3026,8 @@ dependencies = [
  "cryptoki",
  "curve25519-dalek",
  "ed25519-dalek",
- "ff",
  "futures",
  "getrandom 0.3.4",
- "group",
  "hickory-proto",
  "hickory-resolver",
  "hmac",
@@ -3067,9 +3045,7 @@ dependencies = [
  "picky-asn1-x509",
  "picky-krb",
  "pkcs1",
- "pkcs8",
  "portpicker",
- "primefield",
  "primeorder",
  "proptest",
  "rand 0.10.1",
@@ -3084,7 +3060,6 @@ dependencies = [
  "serde",
  "sha1 0.11.0",
  "sha2",
- "signature",
  "static_assertions",
  "time",
  "tokio",
