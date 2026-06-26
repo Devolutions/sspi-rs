@@ -6,6 +6,114 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.0...sspi-v0.21.1)] - 2026-06-26
+
+### <!-- 1 -->Features
+
+- Add support for SECPKG_ATTR_NAMES ([#676](https://github.com/Devolutions/sspi-rs/issues/676)) ([be6315d475](https://github.com/Devolutions/sspi-rs/commit/be6315d475d7c4ce4c571220e2cfd7cb0881b7c7)) 
+
+- Generate dotnet bindings with csbindgen ([#679](https://github.com/Devolutions/sspi-rs/issues/679)) ([07f280b930](https://github.com/Devolutions/sspi-rs/commit/07f280b93036b9f0fb41ade3ec587a2f1d92270f)) 
+
+- Add keytab client credentials and standards-compliant SASL/GSSAPI acceptor support ([#681](https://github.com/Devolutions/sspi-rs/issues/681)) ([d95f249622](https://github.com/Devolutions/sspi-rs/commit/d95f2496226d45fd4d02437c0c84afe870d9f510)) 
+
+  Extends the `sspi` Kerberos implementation to interoperate with standards-compliant SASL/GSSAPI (RFC 4752 / RFC 4121) peers by adding keytab-backed client credentials, supporting integrity-only (unsealed) `GSS_Wrap` tokens, and allowing acceptors to validate tickets for multiple configured service principals.
+
+- Support for Kerberos cross realm referral ([#694](https://github.com/Devolutions/sspi-rs/issues/694)) ([797365417f](https://github.com/Devolutions/sspi-rs/commit/797365417f6f75ee175eb0f8eb01d0c0b907d01f)) 
+
+  RDP/NLA via FreeRDP and sspi-rs failed when a parent-domain user
+  (richard@rjm.local) authenticated to a host in a child domain
+  (TERMSRV/WIN-UE7FOENEK0D.dev.rjm.local) with
+  
+  > InvalidToken: Asn1 error: "Expected Application number tag 15 but got:
+  30"
+  
+  (Kerberos app tags: 15 = `AP-REP`, 30 = `KRB-ERROR` — i.e. we expected
+  an `AP-REP` from the server but got a `KRB-ERROR`.)
+  
+  ### Root cause
+  
+  sspi-rs has no cross-realm referral chasing. A KDC only issues tickets
+  for principals in its own realm; for a service in another realm it
+  returns a referral `TGT` (sname = krbtgt/<NEXT_REALM>), and the client
+  must re-send the `TGS-REQ` to that next realm. Instead, sspi-rs:
+  
+  1. Sent the `TGS-REQ` to the home KDC (RJM.LOCAL) → got back a referral
+  `TGT` for krbtgt/DEV.RJM.LOCAL.
+  2. Stuffed that referral `TGT` directly into the `AP_REQ` as if it were
+  the service ticket.
+  3. The target (WIN-UE7FOENEK0D) couldn't decrypt a ticket encrypted with
+  the trust key; returned `KRB-ERROR` 41 (`KRB_AP_ERR_MODIFIED`).
+  4. sspi-rs tried to parse that `KRB-ERROR` as an `AP-REP` --->
+  `InvalidToken`.
+  
+  ### What we changed
+  
+  Referral chasing loop in the `TGS` exchange
+  (src/kerberos/client/mod.rs): after each `TGS-REP`, if the returned
+  ticket sname is krbtgt/<NEXT_REALM>, re-issue the `TGS-REQ` for the same
+  SPN to that realm using the referral `TGT`, chaining the session key and
+  authenticator each hop, until the real service ticket comes back.
+  Bounded to 10 hops with a no-progress guard.
+  
+  Per-realm KDC routing (src/kerberos/mod.rs): split send into
+  `send`/`send_to` and added `send_for_realm`. The pinned kdc_url (KDC
+  proxy) stays authoritative for the home realm only; referral hops
+  resolve through `detect_kdc_url(realm)`.
+  
+  Helper and tests: extracted` referral_target_realm(sname)` (testable
+  predicate) with 5 unit tests.
+  
+  ### Key decisions
+  
+  Reuse the existing per-realm resolution chain rather than add new
+  config. Referral hops route via the existing `SSPI_KDC_URL_<REALM>` env
+  → krb5.conf → DNS SRV (_kerberos._tcp.<realm>) fallback. No new
+  FFI/config plumbing; set one env var (or rely on DNS) and it works.
+  
+  Pinned KDC = home realm only. A KDC proxy pinned to the home DC can't
+  decrypt a krbtgt/<NEXT_REALM> referral ticket, so referral hops must
+  reach the target realm's KDC.
+  
+  ### For further discussion
+  
+  (Because I'm trying to keep these changes focussed)
+  
+  Windows DNS SRV limitations
+  ([src/dns.rs](vscode-webview://0o7221v7omgideiac71911ugm38hnasf8rt28rpk2ejj6sje9p7m/src/dns.rs)):
+  the Windows path forces port :88 (ignores the SRV port) and reads only
+  the first SRV record (no multi-DC failover).
+  
+  Dotted env-var friction: SSPI_KDC_URL_DEV.RJM.LOCAL breaks PowerShell
+  $env: parsing. Add underscore-normalized aliasing
+  (SSPI_KDC_URL_DEV_RJM_LOCAL)?
+  
+  U2U + referral interaction: `additional_tickets` is only carried on the
+  first hop; edge case, likely fine, but worth a sanity check.
+
+### <!-- 4 -->Bug Fixes
+
+- Ntlm: NTLM_SSP_NEGOTIATE_KEY_EXCH flag usage ([#670](https://github.com/Devolutions/sspi-rs/issues/670)) ([a26a3692b0](https://github.com/Devolutions/sspi-rs/commit/a26a3692b029c5617f75a6dc618e5c7f78d3bc1b)) 
+
+- Package list handling ([#677](https://github.com/Devolutions/sspi-rs/issues/677)) ([ee75161bcd](https://github.com/Devolutions/sspi-rs/commit/ee75161bcdce0998b9173701129c0c7d607e1f17)) 
+
+- Disable `mechListMIC` for NTLM guest logon in negotiate module ([#680](https://github.com/Devolutions/sspi-rs/issues/680)) ([80bdedf387](https://github.com/Devolutions/sspi-rs/commit/80bdedf387da7341b95ff947d3bf68f48a0bc404)) 
+
+- Don't attempt to package tests during NuGet CI build ([#683](https://github.com/Devolutions/sspi-rs/issues/683)) ([958d9e5900](https://github.com/Devolutions/sspi-rs/commit/958d9e590052b496db66950de1a77ec17020dff7)) 
+
+- Server side CresSSP + SPNEGO + NTLM ([#689](https://github.com/Devolutions/sspi-rs/issues/689)) ([77c283167c](https://github.com/Devolutions/sspi-rs/commit/77c283167c2a5fe20b35c830a3f211136a6c7396)) 
+
+- Read channel bindings on the client authenticate step ([#695](https://github.com/Devolutions/sspi-rs/issues/695)) ([82741f6630](https://github.com/Devolutions/sspi-rs/commit/82741f6630c9b6038064caf8f508ac50e9f59738)) 
+
+### <!-- 7 -->Build
+
+- Add arm64 iOS simulator NuGet RID ([#693](https://github.com/Devolutions/sspi-rs/issues/693)) ([ab1c19f4a5](https://github.com/Devolutions/sspi-rs/commit/ab1c19f4a56159f0a7e6c4fe8915da3296c77edc)) 
+
+- Advance RustCrypto pins to the current rc.18/rc.33/rc.10 cluster ([#692](https://github.com/Devolutions/sspi-rs/issues/692)) ([095e3f341c](https://github.com/Devolutions/sspi-rs/commit/095e3f341c74d57daafb015bfb0226188e9e8e18)) 
+
+- Update RC and crypto dependencies to latest versions ([#699](https://github.com/Devolutions/sspi-rs/issues/699)) ([c5922db0f4](https://github.com/Devolutions/sspi-rs/commit/c5922db0f4921323856a041c5e2987e569e62056)) 
+
+
+
 ## [[0.21.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.20.1...sspi-v0.21.0)] - 2026-05-06
 
 ### <!-- 4 -->Bug Fixes
