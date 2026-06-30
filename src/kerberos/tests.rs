@@ -75,6 +75,7 @@ fn secbuffer_readonly_with_checksum() {
         dh_parameters: None,
         krb5_user_to_user: false,
         server: Some(Box::new(test_data::fake_server_properties())),
+        kdc_cache: std::collections::HashMap::new(),
     };
 
     // RPC header
@@ -255,6 +256,7 @@ fn integrity_only_wrap_decryption() {
         dh_parameters: None,
         krb5_user_to_user: false,
         server: None,
+        kdc_cache: std::collections::HashMap::new(),
     };
 
     let mut buffer = token_bytes;
