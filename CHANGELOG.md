@@ -6,6 +6,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.1...sspi-v0.21.2)] - 2026-07-15
+
+### <!-- 4 -->Bug Fixes
+
+- Classify UPN keytab principals as NT_ENTERPRISE ([#475](https://github.com/Devolutions/sspi-rs/issues/475)) ([491cf36fea](https://github.com/Devolutions/sspi-rs/commit/491cf36feafb01dac9490842d2472acc3602ffcb)) 
+
+  The keytab credentials branch passed keytab.principal.account_name() to
+  get_client_principal_name_type, which strips the @suffix of a UPN. Without
+  the @, the principal was misclassified as NT_PRINCIPAL instead of
+  NT_ENTERPRISE (MS-KILE 3.3.5.6.1).
+
+- Avoid panic on short SRV record RDATA on macOS ([#706](https://github.com/Devolutions/sspi-rs/issues/706)) ([a4ab1bbf0c](https://github.com/Devolutions/sspi-rs/commit/a4ab1bbf0c1c214e921a3189264885c7c278e909)) 
+
+  We've received crash reports from a client application on macOS showing
+  
+  > thread " (46265) panicked at src/dns.rs:172:56: range end index 2 out
+  of range for slice of length O
+  note: run with 'RUST_BACKTRACE=1' environment variable to display a
+  backtrace
+  
+  It's the first we've seen of it, but this client reports that it crashes
+  _consistently_ in his environment.
+  
+  The cited line lands exactly on `rdata[0..2]` inside the SRV-record
+  parser. Presumably the `rdata` buffer was empty so slicing it caused a
+  panic. But why is the record empty? I'm not sure.
+  
+  Every callback from the DNS query returns a `DnsSrvRecord `, where the
+  RDATA is at least 6 bytes (priority + weight + port, then the target
+  name). The code assumes a well formed SRV record. We see some
+  (potential) defects in the code:
+  
+  1. The parser is unguarded and trusts `rdata` to always be at least 6
+  bytes
+  2. I believe (but am not sure) that the normal "this realm has no SRV
+  record" outcome is **not** an empty callback, but a timeout.
+  mDNSResponder doesn't call back in time, our timeout fires and we return
+  an empty list. I guess in this case _something_ causes the SRV query to
+  be answered immediately, with a negative (empty) response. I'm equally
+  not sure what that could be: VPN resolver, enterprise DNS, a local stub
+  resolver.... Not sure.
+  
+  The (blind) fix:
+  
+  In `src/dns.rs`, in the macOS/iOS path:
+  
+  - From → TryFrom, returning `Err` when `rdata.len() < 6` instead of
+  slicing
+  - The query loop now filters on the `ADD` flag (the correct signal for
+  "this is a real, added record"), skipping negative responses and
+  removals rather than parsing them.
+  - Both skip cases are logged (`debug!`/`warn!`) with the record's
+  `rr_type`, `rr_class`, and `rdata_len`, so if a resolver sends something
+  unexpected again, we can see exactly what it returned instead of
+  guessing.
+  
+  For a realm with no SRV records, the empty/negative answer is ignored,
+  we now fall through to the UDP query and then return an empty host list.
+
+
+
 ## [[0.21.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.0...sspi-v0.21.1)] - 2026-06-26
 
 ### <!-- 1 -->Features
