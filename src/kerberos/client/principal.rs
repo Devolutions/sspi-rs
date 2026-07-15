@@ -10,6 +10,12 @@ use crate::{Username, UsernameParts};
 
 /// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
+//
+// FIXME: this should take a `&Username` instead of two `&str` parameters. It currently sniffs for an
+// `@` to guess the name type (and ignores `_domain` entirely), which is exactly the lossy heuristic
+// `Username`/`UsernameParts` exist to replace: the name type can be read off the user name format
+// directly (see `get_client_principal_name`). Once the deprecated string-based callers are gone (#708),
+// fold this into `get_client_principal_name`.
 pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
     if username.contains('@') {
         NT_ENTERPRISE
@@ -54,6 +60,11 @@ pub fn get_client_principal_name(username: &Username) -> ClientPrincipalName<'_>
     }
 }
 
+// FIXME: like `get_client_principal_name_type`, this should take a `&Username` (or a `UsernameParts`)
+// instead of two `&str` parameters. `get_client_principal_realm_impl` re-derives the suffix by
+// splitting on `@` to reconcile the `username`/`domain` pair, which duplicates the parsing
+// `Username::parts()` already does. Migrating callers off the raw-string form (#708) would
+// let this take the parsed username directly and drop the ad-hoc split.
 pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
     // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
 
