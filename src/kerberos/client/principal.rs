@@ -44,17 +44,14 @@ pub struct ClientPrincipalName<'a> {
 /// Derives the [`ClientPrincipalName`] for a principal from its user name format.
 pub fn get_client_principal_name(username: &Username) -> ClientPrincipalName<'_> {
     match username.parts() {
-        UsernameParts::UserPrincipalName { upn, suffix, .. } => ClientPrincipalName {
-            name: upn,
-            realm_domain: suffix,
+        UsernameParts::UserPrincipalName(parts) => ClientPrincipalName {
+            name: parts.upn(),
+            realm_domain: parts.suffix(),
             name_type: NT_ENTERPRISE,
         },
-        UsernameParts::DownLevelLogonName {
-            account_name,
-            netbios_domain,
-        } => ClientPrincipalName {
-            name: account_name,
-            realm_domain: netbios_domain.unwrap_or_default(),
+        UsernameParts::DownLevelLogonName(parts) => ClientPrincipalName {
+            name: parts.account_name(),
+            realm_domain: parts.netbios_domain().unwrap_or_default(),
             name_type: NT_PRINCIPAL,
         },
     }

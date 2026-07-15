@@ -105,8 +105,8 @@ use utils::map_keb_error_code_to_sspi_error;
 pub use utils::modpow;
 
 pub use self::auth_identity::{
-    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, KeytabIdentity, UserNameFormat, Username,
-    UsernameParts,
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, DownLevelLogonNameParts, KeytabIdentity,
+    UserNameFormat, UserPrincipalNameParts, Username, UsernameParts,
 };
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{CertificateRaw, SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
