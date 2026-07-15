@@ -106,6 +106,7 @@ pub use utils::modpow;
 
 pub use self::auth_identity::{
     AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, KeytabIdentity, UserNameFormat, Username,
+    UsernameParts,
 };
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{CertificateRaw, SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
@@ -1010,7 +1011,7 @@ where
     ///
     /// let names = ntlm.query_context_names().unwrap();
     /// println!("Username: {:?}", names.username.account_name());
-    /// println!("Domain: {:?}", names.username.domain_name());
+    /// println!("Parts: {:?}", names.username.parts());
     /// ```
     ///
     /// # MSDN

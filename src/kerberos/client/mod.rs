@@ -2,6 +2,7 @@ mod as_exchange;
 mod change_password;
 pub mod extractors;
 pub mod generators;
+pub mod principal;
 
 use std::io::Write;
 
@@ -23,7 +24,9 @@ use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions, GenerateKeytabPaDataOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep,
     generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_tgs_req,
-    get_client_principal_name_type, get_client_principal_realm,
+};
+use self::principal::{
+    ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
@@ -36,7 +39,6 @@ use crate::utils::{generate_random_symmetric_key, parse_target_name};
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, SecurityBuffer, SecurityStatus, SspiImpl,
-    UserNameFormat,
 };
 
 /// Inspects the `sname` of a ticket returned in a TGS-REP to decide whether it is a cross-realm
@@ -163,24 +165,17 @@ pub async fn initialize_security_context<'a>(
                     (username, password, realm.to_uppercase(), cname_type)
                 }
                 CredentialsBuffers::Keytab(keytab) => {
-                    // Classify the principal exactly like the AuthIdentity branch: a UPN must
-                    // reach `get_client_principal_name_type` with its `@suffix` intact so that it
-                    // is recognized as NT_ENTERPRISE (MS-KILE 3.3.5.6.1). For down-level logon
-                    // names, the account name and NetBIOS domain are passed separately, yielding
-                    // NT_PRINCIPAL as before.
-                    let (username, domain) = match keytab.principal.format() {
-                        UserNameFormat::UserPrincipalName => (keytab.principal.inner().to_string(), String::new()),
-                        UserNameFormat::DownLevelLogonName => (
-                            keytab.principal.account_name().to_string(),
-                            keytab.principal.domain_name().unwrap_or_default().to_string(),
-                        ),
-                    };
+                    // The name type is read off the principal's user name format explicitly.
+                    let ClientPrincipalName {
+                        name,
+                        realm_domain,
+                        name_type,
+                    } = get_client_principal_name(&keytab.principal);
 
-                    let realm = get_client_principal_realm(&username, &domain);
-                    let cname_type = get_client_principal_name_type(&username, &domain);
+                    let realm = get_client_principal_realm(name, realm_domain);
 
                     // No password: the keytab key is used directly for pre-auth.
-                    (username, String::new(), realm, cname_type)
+                    (name.to_owned(), String::new(), realm, name_type)
                 }
             };
             client.realm = Some(realm.clone());
