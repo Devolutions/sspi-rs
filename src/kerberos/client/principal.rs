@@ -65,7 +65,8 @@ pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
 
 fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, domain: &str) -> String {
     let domain = if domain.is_empty() {
-        if let Some((_left, right)) = username.split_once('@') {
+        // Match `Username::parse`, which splits a UPN on its *last* `@` (account names may contain `@`).
+        if let Some((_left, right)) = username.rsplit_once('@') {
             right.to_string()
         } else {
             String::new()
@@ -188,5 +189,13 @@ mod tests {
 
         let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@test.tbt.com", "");
         assert_eq!(realm, "STAGE.TBT.COM");
+    }
+
+    #[test]
+    fn realm_from_username_splits_on_last_at() {
+        // `Username::parse` splits a UPN on its *last* `@`, so the realm must be derived from the
+        // suffix after the final `@` even when the account name itself contains an `@`.
+        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@dept@tbt.com", "");
+        assert_eq!(realm, "TBT.COM");
     }
 }

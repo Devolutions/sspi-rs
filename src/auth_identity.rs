@@ -384,13 +384,20 @@ impl From<AuthIdentity> for AuthIdentityBuffers {
     fn from(credentials: AuthIdentity) -> Self {
         let password: &str = credentials.password.as_ref().as_ref();
 
-        let domain = match credentials.username.parts() {
-            UsernameParts::UserPrincipalName { suffix, .. } => suffix,
-            UsernameParts::DownLevelLogonName { netbios_domain, .. } => netbios_domain.unwrap_or_default(),
+        // Encode the username so that it round-trips back to the same format through
+        // `TryFrom<&AuthIdentityBuffers>` (which parses `user` and treats `domain` as a NetBIOS
+        // domain). A UPN is stored whole in `user` with an empty `domain` (parsing recovers the UPN
+        // via its `@`), while a down-level logon name keeps the `(account_name, netbios_domain)` split.
+        let (user, domain) = match credentials.username.parts() {
+            UsernameParts::UserPrincipalName { upn, .. } => (upn, ""),
+            UsernameParts::DownLevelLogonName {
+                account_name,
+                netbios_domain,
+            } => (account_name, netbios_domain.unwrap_or_default()),
         };
 
         Self {
-            user: credentials.username.account_name().into(),
+            user: user.into(),
             domain: domain.into(),
             password: ZeroizedUtf16String(password.into()).into(),
         }
@@ -882,5 +889,28 @@ mod tests {
         let upn = Username::new_upn("alice", "example").expect("upn");
         let dlln = Username::new_down_level_logon_name("alice", "example").expect("dlln");
         assert!(!upn.eq_ignore_ascii_case(&dlln));
+    }
+
+    #[test]
+    fn auth_identity_buffers_round_trip_preserves_format() {
+        // Converting to `AuthIdentityBuffers` and back must preserve the user name format: a UPN
+        // must not silently degrade into a down-level logon name.
+        for username in [
+            Username::new_upn("alice", "example.com").expect("upn"),
+            Username::new_upn("bob@dept", "example.com").expect("upn with @ in account name"),
+            Username::new_down_level_logon_name("carol", "EXAMPLE").expect("dlln"),
+            Username::parse("dave").expect("bare name"),
+        ] {
+            let identity = AuthIdentity {
+                username: username.clone(),
+                password: String::new().into(),
+            };
+
+            let buffers = AuthIdentityBuffers::from(identity);
+            let round_trip = AuthIdentity::try_from(&buffers).expect("round-trip");
+
+            assert_eq!(round_trip.username, username);
+            assert_eq!(round_trip.username.format(), username.format());
+        }
     }
 }
