@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.1...sspi-v0.21.2)] - 2026-07-15
+
+### <!-- 4 -->Bug Fixes
+
+- Classify UPN keytab principals as NT_ENTERPRISE ([#475](https://github.com/Devolutions/sspi-rs/issues/475)) ([491cf36fea](https://github.com/Devolutions/sspi-rs/commit/491cf36feafb01dac9490842d2472acc3602ffcb)) 
+
+  The keytab credentials branch passed keytab.principal.account_name() to
+  get_client_principal_name_type, which strips the @suffix of a UPN. Without
+  the @, the principal was misclassified as NT_PRINCIPAL instead of
+  NT_ENTERPRISE (MS-KILE 3.3.5.6.1).
+
+- Avoid panic on short SRV record RDATA on macOS ([#706](https://github.com/Devolutions/sspi-rs/issues/706)) ([a4ab1bbf0c](https://github.com/Devolutions/sspi-rs/commit/a4ab1bbf0c1c214e921a3189264885c7c278e909))
+
 ## [[0.21.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.0...sspi-v0.21.1)] - 2026-06-26
 
 ### <!-- 1 -->Features
