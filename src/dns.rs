@@ -11,7 +11,11 @@ cfg_if::cfg_if! {
         use std::ptr::{null_mut};
         use core::ffi::{c_void};
 
-        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<String> {
+        /// Queries SRV records for `name`, returning each `(target, port)`.
+        ///
+        /// `DnsQuery_W` yields a linked list that may include non-SRV records (e.g. A records for
+        /// the SRV targets), so we walk `pNext` and keep only SRV entries.
+        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<(String, u16)> {
             let mut records = Vec::new();
 
             let mut p_query_results: *mut DNS_RECORDA = null_mut();
@@ -30,23 +34,29 @@ cfg_if::cfg_if! {
 
             match dns_status.ok() {
                 Ok(()) => {
-                    // SAFETY: `p_query_results` in non-null because `dns_status` is Ok.
-                    let query_results = unsafe { *p_query_results };
-                    // SAFETY: `query_results.Data` is guaranteed to contain `SRV` because
-                    // of arguments to `DnsQuery_W`.
-                    let p_name_target = unsafe { query_results.Data.Srv.pNameTarget };
-                    let name_target = PWSTR::from_raw(p_name_target.as_ptr() as *mut u16);
-                    // SAFETY: `name_target` is guaranteed to be correct at this point.
-                    let name_target = unsafe {name_target.to_string()};
+                    let mut p_record = p_query_results;
+                    while !p_record.is_null() {
+                        // SAFETY: `p_record` is non-null and points to a valid `DNS_RECORDA`.
+                        let record = unsafe { *p_record };
 
-                    if let Ok(name_target) = name_target {
-                        records.push(name_target);
+                        if record.wType == DNS_TYPE_SRV.0 {
+                            // SAFETY: `wType == DNS_TYPE_SRV` guarantees the `Srv` union member is active.
+                            let srv = unsafe { record.Data.Srv };
+                            // `DnsQuery_W` returns wide strings even in the `*A` record struct.
+                            let name_target = PWSTR::from_raw(srv.pNameTarget.as_ptr() as *mut u16);
+                            // SAFETY: `name_target` points to a valid, null-terminated UTF-16 string.
+                            if let Ok(name_target) = unsafe { name_target.to_string() } {
+                                records.push((name_target, srv.wPort));
+                            }
+                        }
+
+                        p_record = record.pNext;
                     }
                 }
                 Err(error) => error!(%error, "DnsQuery_W failed"),
             }
 
-            // SAFETY: `p_query_results` is not null.
+            // SAFETY: `DnsFree` tolerates a null pointer.
             unsafe {
                 DnsFree(Some(p_query_results as *const c_void), DnsFreeRecordList);
             }
@@ -136,14 +146,14 @@ cfg_if::cfg_if! {
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
             if !krb_tcp_srv.is_empty() {
-                return krb_tcp_srv.iter().map(|x| format!("tcp://{x}:88")).collect()
+                return srv_records_to_kdc_urls("tcp", &krb_tcp_srv)
             }
 
             let krb_udp_name = &format!("_kerberos._udp.{domain}");
             let krb_udp_srv = dns_query_srv_records(krb_udp_name);
 
             if !krb_udp_srv.is_empty() {
-                return krb_udp_srv.iter().map(|x| format!("udp://{x}:88")).collect()
+                return srv_records_to_kdc_urls("udp", &krb_udp_srv)
             }
 
             Vec::new()
@@ -334,14 +344,16 @@ cfg_if::cfg_if! {
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
             if !krb_tcp_srv.is_empty() {
-                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", &x.target, x.port)).collect()
+                let records: Vec<(String, u16)> = krb_tcp_srv.into_iter().map(|x| (x.target, x.port)).collect();
+                return srv_records_to_kdc_urls("tcp", &records)
             }
 
             let krb_udp_name = &format!("_kerberos._udp.{domain}");
             let krb_udp_srv = dns_query_srv_records(krb_udp_name);
 
             if !krb_udp_srv.is_empty() {
-                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", &x.target, x.port)).collect()
+                let records: Vec<(String, u16)> = krb_udp_srv.into_iter().map(|x| (x.target, x.port)).collect();
+                return srv_records_to_kdc_urls("udp", &records)
             }
 
             Vec::new()
@@ -436,23 +448,15 @@ cfg_if::cfg_if! {
 
             if let Some(resolver) = get_dns_resolver(domain) {
                 if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._tcp.{domain}"))) {
-                    for record in records {
-                        let port = record.port();
-                        let target_name = record.target().to_string();
-                        let target_name = target_name.trim_end_matches('.').to_string();
-                        let kdc_host = format!("tcp://{}:{}", &target_name, port);
-                        kdc_hosts.push(kdc_host);
-                    }
+                    let records: Vec<(String, u16)> =
+                        records.into_iter().map(|r| (r.target().to_string(), r.port())).collect();
+                    kdc_hosts.extend(srv_records_to_kdc_urls("tcp", &records));
                 }
 
                 if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._udp.{domain}"))) {
-                    for record in records {
-                        let port = record.port();
-                        let target_name = record.target().to_string();
-                        let target_name = target_name.trim_end_matches('.').to_string();
-                        let kdc_host = format!("udp://{}:{}", &target_name, port);
-                        kdc_hosts.push(kdc_host);
-                    }
+                    let records: Vec<(String, u16)> =
+                        records.into_iter().map(|r| (r.target().to_string(), r.port())).collect();
+                    kdc_hosts.extend(srv_records_to_kdc_urls("udp", &records));
                 }
             }
 
@@ -490,6 +494,21 @@ where
         }
         Err(_) => new_runtime().block_on(fut.into_future()),
     }
+}
+
+/// Builds `scheme://host:port` KDC URLs from resolved SRV `(target, port)` records.
+///
+/// DNS returns absolute names with a trailing dot (`dc.example.com.`); it is stripped so the
+/// result parses as a URL host.
+///
+/// Limitation: SRV priority/weight (RFC 2782) are not applied here — candidates keep the order the
+/// platform resolver returned (Windows `DnsQuery_W` already sorts by priority/weight; hickory and
+/// `async_dnssd` do not). Proper priority ordering + weighted selection is a follow-up.
+fn srv_records_to_kdc_urls(scheme: &str, records: &[(String, u16)]) -> Vec<String> {
+    records
+        .iter()
+        .map(|(target, port)| format!("{scheme}://{}:{port}", target.trim_end_matches('.')))
+        .collect()
 }
 
 #[allow(unused_variables)]
@@ -602,5 +621,36 @@ mod apple_srv_tests {
             DnsSrvRecord::from_rdata(&rdata),
             Err(SrvRecordParseError::MalformedTarget)
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::srv_records_to_kdc_urls;
+
+    #[test]
+    fn builds_scheme_host_port_and_preserves_order() {
+        let records = vec![("dc1.example.com".to_owned(), 88), ("dc2.example.com".to_owned(), 8888)];
+        assert_eq!(
+            srv_records_to_kdc_urls("tcp", &records),
+            vec![
+                "tcp://dc1.example.com:88".to_owned(),
+                "tcp://dc2.example.com:8888".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn strips_trailing_dot_from_absolute_names() {
+        let records = vec![("dc.example.com.".to_owned(), 88)];
+        assert_eq!(
+            srv_records_to_kdc_urls("udp", &records),
+            vec!["udp://dc.example.com:88".to_owned()]
+        );
+    }
+
+    #[test]
+    fn empty_input_yields_empty() {
+        assert!(srv_records_to_kdc_urls("tcp", &[]).is_empty());
     }
 }
