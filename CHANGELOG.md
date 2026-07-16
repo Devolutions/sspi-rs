@@ -21,8 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accurately the no-separator case. Matching is exhaustive over the two
   Microsoft user name formats.
 
-
-
 ## [[0.21.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.1...sspi-v0.21.2)] - 2026-07-15
 
 ### <!-- 4 -->Bug Fixes
