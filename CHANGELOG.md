@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.2...sspi-v0.21.3)] - 2026-07-16
+
+### <!-- 1 -->Features
+
+- Add format-tagged Username::parts view ([#709](https://github.com/Devolutions/sspi-rs/issues/709)) ([80492e4c61](https://github.com/Devolutions/sspi-rs/commit/80492e4c616f7e475391d9b877759b463733fe82)) 
+
+  Add `UsernameParts`, a format-tagged, borrowed view into a `Username`,
+  and `Username::parts()` returning it. Each variant only exposes the
+  fields that are meaningful for its user name format, so a UPN suffix can
+  no longer be mistaken for a NetBIOS domain: the `UserPrincipalName` arm
+  has a `suffix` (and the full `upn`) but no "domain" field, while
+  `DownLevelLogonName` carries an `Option<netbios_domain>` that models
+  accurately the no-separator case. Matching is exhaustive over the two
+  Microsoft user name formats.
+
 ## [[0.21.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.1...sspi-v0.21.2)] - 2026-07-15
 
 ### <!-- 4 -->Bug Fixes
