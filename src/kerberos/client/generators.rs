@@ -1,5 +1,3 @@
-use std::env;
-use std::path::Path;
 use std::str::FromStr;
 
 use bitflags;
@@ -19,8 +17,8 @@ use picky_krb::constants::key_usages::{
 };
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REP_MSG_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV,
-    NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE,
-    PA_PAC_OPTIONS_TYPE, PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
+    NET_BIOS_ADDR_TYPE, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PA_PAC_OPTIONS_TYPE,
+    PA_PAC_REQUEST_TYPE, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE, TGT_REQ_MSG_TYPE,
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
@@ -42,9 +40,34 @@ use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, KERBEROS_VERSION};
-use crate::krb::Krb5Conf;
 use crate::utils::parse_target_name;
 use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
+
+/// Moved to [`super::principal::get_client_principal_name_type`].
+#[allow(
+    clippy::deprecated_semver,
+    reason = "`<next-version>` placeholder filled in at release time"
+)]
+#[deprecated(
+    since = "<next-version>",
+    note = "moved to the `kerberos::client::principal` module — see https://github.com/Devolutions/sspi-rs/issues/708"
+)]
+pub fn get_client_principal_name_type(username: &str, domain: &str) -> u8 {
+    super::principal::get_client_principal_name_type(username, domain)
+}
+
+/// Moved to [`super::principal::get_client_principal_realm`].
+#[allow(
+    clippy::deprecated_semver,
+    reason = "`<next-version>` placeholder filled in at release time"
+)]
+#[deprecated(
+    since = "<next-version>",
+    note = "moved to the `kerberos::client::principal` module — see https://github.com/Devolutions/sspi-rs/issues/708"
+)]
+pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
+    super::principal::get_client_principal_realm(username, domain)
+}
 
 const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 const NONCE_LEN: usize = 4;
@@ -75,83 +98,6 @@ pub const AUTHENTICATOR_DEFAULT_CHECKSUM: [u8; 24] = [
     0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00,
 ];
-
-/// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
-/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
-pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
-    if username.contains('@') {
-        NT_ENTERPRISE
-    } else {
-        NT_PRINCIPAL
-    }
-}
-
-pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
-    // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
-
-    let krb5_config = env::var("KRB5_CONFIG").unwrap_or_else(|_| "/etc/krb5.conf:/usr/local/etc/krb5.conf".to_string());
-    let krb5_conf_paths = krb5_config.split(':').map(Path::new).collect::<Vec<&Path>>();
-
-    get_client_principal_realm_impl(&krb5_conf_paths, username, domain)
-}
-
-fn get_client_principal_realm_impl(krb5_conf_paths: &[&Path], username: &str, domain: &str) -> String {
-    let domain = if domain.is_empty() {
-        if let Some((_left, right)) = username.split_once('@') {
-            right.to_string()
-        } else {
-            String::new()
-        }
-    } else {
-        domain.to_string()
-    };
-
-    for krb5_conf_path in krb5_conf_paths {
-        if !krb5_conf_path.exists() {
-            continue;
-        }
-
-        if let Some(krb5_conf) = Krb5Conf::new_from_file(krb5_conf_path)
-            && let Some(mappings) = krb5_conf.get_values_in_section(&["domain_realm"])
-        {
-            for (mapping_domain, realm) in mappings {
-                if matches_domain(&domain, mapping_domain) {
-                    return realm.to_owned();
-                }
-            }
-        }
-    }
-
-    domain.to_uppercase()
-}
-
-/// Checks if the given domain matches the mapping domain (usually from krb5.conf file).
-///
-/// # Mapping rules
-///
-/// We follow the MIT KRB5 behavior: https://github.com/krb5/krb5/commit/8f5ce824012f2caab6770df464f096c38dc4cb2e.
-///
-/// - If the mapping domain starts with a dot (e.g., `.example.com`),
-///   it matches all hosts under the domain, but not the host with the name `example.com`.
-///   For example, "test.example.com" or "d1.example.com" will match `.example.com`, but `example.com` will not.
-/// - If the mapping domain does not start with a dot (e.g., `example.com`),
-///   it matches all hosts under the domain `example.com` (including `example.com`).
-///
-/// So, the mappings order in `krb5.conf` matters.
-fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
-    let domain = domain.to_lowercase();
-    let mapping_domain = mapping_domain.to_lowercase();
-
-    if mapping_domain.starts_with('.') {
-        // If mapping_domain starts with a dot, it matches subdomains only
-        // e.g., `.example.com` matches `test.example.com` but not `example.com`
-        domain.ends_with(&mapping_domain)
-    } else {
-        // If mapping_domain doesn't start with a dot, it matches the domain itself
-        // and all subdomains (e.g., `example.com` matches `example.com` and `test.example.com`).
-        domain == mapping_domain || domain.ends_with(&format!(".{mapping_domain}"))
-    }
-}
 
 pub(super) fn generate_tgt_req(sname: &[&str]) -> Result<TgtReq> {
     let sname = sname
@@ -894,9 +840,9 @@ pub fn generate_krb_priv_request(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use picky_krb::constants::types::NT_PRINCIPAL;
 
-    const KRB5_CONFIG_FILE_PATH: &str = "test_assets/krb5.conf";
+    use super::*;
 
     #[test]
     fn test_set_flags() {
@@ -925,42 +871,6 @@ mod tests {
         checksum_values.set_flags(flags);
         let expected_bytes = [0x3E, 0x00, 0x00, 0x00];
         assert_eq!(checksum_values.inner[20..24], expected_bytes);
-    }
-
-    #[test]
-    fn test_get_client_principal_realm_from_domain() {
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "TBT.COM");
-        assert_eq!(realm, "TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "C1.DEV.TBT.COM");
-        assert_eq!(realm, "TEST.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "P1.C2.DEV.TBT.COM");
-        assert_eq!(realm, "TEST.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "DEV.TBT.COM");
-        assert_eq!(realm, "DEV.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "", "TEST.TBT.COM");
-        assert_eq!(realm, "STAGE.TBT.COM");
-    }
-
-    #[test]
-    fn test_get_client_principal_realm_from_username() {
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@tbt.com", "");
-        assert_eq!(realm, "TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@c1.dev.tbt.com", "");
-        assert_eq!(realm, "TEST.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@p1.c2.dev.tbt.com", "");
-        assert_eq!(realm, "TEST.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@dev.tbt.com", "");
-        assert_eq!(realm, "DEV.TBT.COM");
-
-        let realm = get_client_principal_realm_impl(&[Path::new(KRB5_CONFIG_FILE_PATH)], "user@test.tbt.com", "");
-        assert_eq!(realm, "STAGE.TBT.COM");
     }
 
     fn cname_components(username: &str) -> Vec<String> {

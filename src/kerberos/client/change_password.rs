@@ -10,8 +10,9 @@ use crate::kerberos::client::extractors::{
 };
 use crate::kerberos::client::generators::{
     EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_as_req_kdc_body,
-    generate_authenticator, generate_krb_priv_request, get_client_principal_name_type, get_client_principal_realm,
+    generate_authenticator, generate_krb_priv_request,
 };
+use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN, client};

@@ -44,6 +44,116 @@ pub struct Username {
     sep_idx: Option<usize>,
 }
 
+/// A format-tagged, borrowed view into the components of a [`Username`].
+///
+/// Unlike the (deprecated) [`Username::domain_name`] accessor, each variant only exposes the
+/// components that are actually meaningful for its [`UserNameFormat`]. This makes it impossible to
+/// mistake a UPN suffix for a NetBIOS domain name (or vice versa): the [`UserPrincipalNameParts`]
+/// arm has no "domain" component at all, only a suffix.
+///
+/// Matching is exhaustive over the two [User Name Formats], so callers are forced to handle both.
+///
+/// A `UsernameParts` can only be obtained from [`Username::parts`]; the variant payloads are opaque
+/// (accessor-only, not constructible outside this crate), so a view can never be forged into an
+/// inconsistent state.
+///
+/// [User Name Formats]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum UsernameParts<'a> {
+    /// [User principal name] components, e.g. `account_name@suffix`.
+    ///
+    /// [User principal name]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats#user-principal-name
+    UserPrincipalName(UserPrincipalNameParts<'a>),
+    /// [Down-level logon name] components, e.g. `netbios_domain\account_name`.
+    ///
+    /// [Down-level logon name]: https://learn.microsoft.com/en-us/windows/win32/secauthn/user-name-formats#down-level-logon-name
+    DownLevelLogonName(DownLevelLogonNameParts<'a>),
+}
+
+/// The components of a [user principal name](UsernameParts::UserPrincipalName).
+///
+/// Obtained via [`Username::parts`]; the components are opaque and exposed through accessors only,
+/// so this type can never be constructed with inconsistent fields.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct UserPrincipalNameParts<'a> {
+    account_name: &'a str,
+    suffix: &'a str,
+    upn: &'a str,
+}
+
+impl<'a> UserPrincipalNameParts<'a> {
+    /// The account name, i.e. the part before the `@`.
+    pub fn account_name(&self) -> &'a str {
+        self.account_name
+    }
+
+    /// The UPN suffix, i.e. the part after the `@`. This is *not* a NetBIOS domain name.
+    pub fn suffix(&self) -> &'a str {
+        self.suffix
+    }
+
+    /// The complete user principal name (`account_name@suffix`), borrowed as-is.
+    ///
+    /// For a UPN, this whole string is what identifies the user (e.g. it is used verbatim as the
+    /// NT-ENTERPRISE client name in Kerberos), unlike a down-level logon name where only
+    /// `account_name` does. Prefer this over reconstructing the string from `account_name`/`suffix`
+    /// or reaching for [`Username::inner`].
+    pub fn upn(&self) -> &'a str {
+        self.upn
+    }
+}
+
+/// The components of a [down-level logon name](UsernameParts::DownLevelLogonName).
+///
+/// Obtained via [`Username::parts`]; the components are opaque and exposed through accessors only,
+/// so this type can never be constructed with inconsistent fields.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct DownLevelLogonNameParts<'a> {
+    account_name: &'a str,
+    netbios_domain: Option<&'a str>,
+}
+
+impl<'a> DownLevelLogonNameParts<'a> {
+    /// The account name, i.e. the part after the `\` (or the whole value when there is no separator).
+    pub fn account_name(&self) -> &'a str {
+        self.account_name
+    }
+
+    /// The NetBIOS domain name, i.e. the part before the `\`, or `None` when the value has no separator.
+    pub fn netbios_domain(&self) -> Option<&'a str> {
+        self.netbios_domain
+    }
+}
+
+impl UsernameParts<'_> {
+    /// Compares two username views for equality, ignoring ASCII case.
+    ///
+    /// Equality is *format-aware*: a [`UsernameParts::UserPrincipalName`] and a
+    /// [`UsernameParts::DownLevelLogonName`] are never equal, even if their account names and their
+    /// UPN suffix / NetBIOS domain happen to match case-insensitively. Because the format is part of
+    /// the comparison, a UPN suffix is only ever compared against another UPN suffix, and a NetBIOS
+    /// domain only ever against another NetBIOS domain: the two can never be conflated.
+    pub fn eq_ignore_ascii_case(&self, other: &UsernameParts<'_>) -> bool {
+        match (self, other) {
+            (UsernameParts::UserPrincipalName(lhs), UsernameParts::UserPrincipalName(rhs)) => {
+                // `upn` is fully determined by `account_name` and `suffix`, so it needs no comparison.
+                lhs.account_name.eq_ignore_ascii_case(rhs.account_name) && lhs.suffix.eq_ignore_ascii_case(rhs.suffix)
+            }
+            (UsernameParts::DownLevelLogonName(lhs), UsernameParts::DownLevelLogonName(rhs)) => {
+                let domains_equal = match (lhs.netbios_domain, rhs.netbios_domain) {
+                    (Some(lhs_domain), Some(rhs_domain)) => lhs_domain.eq_ignore_ascii_case(rhs_domain),
+                    (None, None) => true,
+                    _ => false,
+                };
+
+                lhs.account_name.eq_ignore_ascii_case(rhs.account_name) && domains_equal
+            }
+            // Different formats are distinct identities.
+            _ => false,
+        }
+    }
+}
+
 impl Username {
     /// Builds a user principal name from an account name and an UPN suffix
     pub fn new_upn(account_name: &str, upn_suffix: &str) -> Result<Self, UsernameError> {
@@ -71,6 +181,16 @@ impl Username {
 
         if netbios_domain_name.contains(['\\', '@']) {
             return Err(UsernameError::MixedFormat);
+        }
+
+        // An empty NetBIOS domain means "no domain": represent it accurately as a separator-less
+        // down-level logon name (`netbios_domain == None`) rather than a distinct `Some("")`.
+        if netbios_domain_name.is_empty() {
+            return Ok(Self {
+                value: account_name.to_owned(),
+                format: UserNameFormat::DownLevelLogonName,
+                sep_idx: None,
+            });
         }
 
         Ok(Self {
@@ -123,7 +243,44 @@ impl Username {
         self.format
     }
 
+    /// Returns a format-tagged, borrowed view into the components of the username.
+    ///
+    /// Prefer this over [`Username::domain_name`]: matching on the returned [`UsernameParts`]
+    /// forces both user name formats to be handled explicitly and prevents confusing a UPN
+    /// suffix with a NetBIOS domain name.
+    pub fn parts(&self) -> UsernameParts<'_> {
+        match self.format {
+            UserNameFormat::UserPrincipalName => {
+                // A user principal name is always built with a separator (the `@`).
+                let idx = self.sep_idx.expect("a UPN always has an `@` separator");
+                UsernameParts::UserPrincipalName(UserPrincipalNameParts {
+                    account_name: &self.value[..idx],
+                    suffix: &self.value[idx + 1..],
+                    upn: &self.value,
+                })
+            }
+            UserNameFormat::DownLevelLogonName => match self.sep_idx {
+                Some(idx) => UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                    account_name: &self.value[idx + 1..],
+                    netbios_domain: Some(&self.value[..idx]),
+                }),
+                None => UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                    account_name: &self.value,
+                    netbios_domain: None,
+                }),
+            },
+        }
+    }
+
     /// May return an UPN suffix or NetBIOS domain name depending on the internal format
+    #[allow(
+        clippy::deprecated_semver,
+        reason = "`<next-version>` placeholder filled in at release time"
+    )]
+    #[deprecated(
+        since = "<next-version>",
+        note = "conflates UPN suffix with NetBIOS domain; match on `Username::parts()` instead — see https://github.com/Devolutions/sspi-rs/issues/708"
+    )]
     pub fn domain_name(&self) -> Option<&str> {
         self.sep_idx.map(|idx| match self.format {
             UserNameFormat::UserPrincipalName => &self.value[idx + 1..],
@@ -141,6 +298,15 @@ impl Username {
         } else {
             &self.value
         }
+    }
+
+    /// Compares two usernames for equality, ignoring ASCII case.
+    ///
+    /// This is a case-insensitive counterpart to the (case-sensitive) [`PartialEq`] implementation,
+    /// matching Windows' case-insensitive treatment of account and domain names. Usernames of
+    /// different [formats](UserNameFormat) are never equal (see [`UsernameParts::eq_ignore_ascii_case`]).
+    pub fn eq_ignore_ascii_case(&self, other: &Username) -> bool {
+        self.parts().eq_ignore_ascii_case(&other.parts())
     }
 }
 
@@ -253,9 +419,20 @@ impl From<AuthIdentity> for AuthIdentityBuffers {
     fn from(credentials: AuthIdentity) -> Self {
         let password: &str = credentials.password.as_ref().as_ref();
 
+        // Encode the username so that it round-trips back to the same format through
+        // `TryFrom<&AuthIdentityBuffers>` (which parses `user` and treats `domain` as a NetBIOS
+        // domain). A UPN is stored whole in `user` with an empty `domain` (parsing recovers the UPN
+        // via its `@`), while a down-level logon name keeps the `(account_name, netbios_domain)` split.
+        let (user, domain) = match credentials.username.parts() {
+            UsernameParts::UserPrincipalName(parts) => (parts.upn(), ""),
+            UsernameParts::DownLevelLogonName(parts) => {
+                (parts.account_name(), parts.netbios_domain().unwrap_or_default())
+            }
+        };
+
         Self {
-            user: credentials.username.account_name().into(),
-            domain: credentials.username.domain_name().unwrap_or_default().into(),
+            user: user.into(),
+            domain: domain.into(),
             password: ZeroizedUtf16String(password.into()).into(),
         }
     }
@@ -613,18 +790,35 @@ mod tests {
             let initial_username = res.unwrap();
             assert_eq!(initial_username.inner(), value);
 
-            if let Some(domain_name) = initial_username.domain_name() {
-                let upn = Username::new_upn(initial_username.account_name(), domain_name).expect("UPN");
-                assert_eq!(upn.account_name(), initial_username.account_name());
-                assert_eq!(upn.domain_name(), initial_username.domain_name());
+            // The "domain-ish" component, whatever its format-specific meaning is.
+            let domain = match initial_username.parts() {
+                UsernameParts::UserPrincipalName(upn) => Some(upn.suffix()),
+                UsernameParts::DownLevelLogonName(dlln) => dlln.netbios_domain(),
+            };
+
+            if let Some(domain) = domain {
+                let reconstructed_upn = Username::new_upn(initial_username.account_name(), domain).expect("UPN");
+                assert_eq!(reconstructed_upn.account_name(), initial_username.account_name());
+                assert_eq!(
+                    reconstructed_upn.parts(),
+                    UsernameParts::UserPrincipalName(UserPrincipalNameParts {
+                        account_name: initial_username.account_name(),
+                        suffix: domain,
+                        upn: reconstructed_upn.inner(),
+                    })
+                );
             }
 
             // A down-level user name can't contain a @ in the account name
             if !initial_username.account_name().contains('@') {
-                let netbios_name = Username::new(initial_username.account_name(), initial_username.domain_name()).expect("NetBIOS");
+                let netbios_name = Username::new(initial_username.account_name(), domain).expect("NetBIOS");
                 assert_eq!(netbios_name.format(), UserNameFormat::DownLevelLogonName);
                 assert_eq!(netbios_name.account_name(), initial_username.account_name());
-                assert_eq!(netbios_name.domain_name(), initial_username.domain_name());
+                let netbios_domain = match netbios_name.parts() {
+                    UsernameParts::DownLevelLogonName(dlln) => dlln.netbios_domain(),
+                    UsernameParts::UserPrincipalName(_) => unreachable!("constructed as a down-level logon name"),
+                };
+                assert_eq!(netbios_domain, domain);
             }
         })
     }
@@ -640,8 +834,15 @@ mod tests {
             let username = Username::new_upn(&account_name, &domain_name).expect("UPN");
 
             assert_eq!(username.account_name(), account_name);
-            assert_eq!(username.domain_name(), Some(domain_name.as_str()));
             assert_eq!(username.format(), UserNameFormat::UserPrincipalName);
+            assert_eq!(
+                username.parts(),
+                UsernameParts::UserPrincipalName(UserPrincipalNameParts {
+                    account_name: &account_name,
+                    suffix: &domain_name,
+                    upn: username.inner(),
+                })
+            );
 
             check_round_trip_property(&username);
         })
@@ -653,10 +854,115 @@ mod tests {
             let username = Username::new_down_level_logon_name(&account_name, &domain_name).expect("down-level logon name");
 
             assert_eq!(username.account_name(), account_name);
-            assert_eq!(username.domain_name(), Some(domain_name.as_str()));
             assert_eq!(username.format(), UserNameFormat::DownLevelLogonName);
+            assert_eq!(
+                username.parts(),
+                UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                    account_name: &account_name,
+                    netbios_domain: Some(&domain_name),
+                })
+            );
 
             check_round_trip_property(&username);
         })
+    }
+
+    #[test]
+    fn down_level_logon_name_without_domain_parts() {
+        // When a bare name (no `\` and no `@`) is parsed, it is a down-level logon name with no
+        // NetBIOS domain: the `netbios_domain` field must be `None`.
+        proptest!(|(account_name in "[a-zA-Z0-9.]{1,3}")| {
+            let username = Username::parse(&account_name).expect("parse");
+
+            assert_eq!(username.account_name(), account_name);
+            assert_eq!(username.format(), UserNameFormat::DownLevelLogonName);
+            assert_eq!(
+                username.parts(),
+                UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                    account_name: &account_name,
+                    netbios_domain: None,
+                })
+            );
+
+            check_round_trip_property(&username);
+        })
+    }
+
+    #[test]
+    fn eq_ignore_ascii_case_matches_within_format() {
+        // UPNs that differ only by ASCII case are equal.
+        let upn = Username::new_upn("Alice", "Example.COM").expect("upn");
+        let upn_other_case = Username::new_upn("alice", "example.com").expect("upn");
+        assert!(upn.eq_ignore_ascii_case(&upn_other_case));
+
+        // Down-level logon names that differ only by ASCII case are equal.
+        let dlln = Username::new_down_level_logon_name("Bob", "EXAMPLE").expect("dlln");
+        let dlln_other_case = Username::new_down_level_logon_name("bob", "example").expect("dlln");
+        assert!(dlln.eq_ignore_ascii_case(&dlln_other_case));
+
+        // Bare down-level logon names (no NetBIOS domain) compare on the account name only.
+        let bare = Username::parse("Carol").expect("parse");
+        let bare_other_case = Username::parse("carol").expect("parse");
+        assert!(bare.eq_ignore_ascii_case(&bare_other_case));
+    }
+
+    #[test]
+    fn eq_ignore_ascii_case_distinguishes_components_and_formats() {
+        // Different account names are not equal.
+        let alice = Username::new_upn("alice", "example.com").expect("upn");
+        let bob = Username::new_upn("bob", "example.com").expect("upn");
+        assert!(!alice.eq_ignore_ascii_case(&bob));
+
+        // A present NetBIOS domain never equals an absent one.
+        let with_domain = Username::new_down_level_logon_name("alice", "EXAMPLE").expect("dlln");
+        let without_domain = Username::parse("alice").expect("parse");
+        assert!(!with_domain.eq_ignore_ascii_case(&without_domain));
+
+        // A UPN and a down-level logon name are distinct identities even with matching components:
+        // the UPN suffix must never be conflated with the NetBIOS domain across formats.
+        let upn = Username::new_upn("alice", "example").expect("upn");
+        let dlln = Username::new_down_level_logon_name("alice", "example").expect("dlln");
+        assert!(!upn.eq_ignore_ascii_case(&dlln));
+    }
+
+    #[test]
+    fn auth_identity_buffers_round_trip_preserves_format() {
+        // Converting to `AuthIdentityBuffers` and back must preserve the user name format: a UPN
+        // must not silently degrade into a down-level logon name.
+        for username in [
+            Username::new_upn("alice", "example.com").expect("upn"),
+            Username::new_upn("bob@dept", "example.com").expect("upn with @ in account name"),
+            Username::new_down_level_logon_name("carol", "EXAMPLE").expect("dlln"),
+            // An empty NetBIOS domain is normalized to a separator-less down-level logon name.
+            Username::new_down_level_logon_name("erin", "").expect("dlln without domain"),
+            Username::parse("dave").expect("bare name"),
+        ] {
+            let identity = AuthIdentity {
+                username: username.clone(),
+                password: String::new().into(),
+            };
+
+            let buffers = AuthIdentityBuffers::from(identity);
+            let round_trip = AuthIdentity::try_from(&buffers).expect("round-trip");
+
+            assert_eq!(round_trip.username, username);
+            assert_eq!(round_trip.username.format(), username.format());
+        }
+    }
+
+    #[test]
+    fn empty_netbios_domain_is_normalized_to_no_domain() {
+        // An empty NetBIOS domain means "no domain": it must not produce a distinct `Some("")` view
+        // that would compare unequal to a separator-less down-level logon name.
+        let empty_domain = Username::new_down_level_logon_name("alice", "").expect("dlln without domain");
+        let bare = Username::parse("alice").expect("parse");
+
+        assert_eq!(empty_domain, bare);
+        assert_eq!(empty_domain.inner(), "alice");
+        assert!(matches!(
+            empty_domain.parts(),
+            UsernameParts::DownLevelLogonName(dlln) if dlln.netbios_domain().is_none()
+        ));
+        assert!(empty_domain.eq_ignore_ascii_case(&bare));
     }
 }

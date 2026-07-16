@@ -19,7 +19,7 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
 use crate::kdc::detect_kdc_url;
-use crate::kerberos::client::generators::get_client_principal_realm;
+use crate::kerberos::client::principal::{get_client_principal_name, get_client_principal_realm};
 use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
@@ -322,17 +322,13 @@ impl Negotiate {
             .filter(|auth_data| {
                 trace!("Comparing usernames: {:?} with {:?}", auth_data.username, username);
 
-                let domains_equal = match (auth_data.username.domain_name(), username.domain_name()) {
-                    (Some(auth_domain), Some(negotiated_domain)) => auth_domain.eq_ignore_ascii_case(negotiated_domain),
-                    (None, None) => true,
-                    _ => false,
-                };
-
-                auth_data
-                    .username
-                    .account_name()
-                    .eq_ignore_ascii_case(username.account_name())
-                    && domains_equal
+                // Usernames match only when they share the same format and the same components.
+                // `eq_ignore_ascii_case` is format-aware, so it is safe to fold the UPN suffix and the
+                // NetBIOS domain into a single "domain" comparison here: a UPN and a down-level logon
+                // name are distinct identities and never compare equal, which means the qualifier being
+                // compared always has one unambiguous meaning (a UPN suffix is only ever matched against
+                // a UPN suffix, a NetBIOS domain only ever against a NetBIOS domain).
+                auth_data.username.eq_ignore_ascii_case(&username)
             })
             .cloned()
             .map(Credentials::from)
@@ -799,7 +795,9 @@ impl SspiImpl for Negotiate {
 
         if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
             let account_name = identity.username.account_name();
-            let domain_name = identity.username.domain_name().unwrap_or("");
+            // `realm_domain` is the per-format "authority" (UPN suffix or NetBIOS domain) used purely
+            // as a best-effort realm/Azure-AD hint for protocol negotiation, not as an identity.
+            let domain_name = get_client_principal_name(&identity.username).realm_domain;
             self.negotiate_protocol(account_name, domain_name)?;
         }
 

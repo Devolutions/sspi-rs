@@ -6,10 +6,8 @@ use rand_core::{Rng as _, SeedableRng as _};
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
-use crate::kerberos::client::generators::{
-    GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body, get_client_principal_name_type,
-    get_client_principal_realm,
-};
+use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body};
+use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::{TGT_SERVICE_NAME, client};
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};

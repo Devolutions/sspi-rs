@@ -4,6 +4,7 @@ use picky_krb::constants::gss_api::{ACCEPT_COMPLETE, ACCEPT_INCOMPLETE};
 use picky_krb::gss_api::{NegTokenTarg, NegTokenTarg1};
 
 use crate::generator::YieldPointLocal;
+use crate::kerberos::client::principal::get_client_principal_name;
 use crate::negotiate::NegotiateState;
 use crate::negotiate::generators::{
     generate_final_neg_token_targ, generate_mech_type_list, generate_neg_token_init, generate_neg_token_targ_1,
@@ -52,7 +53,9 @@ pub(crate) async fn initialize_security_context<'a>(
         let auth_identity =
             AuthIdentity::try_from(&*identity).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
         let account_name = auth_identity.username.account_name();
-        let domain_name = auth_identity.username.domain_name().unwrap_or_default();
+        // `realm_domain` is the per-format "authority" (UPN suffix or NetBIOS domain) used purely
+        // as a best-effort realm/Azure-AD hint for protocol negotiation, not as an identity.
+        let domain_name = get_client_principal_name(&auth_identity.username).realm_domain;
         negotiate.negotiate_protocol(account_name, domain_name)?;
         negotiate.auth_identity = Some(CredentialsBuffers::AuthIdentity(auth_identity.into()));
     }
@@ -65,7 +68,7 @@ pub(crate) async fn initialize_security_context<'a>(
             // If the user provided smart card credentials, then they definitely want to use Kerberos,
             // because NTLM does not support scard logon.
 
-            use crate::kerberos::client::generators::get_client_principal_realm;
+            use crate::kerberos::client::principal::get_client_principal_realm;
             use crate::{Kerberos, KerberosConfig, detect_kdc_url};
 
             let username = identity.username.to_string();
