@@ -42,9 +42,9 @@ sspi = { path = "../..", version = "0.21" } # public
 
 kbkdf = "=0.1.0-rc.1"
 elliptic-curve = { version = "0.14.0", features = ["sec1", "std"] }
-p521 = { version = "=0.14.0-rc.14", features = ["ecdh"] }
-p256 = { version = "=0.14.0-rc.14", features = ["ecdh"] }
-p384 = { version = "=0.14.0-rc.14", features = ["ecdh"] }
+p521 = { version = "0.14", features = ["ecdh"] }
+p256 = { version = "0.14", features = ["ecdh"] }
+p384 = { version = "0.14", features = ["ecdh"] }
 concat-kdf = { git = "https://github.com/RustCrypto/KDFs.git", rev = "f2f5c03" } # TODO: We need the new version, but it's not released yet.
 typenum = "1.20"
 aes-kw = "0.3"
@@ -58,16 +58,8 @@ getrandom = "0.4"
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
-ecdsa = "=0.17.0-rc.22"
 pkcs1 = "=0.8.0-rc.4"
 rsa = { version = "=0.10.0-rc.18", default-features = false }
-rustcrypto-ff = "=0.14.0-rc.1"
-rustcrypto-ff_derive = "=0.14.0-rc.0"
-rustcrypto-group = "=0.14.0-rc.1"
-primeorder = "=0.14.0-rc.14"
-ed25519-dalek = "=3.0.0-rc.1"
-curve25519-dalek = "=5.0.0-rc.1"
-x25519-dalek = "=3.0.0-rc.1"
 
 [dev-dependencies]
 paste = "1.0"
