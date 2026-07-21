@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.21.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.3...sspi-v0.21.4)] - 2026-07-21
+
+### <!-- 7 -->Build
+
+- Move RustCrypto crates to stable and update picky ([#712](https://github.com/Devolutions/sspi-rs/issues/712)) ([847304fe35](https://github.com/Devolutions/sspi-rs/commit/847304fe35859a8aec401a50033e39df4c7235f4)) 
+
+
+
 ## [[0.21.3](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.2...sspi-v0.21.3)] - 2026-07-16
 
 ### <!-- 1 -->Features
