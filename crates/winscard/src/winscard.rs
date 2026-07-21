@@ -56,13 +56,16 @@ impl TryFrom<u32> for ReaderAction {
 
 impl From<ReaderAction> for u32 {
     fn from(value: ReaderAction) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 
 impl From<ReaderAction> for u64 {
     fn from(value: ReaderAction) -> Self {
-        value as u64
+        u32::from(value).into()
     }
 }
 
@@ -258,7 +261,10 @@ pub enum DeviceTypeId {
 
 impl From<DeviceTypeId> for u32 {
     fn from(value: DeviceTypeId) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 
@@ -295,13 +301,16 @@ impl TryFrom<u32> for ScardScope {
 
 impl From<ScardScope> for u32 {
     fn from(value: ScardScope) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 
 impl From<ScardScope> for u64 {
     fn from(value: ScardScope) -> Self {
-        value as u64
+        u32::from(value).into()
     }
 }
 
@@ -323,13 +332,16 @@ pub enum ShareMode {
 
 impl From<ShareMode> for u32 {
     fn from(value: ShareMode) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 
 impl From<ShareMode> for u64 {
     fn from(value: ShareMode) -> Self {
-        value as u64
+        u32::from(value).into()
     }
 }
 
@@ -420,7 +432,10 @@ impl TryFrom<u32> for State {
 
 impl From<State> for u32 {
     fn from(value: State) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 
@@ -596,7 +611,10 @@ impl TryFrom<u32> for ProviderId {
 
 impl From<ProviderId> for u32 {
     fn from(value: ProviderId) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 

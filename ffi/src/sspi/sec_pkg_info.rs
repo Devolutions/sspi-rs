@@ -43,18 +43,19 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         unsafe {
             raw_pkg_info = libc::malloc(size);
         }
-        // SAFETY:
         // FIXME(safety): it is illegal to construct a reference to uninitialized data
         // Useful references:
         // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
         // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
         // NOTE: this is not the only place that needs to be fixed. An audit is required.
+        let raw_pkg_info_w = raw_pkg_info.cast::<SecPkgInfoW>();
+        // SAFETY: `raw_pkg_info_w` points to allocated memory that is valid for writing.
         unsafe {
-            pkg_info_w = (raw_pkg_info as *mut SecPkgInfoW).as_mut().unwrap();
+            pkg_info_w = raw_pkg_info_w.as_mut().unwrap();
         }
 
         pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
-        pkg_info_w.w_version = KERBEROS_VERSION as u16;
+        pkg_info_w.w_version = u16::from(KERBEROS_VERSION);
         pkg_info_w.w_rpc_id = pkg_info.rpc_id;
         pkg_info_w.cb_max_token = pkg_info.max_token_len.try_into().unwrap();
 
@@ -84,7 +85,7 @@ impl From<PackageInfo> for RawSecPkgInfoW {
         }
         pkg_info_w.comment = comment_ptr.cast();
 
-        Self(raw_pkg_info as *mut SecPkgInfoW)
+        Self(raw_pkg_info.cast::<SecPkgInfoW>())
     }
 }
 
@@ -127,18 +128,19 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         unsafe {
             raw_pkg_info = libc::malloc(size);
         }
-        // SAFETY:
         // FIXME(safety): it is illegal to construct a reference to uninitialized data
         // Useful references:
         // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
         // - https://doc.rust-lang.org/core/mem/union.MaybeUninit.html#initializing-a-struct-field-by-field
         // NOTE: this is not the only place that needs to be fixed. An audit is required.
+        let raw_pkg_info_a = raw_pkg_info.cast::<SecPkgInfoA>();
+        // SAFETY: `raw_pkg_info_a` points to allocated memory that is valid for writing.
         unsafe {
-            pkg_info_a = (raw_pkg_info as *mut SecPkgInfoA).as_mut().unwrap();
+            pkg_info_a = raw_pkg_info_a.as_mut().unwrap();
         }
 
         pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
-        pkg_info_a.w_version = KERBEROS_VERSION as u16;
+        pkg_info_a.w_version = u16::from(KERBEROS_VERSION);
         pkg_info_a.w_rpc_id = pkg_info.rpc_id;
         pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
@@ -168,7 +170,7 @@ impl From<PackageInfo> for RawSecPkgInfoA {
         }
         pkg_info_a.comment = comment_ptr.cast();
 
-        Self(raw_pkg_info as *mut SecPkgInfoA)
+        Self(raw_pkg_info.cast::<SecPkgInfoA>())
     }
 }
 
@@ -208,8 +210,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
 
         let packages = try_execute!(enumerate_security_packages());
 
+        let package_count: u32 = try_execute!(packages.len().try_into(), ErrorKind::InvalidParameter);
         // SAFETY: `pc_packages` is guaranteed to be non-null due to the prior check.
-        unsafe { *pc_packages = packages.len() as u32; }
+        unsafe { *pc_packages = package_count; }
 
         let mut size = size_of::<SecPkgInfoA>() * packages.len();
 
@@ -224,10 +227,10 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             return ErrorKind::InsufficientMemory.to_u32().unwrap();
         }
 
-        let mut package_ptr = raw_packages as *mut SecPkgInfoA;
+        let mut package_ptr = raw_packages.cast::<SecPkgInfoA>();
 
         // SAFETY: It is safe to cast a pointer because we allocated enough memory to place package name and comment alongside SecPkgInfoA.
-        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()) as *mut SecChar };
+        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoA>() * packages.len()).cast::<SecChar>() };
         for pkg_info in packages {
             // FIXME(safety): it is illegal to construct a reference to uninitialized data
             // Useful references:
@@ -238,7 +241,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesA(
             let pkg_info_a = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_a.f_capabilities = pkg_info.capabilities.bits();
-            pkg_info_a.w_version = KERBEROS_VERSION as u16;
+            pkg_info_a.w_version = u16::from(KERBEROS_VERSION);
             pkg_info_a.w_rpc_id = pkg_info.rpc_id;
             pkg_info_a.cb_max_token = pkg_info.max_token_len;
 
@@ -308,8 +311,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
 
         let packages = try_execute!(enumerate_security_packages());
 
+        let package_count: u32 = try_execute!(packages.len().try_into(), ErrorKind::InvalidParameter);
         // SAFETY: `pc_packages` is guaranteed to be non-null due to the prior check.
-        unsafe { *pc_packages = packages.len() as u32; }
+        unsafe { *pc_packages = package_count; }
 
         let mut size = size_of::<SecPkgInfoW>() * packages.len();
         let mut names = Vec::with_capacity(packages.len());
@@ -332,9 +336,9 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             return ErrorKind::InsufficientMemory.to_u32().unwrap();
         }
 
-        let mut package_ptr = raw_packages as *mut SecPkgInfoW;
+        let mut package_ptr = raw_packages.cast::<SecPkgInfoW>();
         // SAFETY: It is safe to cast a pointer because we allocated enough memory to place package name and comment alongside SecPkgInfoA.
-        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()) as *mut SecWChar };
+        let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()).cast::<SecWChar>() };
         for (i, pkg_info) in packages.iter().enumerate() {
             // FIXME(safety): it is illegal to construct a reference to uninitialized data
             // Useful references:
@@ -345,7 +349,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             let pkg_info_w = unsafe { package_ptr.as_mut().unwrap() };
 
             pkg_info_w.f_capabilities = pkg_info.capabilities.bits();
-            pkg_info_w.w_version = KERBEROS_VERSION as u16;
+            pkg_info_w.w_version = u16::from(KERBEROS_VERSION);
             pkg_info_w.w_rpc_id = pkg_info.rpc_id;
             pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
@@ -509,7 +513,7 @@ mod tests {
         assert_eq!(packages_amount, expected_packages_amount);
         assert!(!packages.is_null());
 
-        for i in 0..(packages_amount as usize) {
+        for i in 0..packages_amount.try_into().expect("packages_amount is a valid usize") {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
 
@@ -550,7 +554,7 @@ mod tests {
         assert_eq!(packages_amount, expected_packages_amount);
         assert!(!packages.is_null());
 
-        for i in 0..(packages_amount as usize) {
+        for i in 0..packages_amount.try_into().expect("packages_amount is a valid usize") {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_mut() }.expect("pkg_info is not null");
 

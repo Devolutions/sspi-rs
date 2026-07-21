@@ -250,7 +250,7 @@ pub async fn initialize_security_context<'a>(
 
             let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
 
-            let encryption_type = CipherSuite::try_from(encryption_type as usize)?;
+            let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
 
             client.encryption_params.encryption_type = Some(encryption_type);
 

@@ -221,7 +221,7 @@ impl DpapiBlob {
             })?;
         }
 
-        let key_identifier: KeyIdentifier = decode_owned(&kek_info.kek_id.key_identifier.0 as &[u8])?;
+        let key_identifier: KeyIdentifier = decode_owned(kek_info.kek_id.key_identifier.0.as_ref())?;
 
         let protection_descriptor = if let Some(OtherKeyAttribute { key_attr_id, key_attr }) = &kek_info.kek_id.other.0
         {

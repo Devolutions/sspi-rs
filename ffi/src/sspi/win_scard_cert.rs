@@ -43,7 +43,12 @@ unsafe fn find_raw_cert_by_thumbprint(thumbprint: &[u8], cert_store: HCERTSTORE)
     while let Some(curr_certificate) = certificate {
         let cert_der = {
             // SAFETY: `certificate` is a valid certificate handle obtained from the Windows certificate store.
-            unsafe { from_raw_parts(curr_certificate.pbCertEncoded, curr_certificate.cbCertEncoded as usize) }
+            unsafe {
+                from_raw_parts(
+                    curr_certificate.pbCertEncoded,
+                    curr_certificate.cbCertEncoded.try_into()?,
+                )
+            }
         };
         let mut sha1 = Sha1::new();
         sha1.update(cert_der);
@@ -181,7 +186,7 @@ unsafe fn get_reader_name(crypt_context_handle: HCRYPTPROV) -> Result<String> {
         ));
     }
 
-    let mut reader_buf = vec![0; reader_buf_len as usize];
+    let mut reader_buf = vec![0; reader_buf_len.try_into()?];
     // SAFETY:
     // - `crypt_context_handle` is valid context handle (upheld by the caller).
     // - `reader_buff_len` is a local variable.
@@ -240,7 +245,7 @@ unsafe fn get_key_container_certificate(crypt_context_handle: HCRYPTPROV) -> Res
         ));
     }
 
-    let mut cert_data = vec![0; cert_data_len as usize];
+    let mut cert_data = vec![0; cert_data_len.try_into()?];
     if let Err(err) =
         // SAFETY:
         // - `key` is a valid key handle obtained via successful `CryptGetUserKey` call above.
@@ -329,7 +334,7 @@ pub fn finalize_smart_card_info(cert_serial_number: &[u8]) -> Result<SmartCardIn
             break;
         }
 
-        let mut key_container_name = vec![0; key_container_name_len as usize];
+        let mut key_container_name = vec![0; key_container_name_len.try_into()?];
 
         // SAFETY:
         // - `crypt_context_handle` is obtained from the successful `CryptAcquireContextW` function call.

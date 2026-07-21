@@ -68,28 +68,28 @@ fn decode_private_key(mut buffer: impl Read) -> Result<PrivateKey> {
         ));
     }
 
-    let mut public_exp = vec![0; rsa_key_blob.public_exp as usize];
+    let mut public_exp = vec![0; rsa_key_blob.public_exp.try_into()?];
     buffer.read_exact(&mut public_exp)?;
 
-    let mut modulus = vec![0; rsa_key_blob.modulus as usize];
+    let mut modulus = vec![0; rsa_key_blob.modulus.try_into()?];
     buffer.read_exact(&mut modulus)?;
 
-    let mut prime1 = vec![0; rsa_key_blob.prime1 as usize];
+    let mut prime1 = vec![0; rsa_key_blob.prime1.try_into()?];
     buffer.read_exact(&mut prime1)?;
 
-    let mut prime2 = vec![0; rsa_key_blob.prime2 as usize];
+    let mut prime2 = vec![0; rsa_key_blob.prime2.try_into()?];
     buffer.read_exact(&mut prime2)?;
 
-    let mut exp = vec![0; rsa_key_blob.prime1 as usize];
+    let mut exp = vec![0; rsa_key_blob.prime1.try_into()?];
     buffer.read_exact(&mut exp)?;
 
-    let mut exp = vec![0; rsa_key_blob.prime2 as usize];
+    let mut exp = vec![0; rsa_key_blob.prime2.try_into()?];
     buffer.read_exact(&mut exp)?;
 
-    let mut coef = vec![0; rsa_key_blob.prime1 as usize];
+    let mut coef = vec![0; rsa_key_blob.prime1.try_into()?];
     buffer.read_exact(&mut coef)?;
 
-    let mut private_exp = vec![0; (rsa_key_blob.bit_len / 8) as usize];
+    let mut private_exp = vec![0; (rsa_key_blob.bit_len / 8).try_into()?];
     buffer.read_exact(&mut private_exp)?;
 
     debug!("RSA private key components are decoded successfully");
@@ -237,7 +237,7 @@ unsafe fn export_certificate_private_key(cert: NonNull<CERT_CONTEXT>) -> Result<
         };
     }
 
-    let mut private_key_blob = vec![0; private_key_buffer_len as usize];
+    let mut private_key_blob = vec![0; private_key_buffer_len.try_into()?];
 
     // SAFETY:
     // - `private_key_handle` is a valid `NCRYPT_KEY_HANDLE`.
@@ -285,7 +285,8 @@ unsafe fn export_certificate_private_key(cert: NonNull<CERT_CONTEXT>) -> Result<
 
     debug!("The certificate private key exported");
 
-    let private_key = decode_private_key(&private_key_blob[0..private_key_buffer_len as usize])?;
+    let private_key_len: usize = private_key_buffer_len.try_into()?;
+    let private_key = decode_private_key(&private_key_blob[0..private_key_len])?;
 
     Ok(private_key)
 }
@@ -305,7 +306,7 @@ unsafe fn extract_client_p2p_certificate(cert_store: HCERTSTORE) -> Result<(Cert
         let certificate_data = unsafe { (*certificate).pbCertEncoded };
         // SAFETY:
         // - `certificate` is not null.
-        let certificate_len = unsafe { (*certificate).cbCertEncoded as usize };
+        let certificate_len: usize = unsafe { (*certificate).cbCertEncoded }.try_into()?;
         // SAFETY:
         // - `certificate` is not null.
         // - `(*certificate).pbCertEncoded` and `(*certificate).cbCertEncoded` are valid `data` and `len`.

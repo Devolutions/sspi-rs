@@ -28,7 +28,7 @@ pub type PSecBufferDesc = *mut SecBufferDesc;
 /// * The input pointer can be null.
 /// * If the input pointer is non-null, then it must point to the valid [SecBufferDesc] structure. Moreover,
 ///   the user have to ensure that the pointer is [convertible to a reference](https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion).
-pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Vec<SecurityBuffer> {
+pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Result<Vec<SecurityBuffer>> {
     // SAFETY: `p_input` is either null or a valid pointer to `SecBufferDesc` convertible to a reference.
     if let Some(input) = unsafe { p_input.as_ref() } {
         let p_buffers = input.p_buffers;
@@ -37,16 +37,17 @@ pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Ve
         let sec_buffers = if p_buffers.is_null() {
             &[]
         } else {
+            let c_buffers_usize = c_buffers.try_into()?;
             // SAFETY:
             // - `p_buffers` is guaranteed to be non-null due to the prior check.
             // - The memory region `p_buffers` points to is valid for reads of `c_buffers` elements.
-            unsafe { from_raw_parts(p_buffers, c_buffers as usize) }
+            unsafe { from_raw_parts(p_buffers, c_buffers_usize) }
         };
 
         // SAFETY: FFI call with no outstanding preconditions.
-        unsafe { p_sec_buffers_to_security_buffers(sec_buffers) }
+        Ok(unsafe { p_sec_buffers_to_security_buffers(sec_buffers)? })
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
@@ -55,24 +56,24 @@ pub unsafe fn sec_buffer_desc_to_security_buffers(p_input: PSecBufferDesc) -> Ve
 /// The `raw_buffers` must be an array of valid `SecBuffer` structures.
 /// Each `SecBuffer` must have a valid `pv_buffer` pointer field that is valid for reads of `cb_buffer` bytes.
 #[allow(clippy::useless_conversion)]
-pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Vec<SecurityBuffer> {
+pub(crate) unsafe fn p_sec_buffers_to_security_buffers(raw_buffers: &[SecBuffer]) -> Result<Vec<SecurityBuffer>> {
     raw_buffers
         .iter()
-        .map(|raw_buffer| SecurityBuffer {
-            buffer: if raw_buffer.pv_buffer.is_null() {
-                Vec::new()
-            } else {
-                // SAFETY:
-                // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to the prior check.
-                // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cv_buffer` elements.
-                unsafe { from_raw_parts(raw_buffer.pv_buffer, raw_buffer.cb_buffer as usize) }
-                    .iter()
-                    .map(|v| *v as u8)
-                    .collect()
-            },
-            buffer_type: SecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
+        .map(|raw_buffer| {
+            Ok(SecurityBuffer {
+                buffer: if raw_buffer.pv_buffer.is_null() {
+                    Vec::new()
+                } else {
+                    let cb_buffer_usize = raw_buffer.cb_buffer.try_into()?;
+                    // SAFETY:
+                    // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to the prior check.
+                    // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cb_buffer` elements.
+                    unsafe { from_raw_parts(raw_buffer.pv_buffer.cast::<u8>(), cb_buffer_usize) }.to_vec()
+                },
+                buffer_type: SecurityBufferType::try_from(u32::try_from(raw_buffer.buffer_type).unwrap()).unwrap(),
+            })
         })
-        .collect()
+        .collect::<Result<Vec<SecurityBuffer>>>()
 }
 
 /// Copies buffers from `from_buffers` to `to_buffers`.
@@ -101,7 +102,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
         to_buffers[i].buffer_type = buffer.buffer_type.into();
         if allocate || to_buffers[i].pv_buffer.is_null() {
             // SAFETY: Memory allocation is safe.
-            to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) } as *mut c_char;
+            to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) }.cast::<c_char>();
 
             if to_buffers[i].pv_buffer.is_null() {
                 return Err(Error::new(
@@ -111,7 +112,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
             }
         }
 
-        let p_buffer = buffer.buffer.as_ptr() as *const c_char;
+        let p_buffer = buffer.buffer.as_ptr().cast::<c_char>();
         // SAFETY:
         // - `pv_buffer` is guaranteed to be non-null dues to prior check.
         // - The memory region `pv_buffer` points to is valid for writes of `buffer_size` elements.

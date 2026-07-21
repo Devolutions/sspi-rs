@@ -634,7 +634,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
             }
             // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
             // 4..19 - Channel binding information (19 inclusive).
-            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings));
+            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
         }
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),

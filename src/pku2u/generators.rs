@@ -274,12 +274,12 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
             }
             // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
             // 4..19 - Channel binding information (19 inclusive).
-            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings));
+            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
         }
 
         for extension in extensions {
             checksum_value.extend_from_slice(&extension.extension_type.to_be_bytes());
-            checksum_value.extend_from_slice(&(extension.extension_value.len() as u32).to_be_bytes());
+            checksum_value.extend_from_slice(&u32::try_from(extension.extension_value.len())?.to_be_bytes());
             checksum_value.extend_from_slice(&extension.extension_value);
         }
 

@@ -111,9 +111,7 @@ impl NativeTransport {
                     ))))
                 });
 
-            Ok(TokioStream::new(
-                Box::new(transport::WsStream::new(ws_compat)) as ErasedReadWrite
-            ))
+            Ok(TokioStream::new(Box::new(transport::WsStream::new(ws_compat))))
         }
     }
 }
@@ -137,8 +135,8 @@ impl Transport for NativeTransport {
     async fn connect(connection_options: &ConnectOptions) -> Result<Self::Stream, Error> {
         match connection_options {
             ConnectOptions::Tcp(addr) => {
-                let stream =
-                    TokioStream::new(Box::new(TcpStream::connect(url_to_socket_addr(addr)?).await?) as ErasedReadWrite);
+                let stream: TokioStream<ErasedReadWrite> =
+                    TokioStream::new(Box::new(TcpStream::connect(url_to_socket_addr(addr)?).await?));
                 Ok(stream)
             }
             ConnectOptions::WsTunnel {

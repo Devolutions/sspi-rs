@@ -239,11 +239,11 @@ impl Sspi for Pku2u {
 
         match self.state {
             Pku2uState::PubKeyAuth | Pku2uState::Credentials | Pku2uState::Final => {
-                if raw_wrap_token.len() < SECURITY_TRAILER {
+                if raw_wrap_token.len() < usize::from(SECURITY_TRAILER) {
                     return Err(Error::new(ErrorKind::EncryptFailure, "Cannot encrypt the data"));
                 }
 
-                let (token, data) = raw_wrap_token.split_at(SECURITY_TRAILER);
+                let (token, data) = raw_wrap_token.split_at(usize::from(SECURITY_TRAILER));
                 data_buffer.write_data(data)?;
                 let token_buffer = SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?;
                 token_buffer.write_data(token)?;
@@ -302,9 +302,9 @@ impl Sspi for Pku2u {
     fn query_context_sizes(&mut self) -> Result<ContextSizes> {
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
-            max_signature: MAX_SIGNATURE as u32,
+            max_signature: MAX_SIGNATURE.into(),
             block: 0,
-            security_trailer: SECURITY_TRAILER as u32,
+            security_trailer: u32::from(SECURITY_TRAILER) + u32::from(self.encryption_params.ec),
         })
     }
 
@@ -524,11 +524,23 @@ impl Pku2u {
                     ));
                 }
 
-                if buffer.len() < acceptor_nego.header.header_len as usize {
+                let nego_header_len = acceptor_nego.header.header_len.try_into().map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidToken,
+                        "NEGOEX header length is too big to fit into usize",
+                    )
+                })?;
+                if buffer.len() < nego_header_len {
                     return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
                 }
 
-                let acceptor_exchange_data = &buffer[(acceptor_nego.header.message_len as usize)..];
+                let nego_message_len = acceptor_nego.header.message_len.try_into().map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidToken,
+                        "NEGOEX message length is too big to fit into usize",
+                    )
+                })?;
+                let acceptor_exchange_data = &buffer[nego_message_len..];
                 let acceptor_exchange = Exchange::decode(acceptor_exchange_data)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE");
 
@@ -775,14 +787,25 @@ impl Pku2u {
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
-                if buffer.len() < acceptor_exchange.header.header_len as usize {
+                let exchange_header_len = acceptor_exchange.header.header_len.try_into().map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidToken,
+                        "NEGOEX header length is too big to fit into usize",
+                    )
+                })?;
+                if buffer.len() < exchange_header_len {
                     return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
                 }
 
-                self.negoex_messages
-                    .extend_from_slice(&buffer[0..(acceptor_exchange.header.message_len as usize)]);
+                let exchange_message_len = acceptor_exchange.header.message_len.try_into().map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidToken,
+                        "NEGOEX message length is too big to fit into usize",
+                    )
+                })?;
+                self.negoex_messages.extend_from_slice(&buffer[0..exchange_message_len]);
 
-                let acceptor_verify_data = &buffer[(acceptor_exchange.header.message_len as usize)..];
+                let acceptor_verify_data = &buffer[exchange_message_len..];
                 let acceptor_verify = Verify::decode(acceptor_verify_data)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR VERIFY MESSAGE");
 
@@ -800,17 +823,21 @@ impl Pku2u {
 
                 self.encryption_params.sub_session_key = Some(sub_session_key);
 
-                let acceptor_checksum = ChecksumSuite::try_from(acceptor_verify.checksum.checksum_type as usize)?
-                    .hasher()
-                    .checksum(
-                        check_if_empty!(
-                            self.encryption_params.sub_session_key.as_ref(),
-                            "sub-session key is not set"
-                        )
-                        .as_ref(),
-                        ACCEPTOR_SIGN,
-                        &self.negoex_messages,
-                    )?;
+                let checksum_type: usize = acceptor_verify.checksum.checksum_type.try_into().map_err(|_| {
+                    Error::new(
+                        ErrorKind::InvalidToken,
+                        "NEGOEX checksum type is too big to fit into usize",
+                    )
+                })?;
+                let acceptor_checksum = ChecksumSuite::try_from(checksum_type)?.hasher().checksum(
+                    check_if_empty!(
+                        self.encryption_params.sub_session_key.as_ref(),
+                        "sub-session key is not set"
+                    )
+                    .as_ref(),
+                    ACCEPTOR_SIGN,
+                    &self.negoex_messages,
+                )?;
                 if acceptor_verify.checksum.checksum_value != acceptor_checksum {
                     return Err(Error::new(
                         ErrorKind::MessageAltered,

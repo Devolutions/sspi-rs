@@ -57,12 +57,12 @@ pub const DEFAULT_ENCRYPTION_TYPE: CipherSuite = CipherSuite::Aes256CtsHmacSha19
 /// The RRC field is 12 if no encryption is requested or 28 if encryption is requested
 pub const RRC: u16 = 28;
 // wrap token header len
-pub const MAX_SIGNATURE: usize = 16;
+pub const MAX_SIGNATURE: u8 = 16;
 /// Required `TOKEN` buffer length during data encryption (`encrypt_message` method call).
 ///
 /// **Note**: Actual security trailer len is `SECURITY_TRAILER` + `EC`. The `EC` field is negotiated
 // during the authentication process.
-pub const SECURITY_TRAILER: usize = 60;
+pub const SECURITY_TRAILER: u8 = 60;
 
 /// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550)
 ///
@@ -301,7 +301,7 @@ impl Sspi for Kerberos {
 
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
 
-        let mut wrap_token = WrapToken::with_seq_number(seq_number as u64);
+        let mut wrap_token = WrapToken::with_seq_number(seq_number.into());
         if self.server.is_some() {
             // [Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.2):
             //
@@ -368,7 +368,8 @@ impl Sspi for Kerberos {
         let security_trailer_len = self.query_context_sizes()?.security_trailer.try_into()?;
 
         let (token, data) = if raw_wrap_token.len() < security_trailer_len {
-            (raw_wrap_token.as_slice(), &[] as &[u8])
+            let empty_data: &[u8] = &[];
+            (raw_wrap_token.as_slice(), empty_data)
         } else {
             raw_wrap_token.split_at(security_trailer_len)
         };
@@ -518,9 +519,9 @@ impl Sspi for Kerberos {
 
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
-            max_signature: MAX_SIGNATURE as u32,
+            max_signature: MAX_SIGNATURE.into(),
             block: 0,
-            security_trailer: SECURITY_TRAILER as u32 + u32::from(self.encryption_params.ec),
+            security_trailer: u32::from(SECURITY_TRAILER) + u32::from(self.encryption_params.ec),
         })
     }
 

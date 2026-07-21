@@ -2188,6 +2188,15 @@ pub enum ErrorKind {
     ApplicationProtocolMismatch = 0x8009_0367,
 }
 
+impl From<ErrorKind> for u32 {
+    fn from(value: ErrorKind) -> u32 {
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
+    }
+}
+
 /// Holds the `ErrorKind` and the description of the SSPI-related error.
 #[derive(Debug, Clone)]
 pub struct Error {

@@ -132,7 +132,8 @@ impl DecodeOwned for GetKey {
     fn decode_owned(src: &mut ReadCursor<'_>) -> DecodeResult<Self> {
         ensure_size!(in: src, size: 8 /* target_sd_len */ + 8 /* offset */);
 
-        let target_sd_len = { cast_int!("GetKey", "target_sd len", src.read_u64()) as DecodeResult<_> }?;
+        let target_sd_len: DecodeResult<_> = cast_int!("GetKey", "target_sd len", src.read_u64());
+        let target_sd_len = target_sd_len?;
         let _offset = src.read_u64();
 
         ensure_size!(in: src, size: target_sd_len);
@@ -261,7 +262,8 @@ impl DecodeOwned for KdfParameters {
             })?;
         }
 
-        let hash_name_len = { cast_int!("KdfParameters", "hash name len", src.read_u32()) as DecodeResult<_> }?;
+        let hash_name_len: DecodeResult<_> = cast_int!("KdfParameters", "hash name len", src.read_u32());
+        let hash_name_len = hash_name_len?;
 
         let magic_identifier_2 = src.read_slice(Self::MAGIC_IDENTIFIER_2.len());
 
@@ -408,7 +410,8 @@ impl DecodeOwned for FfcdhParameters {
         }
 
         let key_length = src.read_u32();
-        let key_len = { cast_int!("FfcdhParameters", "key len", key_length) as DecodeResult<_> }?;
+        let key_len: DecodeResult<_> = cast_int!("FfcdhParameters", "key len", key_length);
+        let key_len = key_len?;
         ensure_size!(in: src, size: key_len * 2);
 
         let field_order = BoxedUint::from_be_slice_vartime(src.read_slice(key_len));
@@ -529,7 +532,8 @@ impl DecodeOwned for FfcdhKey {
         }
 
         let key_length = src.read_u32();
-        let key_len = { cast_int!("FfcdhKey", "key len", key_length) as DecodeResult<_> }?;
+        let key_len: DecodeResult<_> = cast_int!("FfcdhKey", "key len", key_length);
+        let key_len = key_len?;
 
         ensure_size!(in: src, size: key_len * 3);
 
@@ -664,7 +668,8 @@ impl DecodeOwned for EcdhKey {
         let curve = EllipticCurve::try_from(curve_id)?;
 
         let key_length = src.read_u32();
-        let key_len = { cast_int!("EcdgKey", "key len", key_length) as DecodeResult<_> }?;
+        let key_len: DecodeResult<_> = cast_int!("EcdhKey", "key len", key_length);
+        let key_len = key_len?;
 
         ensure_size!(in: src, size: key_len * 2);
 
@@ -791,9 +796,12 @@ impl DecodeOwned for KeyIdentifier {
         let l2 = src.read_i32();
         let root_key_identifier = decode_uuid(src)?;
 
-        let key_info_len = { cast_int!("KeyIdentifier", "key info len", src.read_u32()) as DecodeResult<_> }?;
+        let key_info_len: DecodeResult<_> = cast_int!("KeyIdentifier", "key info len", src.read_u32());
+        let key_info_len = key_info_len?;
 
-        let domain_len = { cast_int!("KeyIdentifier", "domain name len", src.read_u32()) as DecodeResult<_> }?;
+        let domain_len: DecodeResult<_> = cast_int!("KeyIdentifier", "domain name len", src.read_u32());
+        let domain_len = domain_len?;
+
         if domain_len < 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier domain name",
@@ -802,7 +810,8 @@ impl DecodeOwned for KeyIdentifier {
             })?;
         }
 
-        let forest_len = { cast_int!("KeyIdentifier", "forest name len", src.read_u32()) as DecodeResult<_> }?;
+        let forest_len: DecodeResult<_> = cast_int!("KeyIdentifier", "forest name len", src.read_u32());
+        let forest_len = forest_len?;
         if forest_len < 2 {
             Err(Error::InvalidLength {
                 name: "KeyIdentifier forest name",
@@ -997,16 +1006,25 @@ impl DecodeOwned for GroupKeyEnvelope {
         let l2 = src.read_i32();
         let root_key_identifier = decode_uuid(src)?;
 
-        let kdf_alg_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let kdf_parameters_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let secret_alg_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let secret_parameters_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let kdf_alg_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "kdf alg len", src.read_u32());
+        let kdf_alg_len = kdf_alg_len?;
+        let kdf_parameters_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "kdf parameters len", src.read_u32());
+        let kdf_parameters_len = kdf_parameters_len?;
+        let secret_alg_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "secret alg len", src.read_u32());
+        let secret_alg_len = secret_alg_len?;
+        let secret_parameters_len: DecodeResult<_> =
+            cast_int!("GroupKeyEnvelope", "secret parameters len", src.read_u32());
+        let secret_parameters_len = secret_parameters_len?;
         let private_key_length = src.read_u32();
         let public_key_length = src.read_u32();
-        let l1_key_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let l2_key_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let domain_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
-        let forest_len = { cast_int!("GroupKeyEnvelope", "", src.read_u32()) as DecodeResult<_> }?;
+        let l1_key_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "l1 key len", src.read_u32());
+        let l1_key_len = l1_key_len?;
+        let l2_key_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "l2 key len", src.read_u32());
+        let l2_key_len = l2_key_len?;
+        let domain_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "domain len", src.read_u32());
+        let domain_len = domain_len?;
+        let forest_len: DecodeResult<_> = cast_int!("GroupKeyEnvelope", "forest len", src.read_u32());
+        let forest_len = forest_len?;
 
         let kdf_alg = read_c_str_utf16_le(kdf_alg_len, src)?;
 

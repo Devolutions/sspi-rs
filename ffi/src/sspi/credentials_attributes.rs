@@ -96,7 +96,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
     // - `proxy_server_offset` is valid.
     // - The proxy server is placed in the memory at the offset `proxy_server_offset`.
-    let proxy_server_ptr = unsafe { p_buffer.add(*proxy_server_offset as usize) } as *const u16;
+    let proxy_server_ptr = unsafe { p_buffer.add(usize::from(*proxy_server_offset)) }.cast::<u16>();
 
     if proxy_server_ptr.is_null() {
         return Err(Error::new(
@@ -109,7 +109,10 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
     // - `proxy_server_ptr` is guaranteed to be non-null due to the prior check.
     // - `proxy_server_length` is valid.
     let proxy_server = String::from_utf16(unsafe {
-        from_raw_parts(proxy_server_ptr, *proxy_server_length as usize / size_of::<SecWChar>())
+        from_raw_parts(
+            proxy_server_ptr,
+            usize::from(*proxy_server_length) / size_of::<SecWChar>(),
+        )
     })?;
 
     let client_tls_cred = if *client_tls_cred_offset != 0 && *client_tls_cred_length != 0 {
@@ -117,7 +120,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         // - `p_buffer` is guaranteed to be non-null due to the `NonNull` wrapper.
         // - `client_tls_cred_offset` is valid.
         // - The client TLS if placed in the memory at the offset `client_tls_cred_offset`.
-        let client_tls_cred_ptr = unsafe { p_buffer.add(*client_tls_cred_offset as usize) } as *const u16;
+        let client_tls_cred_ptr = unsafe { p_buffer.add(usize::from(*client_tls_cred_offset)) }.cast::<u16>();
         if client_tls_cred_ptr.is_null() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -128,7 +131,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         // SAFETY:
         // - `client_tls_cred_ptr` is guaranteed to be non-null due to the prior check.
         // - `client_tls_cred_length` is valid.
-        let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, *client_tls_cred_length as usize) };
+        let client_tls_cred_data = unsafe { from_raw_parts(client_tls_cred_ptr, usize::from(*client_tls_cred_length)) };
 
         let client_tls_cred = String::from_utf16(client_tls_cred_data)?;
 

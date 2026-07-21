@@ -102,7 +102,7 @@ impl WasmTransport {
             }
         }
 
-        Ok(FuturesStream::new(Box::new(ws) as ErasedReadWrite))
+        Ok(FuturesStream::new(Box::new(ws)))
     }
 }
 

@@ -21,7 +21,7 @@ pub fn from_utf16_le(data: &[u8]) -> DecodeResult<String> {
     String::from_utf16(
         &data
             .chunks(2)
-            .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+            .map(|c| u16::from_le_bytes(c.try_into().expect("chunk should be 2 bytes due to prior check")))
             .collect::<Vec<u16>>(),
     )
     .map_err(|err| DecodeError::invalid_field("", "UTF-16 data", "is not valid UTF-16").with_source(err))

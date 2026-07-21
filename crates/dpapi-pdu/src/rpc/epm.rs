@@ -79,7 +79,10 @@ pub enum FloorProtocol {
 
 impl FloorProtocol {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -173,7 +176,7 @@ impl DecodeWithContextOwned for TcpFloor {
         }
 
         Ok(Self {
-            port: u16::from_be_bytes(rhs.try_into().unwrap()),
+            port: u16::from_be_bytes(rhs.try_into().expect("rhs length is 2 bytes due to prior check")),
         })
     }
 }
@@ -225,7 +228,7 @@ impl DecodeWithContextOwned for IpFloor {
         }
 
         Ok(Self {
-            addr: u32::from_be_bytes(rhs.try_into().unwrap()),
+            addr: u32::from_be_bytes(rhs.try_into().expect("rhs length is 4 bytes due to prior check")),
         })
     }
 }
@@ -287,7 +290,7 @@ impl DecodeWithContextOwned for RpcConnectionOrientedFloor {
         let rhs = src.read_slice(rhs_len).to_vec();
 
         Ok(Self {
-            version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
+            version_minor: u16::from_le_bytes(rhs.try_into().expect("rhs length is 2 bytes due to prior check")),
         })
     }
 }
@@ -352,10 +355,15 @@ impl DecodeWithContextOwned for UuidFloor {
         ensure_size!(in: src, size: rhs_len);
         let rhs = src.read_slice(rhs_len).to_vec();
 
+        let (raw_uuid, version) = lhs.split_at(Uuid::FIXED_PART_SIZE);
         Ok(Self {
-            uuid: decode_uuid(&mut ReadCursor::new(&lhs[0..Uuid::FIXED_PART_SIZE]))?,
-            version: u16::from_le_bytes(lhs[Uuid::FIXED_PART_SIZE..].try_into().unwrap()),
-            version_minor: u16::from_le_bytes(rhs.try_into().unwrap()),
+            uuid: decode_uuid(&mut ReadCursor::new(raw_uuid))?,
+            version: u16::from_le_bytes(
+                version
+                    .try_into()
+                    .expect("lhs length is 18 bytes, so version is 2 bytes due to prior check"),
+            ),
+            version_minor: u16::from_le_bytes(rhs.try_into().expect("rhs length is 2 bytes due to prior check")),
         })
     }
 }
@@ -595,7 +603,9 @@ impl DecodeOwned for EptMap {
         // Tower referent id 2
         src.read_u64();
 
-        let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
+        let tower_length: DecodeResult<_> = cast_length!("EptMap", "tower length", src.read_u64());
+        let tower_length = tower_length?;
+
         if tower_length < 2
         /* floor length */
         {
@@ -622,12 +632,13 @@ impl DecodeOwned for EptMap {
         }
 
         let pad = compute_padding(8, {
-            cast_length!(
+            let len: DecodeResult<_> = cast_length!(
                 "RptMap",
                 "towers count",
                 tower_length + 4 /* encoded tower length */
-            ) as DecodeResult<_>
-        }?);
+            );
+            len?
+        });
         read_padding(pad, src)?;
 
         let entry_handle = EntryHandle::decode_owned(src)?;
@@ -734,7 +745,8 @@ impl DecodeOwned for EptMapResult {
         // tower offset
         src.read_u64();
 
-        let tower_count: usize = { cast_int!("EprMapResult", "tower count", src.read_u64()) as DecodeResult<_> }?;
+        let tower_count: DecodeResult<_> = cast_int!("EprMapResult", "tower count", src.read_u64());
+        let tower_count: usize = tower_count?;
         ensure_size!(in: src, size: tower_count.checked_mul(8).ok_or(DecodeError::invalid_field(
                 "EptMapResult",
                 "tower count",
@@ -750,7 +762,9 @@ impl DecodeOwned for EptMapResult {
             .map(|_| {
                 ensure_size!(in: src, size: 8 /* tower length */ + 4 + 2 /* floor length */);
 
-                let tower_length = { cast_length!("EptMap", "tower length", src.read_u64()) as DecodeResult<_> }?;
+                let tower_length: DecodeResult<_> = cast_length!("EptMap", "tower length", src.read_u64());
+                let tower_length = tower_length?;
+
                 if tower_length < 2
                 /* floor length */
                 {
@@ -777,7 +791,7 @@ impl DecodeOwned for EptMapResult {
 
                 read_padding(
                     compute_padding(4, {
-                        cast_length!(
+                        let len: DecodeResult<_> = cast_length!(
                             "EptMapResult",
                             "tower length",
                             tower_length.checked_add(4).ok_or(DecodeError::invalid_field(
@@ -785,8 +799,9 @@ impl DecodeOwned for EptMapResult {
                                 "tower length",
                                 "tower length is too big",
                             ))?
-                        ) as DecodeResult<_>
-                    }?),
+                        );
+                        len?
+                    }),
                     src,
                 )?;
 

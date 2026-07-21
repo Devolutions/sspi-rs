@@ -15,7 +15,7 @@ pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>>
 
     picky_asn1_der::to_writer(v, &mut data)?;
 
-    let len = data.len() as u32 - 4;
+    let len = u32::try_from(data.len())? - 4;
     data[0..4].copy_from_slice(&len.to_be_bytes());
 
     Ok(data)

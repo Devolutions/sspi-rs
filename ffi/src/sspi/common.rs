@@ -1,6 +1,7 @@
+use std::ptr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-use libc::{c_ulonglong, c_void};
+use libc::c_void;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
     BufferType, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind, SecurityBuffer,
@@ -35,7 +36,9 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
     // SAFETY:
     // - `ph_credentials` is guaranteed to be non-null due to the prior check.
     // - `ph_credentials` points to a valid `credentials handle` allocated by the `AcquireCredentialsHandleA/W` function.
-    let cred_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+    let dw_lower = unsafe { (*ph_credential).dw_lower };
+    let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+    let cred_handle: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
     check_null!(cred_handle);
 
     // SAFETY:
@@ -94,7 +97,9 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         // SAFETY:
         // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
-        let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+        let dw_lower = unsafe { (*ph_credential).dw_lower };
+        let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+        let credentials_handle: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
 
         // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
         let transformed_credentials_handle = unsafe { transform_credentials_handle(credentials_handle) };
@@ -133,16 +138,15 @@ pub unsafe extern "system" fn AcceptSecurityContext(
                 // - `p_input` points to a valid `SecBufferDesc` structure.
                 let c_buffers = unsafe { (*p_input).c_buffers };
 
+                let c_buffers_usize = try_execute!(c_buffers.try_into(), ErrorKind::InvalidParameter);
                 // SAFETY:
                 // - `p_buffers` is guaranteed to be non-null due to the prior check.
                 // - The memory region `p_buffers` points to is valid for reads of `c_buffers` element.
-                let raw_buffers = unsafe {
-                    from_raw_parts(p_buffers, c_buffers as usize)
-                };
+                let raw_buffers = unsafe { from_raw_parts(p_buffers, c_buffers_usize) };
                 // SAFETY:
                 // - `raw_buffers` array contains valid `SecBuffer` structures.
                 // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-                Ok(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) })
+                unsafe { p_sec_buffers_to_security_buffers(raw_buffers) }
             });
 
         let mut output_tokens = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
@@ -172,8 +176,13 @@ pub unsafe extern "system" fn AcceptSecurityContext(
         // SAFETY: `ph_new_context` is convertible to a reference.
         let ph_new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context is non-null");
 
-        ph_new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
-        ph_new_context.dw_upper = into_raw_ptr(security_package_name.to_owned()) as c_ulonglong;
+        let dw_lower = sspi_context_ptr.as_ptr().expose_provenance();
+        ph_new_context.dw_lower = try_execute!(dw_lower.try_into(), ErrorKind::InvalidHandle);
+
+        let dw_upper = into_raw_ptr(security_package_name.to_owned()).expose_provenance();
+        ph_new_context.dw_upper = {
+            try_execute!(dw_upper.try_into(), ErrorKind::InvalidHandle)
+        };
         // SAFETY: `pf_context_attr` is guaranteed to be non-null due to the prior check.
         unsafe {
             *pf_context_attr = f_context_req;
@@ -240,7 +249,8 @@ pub unsafe extern "system" fn CompleteAuthToken(
         // SAFETY:
         // - `p_token` is guaranteed to be non-null due to the prior check.
         // - `p_token` points to a valid `SecBufferDesc` structure.
-        let c_buffers = unsafe { (*p_token).c_buffers } as usize;
+        let c_buffers = unsafe { (*p_token).c_buffers };
+        let c_buffers = try_execute!(c_buffers.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
         // - `p_buffers` is guaranteed to be non-null due to the prior check.
@@ -250,7 +260,7 @@ pub unsafe extern "system" fn CompleteAuthToken(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut buffers = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut buffers = try_execute!(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) });
 
         sspi_context.complete_auth_token(&mut buffers).map_or_else(
             |err| err.error_type.to_u32().unwrap(),
@@ -300,10 +310,13 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
         // - `ph_context` points to a valid `SecHandle` structure.
         let dw_upper = unsafe { (*ph_context).dw_upper };
         if dw_upper != 0 {
+            let addr = try_execute!(usize::try_from(dw_upper), ErrorKind::InvalidHandle);
+            let upper_ptr: *mut String = ptr::with_exposed_provenance_mut(addr);
+
             // SAFETY:
             // - `dw_upper` is guaranteed to be non-null due to the prior check.
             // - The value behind `dw_upper` pointer is allocated by an SSPI function.
-            let _name: Box<String> = unsafe { Box::from_raw(dw_upper as *mut String) };
+            let _name: Box<String> = unsafe { Box::from_raw(upper_ptr) };
         }
 
         0
@@ -461,7 +474,8 @@ pub unsafe extern "system" fn EncryptMessage(
         // SAFETY:
         // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
-        let len = unsafe { (*p_message).c_buffers as usize };
+        let c_buffers = unsafe { (*p_message).c_buffers };
+        let len = try_execute!(c_buffers.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
         // - `p_buffers` is guaranteed to be non-null due to the prior check.
@@ -548,7 +562,8 @@ pub unsafe extern "system" fn DecryptMessage(
         // SAFETY:
         // - `p_message` is guaranteed to be non-null due to the prior check.
         // - `p_message` points to a valid `SecBufferDesc` structure.
-        let len = unsafe { (*p_message).c_buffers as usize };
+        let c_buffers = unsafe { (*p_message).c_buffers };
+        let len = try_execute!(c_buffers.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
         // - `p_buffers` is guaranteed to be non-null due to the prior check.
@@ -620,7 +635,7 @@ unsafe fn p_sec_buffers_to_decrypt_buffers(raw_buffers: &[SecBuffer]) -> sspi::R
                 // SAFETY:
                 // - `raw_buffer.pv_buffer` is guaranteed to be non-null due to the prior check.
                 // - The memory region `raw_buffer.pv_buffer` points to is valid for reads of `raw_buffer.cb_buffer` bytes.
-                unsafe { from_raw_parts_mut(raw_buffer.pv_buffer as *mut u8, raw_buffer.cb_buffer.try_into()?) }
+                unsafe { from_raw_parts_mut(raw_buffer.pv_buffer.cast::<u8>(), raw_buffer.cb_buffer.try_into()?) }
             };
             buf.with_data(data)?
         })
@@ -678,7 +693,6 @@ mod tests {
     use std::ptr::null_mut;
     use std::slice::from_raw_parts;
 
-    use libc::c_ulonglong;
     use sspi::credssp::SspiContext;
     use sspi::{EncryptionFlags, Kerberos, SecurityBufferRef, Sspi};
 
@@ -690,9 +704,17 @@ mod tests {
         SecHandle {
             dw_lower: {
                 let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos));
-                into_raw_ptr(sspi_context) as c_ulonglong
+                into_raw_ptr(sspi_context)
+                    .expose_provenance()
+                    .try_into()
+                    .expect("ptr address must fit into c_ulonglong")
             },
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+            dw_upper: {
+                into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string())
+                    .expose_provenance()
+                    .try_into()
+                    .expect("ptr address must fit into c_ulonglong")
+            },
         }
     }
 
@@ -758,7 +780,7 @@ mod tests {
         assert_eq!(
             unsafe {
                 from_raw_parts(
-                    buffers[1].pv_buffer as *const u8,
+                    buffers[1].pv_buffer.cast::<u8>(),
                     buffers[1].cb_buffer.try_into().unwrap(),
                 )
             },
@@ -806,10 +828,19 @@ mod tests {
 
         let mut kerberos_client_context = kerberos_sec_handle(kerberos_client);
 
-        let mut token =
-            unsafe { from_raw_parts(buffers[0].pv_buffer as *const u8, buffers[0].cb_buffer as usize) }.to_vec();
-        let mut data =
-            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize) }.to_vec();
+        let token_len = buffers[0]
+            .cb_buffer
+            .try_into()
+            .expect("token length must fit into usize");
+        let token_ptr = buffers[0].pv_buffer.cast::<u8>();
+        let mut token = unsafe { from_raw_parts(token_ptr, token_len) }.to_vec();
+
+        let data_len = buffers[1]
+            .cb_buffer
+            .try_into()
+            .expect("data length must fit into usize");
+        let data_ptr = buffers[1].pv_buffer.cast::<u8>();
+        let mut data = unsafe { from_raw_parts(data_ptr, data_len) }.to_vec();
         let mut buffers = [
             SecBuffer {
                 cb_buffer: token.len().try_into().unwrap(),
@@ -835,9 +866,11 @@ mod tests {
         assert_eq!(status, 0);
 
         // Check that the decrypted data is the same as the initial message
-        assert_eq!(
-            unsafe { from_raw_parts(buffers[1].pv_buffer as *const u8, buffers[1].cb_buffer as usize,) },
-            plain_message
-        );
+        let decrypted_len = buffers[1]
+            .cb_buffer
+            .try_into()
+            .expect("decrypted length must fit into usize");
+        let decrypted_ptr = buffers[1].pv_buffer.cast::<u8>();
+        assert_eq!(unsafe { from_raw_parts(decrypted_ptr, decrypted_len) }, plain_message);
     }
 }

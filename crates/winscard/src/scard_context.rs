@@ -310,12 +310,16 @@ impl<'a> ScardContext<'a> {
             let mut compressed_cert = vec![0; smart_card_info.auth_cert_der.len()];
             let compressed = crate::compression::compress_cert(&smart_card_info.auth_cert_der, &mut compressed_cert)?;
 
-            let total_value_len =
-                (compressed.len() + 2 /* unknown flags */ + 2/* uncompressed certificate len */) as u32;
+            let total_value_len = u32::try_from(
+                compressed.len() + 2 /* unknown flags */ + 2, /* uncompressed certificate len */
+            )
+            .map_err(|_| Error::new(ErrorKind::InternalError, "compressed cert too large for u32"))?;
             value.extend_from_slice(&total_value_len.to_le_bytes());
 
             value.extend_from_slice(&[0x01, 0x00]); // flags that specify that the certificate is compressed
-            value.extend_from_slice(&(smart_card_info.auth_cert_der.len() as u16).to_le_bytes()); // uncompressed certificate data len
+            let cert_len = u16::try_from(smart_card_info.auth_cert_der.len())
+                .map_err(|_| Error::new(ErrorKind::InternalError, "cert too large for u16"))?;
+            value.extend_from_slice(&cert_len.to_le_bytes()); // uncompressed certificate data len
             value.extend_from_slice(&compressed_cert);
 
             value

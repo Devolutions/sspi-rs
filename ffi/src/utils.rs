@@ -25,7 +25,7 @@ pub(crate) unsafe fn credentials_str_into_bytes(raw_buffer: *const c_char, len: 
         // - `raw_buffer` is guaranteed to be non-null due to the prior check.
         // - `raw_buffer` is valid for reads for `len` many bytes.
         // - `len` does not exceed `isize::MAX`.
-        unsafe { from_raw_parts(raw_buffer as *const u8, len) }.to_vec()
+        unsafe { from_raw_parts(raw_buffer.cast::<u8>(), len) }.to_vec()
     } else {
         Vec::new()
     }

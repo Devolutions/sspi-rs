@@ -53,7 +53,10 @@ pub enum SlotId {
 impl SlotId {
     /// Returns [u8] representation of the slot.
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 
     /// Determines the slot id based on the slot certificate label.

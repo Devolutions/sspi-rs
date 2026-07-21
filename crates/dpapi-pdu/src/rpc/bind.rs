@@ -50,7 +50,10 @@ pub enum BindTimeFeatureNegotiationBitmask {
 
 impl BindTimeFeatureNegotiationBitmask {
     pub fn as_u64(&self) -> u64 {
-        *self as u64
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u64
+        }
     }
 }
 
@@ -187,7 +190,10 @@ pub enum ContextResultCode {
 
 impl ContextResultCode {
     pub fn as_u16(&self) -> u16 {
-        *self as u16
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u16
+        }
     }
 }
 
