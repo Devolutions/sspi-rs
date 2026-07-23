@@ -334,14 +334,14 @@ cfg_if::cfg_if! {
             let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
 
             if !krb_tcp_srv.is_empty() {
-                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", &x.target, x.port)).collect()
+                return krb_tcp_srv.iter().map(|x| format!("tcp://{}:{}", x.target, x.port)).collect()
             }
 
             let krb_udp_name = &format!("_kerberos._udp.{domain}");
             let krb_udp_srv = dns_query_srv_records(krb_udp_name);
 
             if !krb_udp_srv.is_empty() {
-                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", &x.target, x.port)).collect()
+                return krb_udp_srv.iter().map(|x| format!("udp://{}:{}", x.target, x.port)).collect()
             }
 
             Vec::new()
