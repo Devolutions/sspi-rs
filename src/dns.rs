@@ -66,7 +66,7 @@ cfg_if::cfg_if! {
             let dns_policy_config_key_path = "System\\CurrentControlSet\\Services\\Dnscache\\Parameters\\DnsPolicyConfig";
             if let Ok(dns_policy_config_key) = hklm.open(dns_policy_config_key_path) {
                 for rule_name in dns_policy_config_key.keys().unwrap() {
-                    let dns_policy_rule_key_path = format!("{}\\{}", dns_policy_config_key_path, &rule_name);
+                    let dns_policy_rule_key_path = format!("{}\\{}", dns_policy_config_key_path, rule_name);
                     if let Ok(dns_policy_rule_key) = hklm.open(dns_policy_rule_key_path) {
                         let namespace: Option<String> = dns_policy_rule_key.get_string("Name").ok(); // REG_MULTI_SZ
                         let name_server_list: Option<String> = dns_policy_rule_key.get_string("GenericDNSServers").ok(); // REG_SZ
@@ -95,8 +95,8 @@ cfg_if::cfg_if! {
                 let device_ids = bind_devices.iter().map(|x| x.strip_prefix("\\Device\\").unwrap());
 
                 for device_id in device_ids {
-                    let interface_key_path = format!("{}\\{}", tcpip_interfaces_key_path, &device_id);
-                    let dns_adapter_key_path = format!("{}\\{}", dns_registered_adapters_key_path, &device_id);
+                    let interface_key_path = format!("{}\\{}", tcpip_interfaces_key_path, device_id);
+                    let dns_adapter_key_path = format!("{}\\{}", dns_registered_adapters_key_path, device_id);
 
                     if let (Ok(interface_key), Ok(dns_adapter_key)) = (hklm.open(interface_key_path), hklm.open(dns_adapter_key_path)) {
                         let name_server: Option<String> = interface_key.get_string("NameServer").ok().filter(|x: &String| !x.is_empty());
@@ -119,7 +119,7 @@ cfg_if::cfg_if! {
             let domain_namespace = if domain.starts_with('.') {
                 domain.to_string()
             } else {
-                format!(".{}", &domain)
+                format!(".{}", domain)
             };
 
             for nrpt_rule in get_dns_client_nrpt_rules() {
@@ -440,7 +440,7 @@ cfg_if::cfg_if! {
                         let port = record.port();
                         let target_name = record.target().to_string();
                         let target_name = target_name.trim_end_matches('.').to_string();
-                        let kdc_host = format!("tcp://{}:{}", &target_name, port);
+                        let kdc_host = format!("tcp://{}:{}", target_name, port);
                         kdc_hosts.push(kdc_host);
                     }
                 }
@@ -450,7 +450,7 @@ cfg_if::cfg_if! {
                         let port = record.port();
                         let target_name = record.target().to_string();
                         let target_name = target_name.trim_end_matches('.').to_string();
-                        let kdc_host = format!("udp://{}:{}", &target_name, port);
+                        let kdc_host = format!("udp://{}:{}", target_name, port);
                         kdc_hosts.push(kdc_host);
                     }
                 }
