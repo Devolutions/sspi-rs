@@ -643,7 +643,7 @@ unsafe fn copy_decrypted_buffers(to_buffers: PSecBuffer, from_buffers: Vec<Secur
     // - The memory region `to_buffers` points to is valid for reads of `from_buffers.len()` elements.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
 
-    for (to_buffer, mut from_buffer) in to_buffers.iter_mut().zip(from_buffers.into_iter()) {
+    for (to_buffer, mut from_buffer) in to_buffers.iter_mut().zip(from_buffers) {
         // The `SECBUFFER_STREAM` buffer is only used for the data passing during the decryption
         // when the caller doesn't know the exact `SECBUFFER_TOKEN` and `SECBUFFER_DATA` lengths.
         // After the decryption, the pointer and length of the SECBUFFER_STREAM are unchanged.

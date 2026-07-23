@@ -1,2 +1,2 @@
-msrv = "1.89"
+msrv = "1.93"
 allow-panic-in-tests = true
