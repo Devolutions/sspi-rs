@@ -9,6 +9,7 @@ pub mod server;
 mod tests;
 mod utils;
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::LazyLock;
 
@@ -41,7 +42,7 @@ use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
     CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PACKAGE_ID_NONE,
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url, detect_kdc_urls,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -99,6 +100,9 @@ pub struct Kerberos {
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
+    /// KDC that last answered for a given realm, reused for subsequent messages of the same auth
+    /// (re-resolved only if it later fails). Keyed by realm.
+    pub(crate) kdc_cache: HashMap<String, Url>,
 }
 
 impl Kerberos {
@@ -119,6 +123,7 @@ impl Kerberos {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
+            kdc_cache: HashMap::new(),
         })
     }
 
@@ -139,6 +144,7 @@ impl Kerberos {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
+            kdc_cache: HashMap::new(),
         })
     }
 
@@ -166,33 +172,80 @@ impl Kerberos {
         }
     }
 
-    async fn send(&self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
-        let (realm, kdc_url) = self
-            .get_kdc()
+    async fn send(&mut self, yield_point: &mut YieldPointLocal, data: &[u8]) -> Result<Vec<u8>> {
+        let realm = self
+            .realm
+            .clone()
             .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "No KDC server found"))?;
-        self.send_to(yield_point, &realm, kdc_url, data).await
+        self.send_for_realm(yield_point, &realm, data).await
     }
 
     /// Sends a Kerberos message to the KDC responsible for `realm`.
     ///
-    /// The pinned `kdc_url` (e.g. from KDC proxy settings) is authoritative only for the client's
-    /// home realm. For cross-realm referrals, the target realm's KDC is resolved via
-    /// [`detect_kdc_url`], so that `SSPI_KDC_URL_<REALM>` environment overrides (and the system
-    /// krb5.conf / DNS SRV records) are honored for the referral hop. This lets a single auth
-    /// chase a referral into a child/trusted realm without changing the pinned home-realm KDC.
-    async fn send_for_realm(&self, yield_point: &mut YieldPointLocal, realm: &str, data: &[u8]) -> Result<Vec<u8>> {
-        let kdc_url = if self.realm.as_deref() == Some(realm) {
-            self.kdc_url.clone().or_else(|| detect_kdc_url(realm))
-        } else {
-            detect_kdc_url(realm)
+    /// The KDC that last answered for `realm` is reused across the messages of an auth; it is only
+    /// re-resolved if it stops responding. When resolving, candidates are tried in order. Failover
+    /// (sticky or in-order) advances only on a *transport* failure (could not connect / no reply);
+    /// any reply from a KDC — including a KRB-ERROR — is a valid answer returned as-is.
+    async fn send_for_realm(&mut self, yield_point: &mut YieldPointLocal, realm: &str, data: &[u8]) -> Result<Vec<u8>> {
+        let mut last_error = None;
+        let mut already_tried = None;
+        // Realms are case-insensitive, so normalize the cache key to avoid duplicate entries.
+        let cache_key = realm.to_ascii_uppercase();
+
+        // Prefer the KDC that last answered for this realm (stickiness across messages).
+        if let Some(pinned) = self.kdc_cache.get(&cache_key).cloned() {
+            match self.send_to(yield_point, realm, pinned.clone(), data).await {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    warn!(kdc = %pinned, %error, realm, "pinned KDC failed; re-resolving candidates");
+                    self.kdc_cache.remove(&cache_key);
+                    already_tried = Some(pinned);
+                    last_error = Some(error);
+                }
+            }
         }
-        .ok_or_else(|| {
+
+        let kdc_urls = select_kdc_urls(realm, self.realm.as_deref(), self.kdc_url.as_ref(), detect_kdc_urls);
+        if kdc_urls.is_empty() {
+            return Err(last_error.unwrap_or_else(|| {
+                Error::new(
+                    ErrorKind::NoAuthenticatingAuthority,
+                    format!("No KDC server found for realm `{realm}`"),
+                )
+            }));
+        }
+
+        let candidate_count = kdc_urls.len();
+        for (index, kdc_url) in kdc_urls.into_iter().enumerate() {
+            // Don't immediately retry the pinned KDC we just failed over from.
+            if already_tried.as_ref() == Some(&kdc_url) {
+                continue;
+            }
+            match self.send_to(yield_point, realm, kdc_url.clone(), data).await {
+                Ok(response) => {
+                    self.kdc_cache.insert(cache_key, kdc_url);
+                    return Ok(response);
+                }
+                Err(error) => {
+                    warn!(
+                        kdc = %kdc_url,
+                        %error,
+                        candidate = index + 1,
+                        candidate_count,
+                        realm,
+                        "KDC request failed; trying next candidate if available"
+                    );
+                    last_error = Some(error);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| {
             Error::new(
                 ErrorKind::NoAuthenticatingAuthority,
-                format!("No KDC server found for realm `{realm}`"),
+                format!("No KDC server reachable for realm `{realm}`"),
             )
-        })?;
-        self.send_to(yield_point, realm, kdc_url, data).await
+        }))
     }
 
     async fn send_to(
@@ -772,8 +825,77 @@ impl SspiEx for Kerberos {
     }
 }
 
+/// Chooses the ordered candidate KDC URLs for `target_realm`.
+///
+/// The pinned `kdc_url` is used (as the sole candidate) only when `target_realm` is the client's
+/// home realm; any other realm — a cross-realm referral hop — is resolved via `detect`, which
+/// honors `SSPI_KDC_URL_<REALM>` / krb5.conf / DNS SRV. `detect` is injected so the routing
+/// decision can be unit-tested without a live resolver.
+fn select_kdc_urls(
+    target_realm: &str,
+    home_realm: Option<&str>,
+    pinned_kdc_url: Option<&Url>,
+    detect: impl FnOnce(&str) -> Vec<Url>,
+) -> Vec<Url> {
+    if home_realm.is_some_and(|home| home.eq_ignore_ascii_case(target_realm))
+        && let Some(kdc_url) = pinned_kdc_url
+    {
+        return vec![kdc_url.clone()];
+    }
+    detect(target_realm)
+}
+
+#[cfg(test)]
+mod select_kdc_urls_tests {
+    use url::Url;
+
+    use super::select_kdc_urls;
+
+    fn url(s: &str) -> Url {
+        Url::parse(s).unwrap()
+    }
+
+    #[test]
+    fn home_realm_with_pinned_kdc_uses_only_the_pinned_url() {
+        let pinned = url("tcp://home-dc.rjm.local:88");
+        let result = select_kdc_urls("RJM.LOCAL", Some("RJM.LOCAL"), Some(&pinned), |_| {
+            panic!("detection must not run for the pinned home realm")
+        });
+        assert_eq!(result, vec![pinned]);
+    }
+
+    #[test]
+    fn home_realm_match_is_case_insensitive() {
+        let pinned = url("tcp://home-dc.rjm.local:88");
+        let result = select_kdc_urls("rjm.local", Some("RJM.LOCAL"), Some(&pinned), |_| {
+            panic!("a case-only difference is still the home realm; detection must not run")
+        });
+        assert_eq!(result, vec![pinned]);
+    }
+
+    #[test]
+    fn referral_realm_ignores_pinned_kdc_and_uses_detection() {
+        let pinned = url("tcp://home-dc.rjm.local:88");
+        let detected = url("tcp://child-dc.dev.rjm.local:88");
+        let result = select_kdc_urls("DEV.RJM.LOCAL", Some("RJM.LOCAL"), Some(&pinned), |realm| {
+            assert_eq!(realm, "DEV.RJM.LOCAL");
+            vec![detected.clone()]
+        });
+        assert_eq!(result, vec![detected]);
+    }
+
+    #[test]
+    fn home_realm_without_pinned_kdc_falls_back_to_detection() {
+        // Detection may yield several KDCs; their order is preserved for failover.
+        let detected = vec![url("tcp://dc1.rjm.local:88"), url("tcp://dc2.rjm.local:88")];
+        let result = select_kdc_urls("RJM.LOCAL", Some("RJM.LOCAL"), None, |_| detected.clone());
+        assert_eq!(result, detected);
+    }
+}
+
 #[cfg(any(feature = "__test-data", test))]
 pub mod test_data {
+    use std::collections::HashMap;
     use std::time::Duration;
 
     use picky_asn1::restricted_string::IA5String;
@@ -825,6 +947,7 @@ pub mod test_data {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
+            kdc_cache: HashMap::new(),
         }
     }
 
@@ -871,6 +994,7 @@ pub mod test_data {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(fake_server_properties())),
+            kdc_cache: HashMap::new(),
         }
     }
 }

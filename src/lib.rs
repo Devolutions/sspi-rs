@@ -116,7 +116,7 @@ pub use self::builders::{
 use self::builders::{
     ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
-pub use self::kdc::{detect_kdc_host, detect_kdc_url};
+pub use self::kdc::{detect_kdc_host, detect_kdc_url, detect_kdc_urls};
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
 #[cfg(feature = "__test-data")]
