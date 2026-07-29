@@ -511,8 +511,6 @@ pub async fn initialize_security_context<'a>(
                     extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
 
                 client.encryption_params.sub_session_key = Some(sub_session_key);
-
-                client.next_seq_number();
             }
 
             client.state = KerberosState::Final;
