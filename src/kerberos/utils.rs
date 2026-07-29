@@ -23,6 +23,7 @@ pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>>
 
 pub(super) fn validate_mic_token(
     is_client: bool,
+    expected_seq_number: u64,
     raw_token: &[u8],
     params: &EncryptionParams,
     mech_types: &[u8],
@@ -31,6 +32,16 @@ pub(super) fn validate_mic_token(
 
     let token = MicToken::decode(raw_token)?;
     let token_flags = token.flags;
+
+    if token.seq_num != expected_seq_number {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!(
+                "invalid MIC token sequence number: expected {expected_seq_number} but got {}",
+                token.seq_num
+            ),
+        ));
+    }
 
     // [Flags Field](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.2):
     //

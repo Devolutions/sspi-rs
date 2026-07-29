@@ -17,8 +17,8 @@ use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
 
 use self::extractors::{
-    extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep, extract_session_key_from_tgs_rep,
-    extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
+    decrypt_ap_rep, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
+    extract_session_key_from_tgs_rep, extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
@@ -486,15 +486,24 @@ pub async fn initialize_security_context<'a>(
                     .session_key
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
-                let sub_session_key =
-                    extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
-                let seq_number = extract_seq_number_from_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
+                let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
+                let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
+                client.remote_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
+
+                let seq_number_bytes = ap_rep_enc_part
+                    .0
+                    .seq_number
+                    .0
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing seq-number in ap_rep"))?
+                    .0
+                    .0
+                    .clone();
 
                 trace!(?sub_session_key, "DCE AP_REP sub-session key");
 
                 client.encryption_params.sub_session_key = Some(sub_session_key);
 
-                let ap_rep = generate_ap_rep(session_key, seq_number, &client.encryption_params)?;
+                let ap_rep = generate_ap_rep(session_key, seq_number_bytes, &client.encryption_params)?;
                 let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -507,8 +516,9 @@ pub async fn initialize_security_context<'a>(
                     .session_key
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
-                let sub_session_key =
-                    extract_sub_session_key_from_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
+                let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
+                let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
+                client.remote_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
 
                 client.encryption_params.sub_session_key = Some(sub_session_key);
             }

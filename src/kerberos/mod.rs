@@ -99,6 +99,7 @@ pub struct Kerberos {
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
+    pub(crate) remote_seq_number: u32,
 }
 
 impl Kerberos {
@@ -119,6 +120,7 @@ impl Kerberos {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
+            remote_seq_number: 0,
         })
     }
 
@@ -139,6 +141,7 @@ impl Kerberos {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
+            remote_seq_number: 0,
         })
     }
 
@@ -752,7 +755,13 @@ impl SspiEx for Kerberos {
     }
 
     fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
-        utils::validate_mic_token(self.is_client(), token, &self.encryption_params, data)
+        utils::validate_mic_token(
+            self.is_client(),
+            self.remote_seq_number.into(),
+            token,
+            &self.encryption_params,
+            data,
+        )
     }
 
     fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
@@ -825,6 +834,7 @@ pub mod test_data {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
+            remote_seq_number: 0,
         }
     }
 
@@ -871,6 +881,7 @@ pub mod test_data {
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(fake_server_properties())),
+            remote_seq_number: 0,
         }
     }
 }
