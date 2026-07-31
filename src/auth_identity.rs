@@ -902,6 +902,24 @@ mod tests {
         })
     }
 
+    #[test]
+    fn down_level_logon_name_with_at_requires_a_domain() {
+        // Pins the fix in 2e05ed1 (Copilot's review finding, confirmed by @TheBestTvarynka):
+        // with no NetBIOS domain there is no `\` in the serialized string, so an `@`-bearing
+        // account name came back from an `AuthIdentityBuffers` round trip as a UPN, breaking the
+        // format-preservation invariant. The qualifier is what makes such a name representable.
+        assert_eq!(
+            Username::new_down_level_logon_name("frank@example.com", ""),
+            Err(UsernameError::MixedFormat),
+        );
+
+        // Qualified, the same account name is representable and survives the round trip.
+        let qualified =
+            Username::new_down_level_logon_name("frank@example.com", "MicrosoftAccount").expect("qualified");
+        assert_eq!(qualified.account_name(), "frank@example.com");
+        check_round_trip_property(&qualified);
+    }
+
     /// #718: a Microsoft account's account name is the entire e-mail address. Every qualified way
     /// of writing one must parse with the address intact, and the unqualified form keeps its
     /// (AD-correct) UPN reading.
