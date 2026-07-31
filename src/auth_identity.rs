@@ -181,7 +181,7 @@ impl Username {
     /// rejecting the `@` here left such accounts with no representable form at all (#718).
     pub fn new_down_level_logon_name(account_name: &str, netbios_domain_name: &str) -> Result<Self, UsernameError> {
         // NOTE: account names may contain `@` (Microsoft accounts, AD names with an embedded `@`)
-        if account_name.contains(['\\']) {
+        if account_name.contains('\\') || (netbios_domain_name.is_empty() && account_name.contains('@')) {
             return Err(UsernameError::MixedFormat);
         }
 
