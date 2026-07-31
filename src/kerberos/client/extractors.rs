@@ -196,13 +196,13 @@ pub fn extract_status_code_from_krb_priv_response(
     Ok(u16::from_be_bytes(user_data[0..2].try_into().unwrap()))
 }
 
-/// Extracts the sequence number from the [ApRep].
+/// Decrypt and decodes the encrypted part of the encoded [ApRep] message.
 #[instrument(level = "trace", ret)]
-pub fn extract_seq_number_from_ap_rep(
+pub fn decrypt_ap_rep(
     ap_rep: &ApRep,
     session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
-) -> Result<Vec<u8>> {
+) -> Result<EncApRepPart> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -218,51 +218,45 @@ pub fn extract_seq_number_from_ap_rep(
             )
         })?;
 
-    let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
-
-    Ok(ap_rep_enc_part
-        .0
-        .seq_number
-        .0
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sequence number in ap_rep"))?
-        .0
-        .0)
+    Ok(picky_asn1_der::from_bytes(&res)?)
 }
 
-/// Extracts a sub-session key from the [ApRep].
+/// Extracts a sub-session key from the [EncApRepPart].
 #[instrument(level = "trace", ret)]
-pub fn extract_sub_session_key_from_ap_rep(
-    ap_rep: &ApRep,
-    session_key: &Secret<Vec<u8>>,
-    enc_params: &EncryptionParams,
-) -> Result<Secret<Vec<u8>>> {
-    let cipher = enc_params
-        .encryption_type
-        .as_ref()
-        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-        .cipher();
-
-    let res = cipher
-        .decrypt(session_key.as_ref(), AP_REP_ENC, &ap_rep.0.enc_part.cipher.0.0)
-        .map_err(|err| {
-            Error::new(
-                ErrorKind::DecryptFailure,
-                format!("cannot decrypt ap_rep.enc_part: {err:?}"),
-            )
-        })?;
-
-    let ap_rep_enc_part: EncApRepPart = picky_asn1_der::from_bytes(&res)?;
-
+pub fn extract_sub_session_key_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Result<Secret<Vec<u8>>> {
     Ok(ap_rep_enc_part
         .0
         .subkey
         .0
+        .clone()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sub-key in ap_req"))?
         .0
         .key_value
         .0
         .0
         .into())
+}
+
+/// Extracts a sequence number from the [EncApRepPart].
+#[instrument(level = "trace", ret)]
+pub fn extract_seq_number_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Result<u32> {
+    let seq_number_bytes = ap_rep_enc_part
+        .0
+        .seq_number
+        .0
+        .clone()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing seq-number in ap_rep"))?
+        .0
+        .0;
+
+    let seq_number = u32::from_be_bytes(seq_number_bytes.try_into().map_err(|err| {
+        Error::new(
+            ErrorKind::InvalidToken,
+            format!("invalid ApRep sequence number: {:?}", err),
+        )
+    })?);
+
+    Ok(seq_number)
 }
 
 /// Extracts TGT Ticket from encoded [NegTokenTarg1].

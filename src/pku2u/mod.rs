@@ -38,7 +38,7 @@ use self::generators::{
 };
 use crate::builders::{ChangePassword, FilledAcceptSecurityContext};
 use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext, YieldPointLocal};
-use crate::kerberos::client::extractors::extract_sub_session_key_from_ap_rep;
+use crate::kerberos::client::extractors::{decrypt_ap_rep, extract_sub_session_key_from_ap_rep};
 use crate::kerberos::client::generators::{
     ChecksumOptions, EncKey, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_ap_req, generate_as_req,
     generate_as_req_kdc_body,
@@ -792,11 +792,12 @@ impl Pku2u {
 
                 let (ap_rep, _): (ApRep, _) = extract_krb_rep(&acceptor_exchange.exchange)?;
 
-                let sub_session_key = extract_sub_session_key_from_ap_rep(
+                let ap_rep_enc_part = decrypt_ap_rep(
                     &ap_rep,
                     check_if_empty!(self.encryption_params.session_key.as_ref(), "session key is not set"),
                     &self.encryption_params,
                 )?;
+                let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
 
                 self.encryption_params.sub_session_key = Some(sub_session_key);
 
