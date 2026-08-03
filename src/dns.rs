@@ -203,9 +203,10 @@ cfg_if::cfg_if! {
                 if rdata.len() < 6 {
                     return Err(SrvRecordParseError::RdataTooShort);
                 }
-                let priority = u16::from_be_bytes(rdata[0..2].try_into()?);
-                let weight = u16::from_be_bytes(rdata[2..4].try_into()?);
-                let port = u16::from_be_bytes(rdata[4..6].try_into()?);
+
+                let priority = u16::from_be_bytes(rdata[0..2].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
+                let weight = u16::from_be_bytes(rdata[2..4].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
+                let port = u16::from_be_bytes(rdata[4..6].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
                 // A malformed name (truncated label, oversized label, missing root terminator)
                 // is rejected here rather than silently accepted as a partial hostname.
                 let target = dns_decode_target_data_to_string(&rdata[6..])?;

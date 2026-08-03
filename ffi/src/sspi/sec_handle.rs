@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::mem::{size_of, transmute};
+use std::mem::size_of;
 use std::ptr::{self, NonNull, copy_nonoverlapping};
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
@@ -791,7 +791,7 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         let mut input_tokens = try_execute!(unsafe { sec_buffer_desc_to_security_buffers(p_input) });
 
         // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
-        let len: usize = unsafe { (*p_output).c_buffers };
+        let len = unsafe { (*p_output).c_buffers };
         let len = try_execute!(len.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
