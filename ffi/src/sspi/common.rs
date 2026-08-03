@@ -260,7 +260,8 @@ pub unsafe extern "system" fn CompleteAuthToken(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut buffers = try_execute!(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) });
+        let buffers = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut buffers = try_execute!(buffers);
 
         sspi_context.complete_auth_token(&mut buffers).map_or_else(
             |err| err.error_type.to_u32().unwrap(),

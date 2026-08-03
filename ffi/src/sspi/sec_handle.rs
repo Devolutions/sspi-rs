@@ -626,7 +626,8 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
-        let mut input_tokens = try_execute!(unsafe { sec_buffer_desc_to_security_buffers(p_input) });
+        let input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let mut input_tokens = try_execute!(input_tokens);
 
         // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let len = unsafe { (*p_output).c_buffers };
@@ -640,7 +641,8 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut output_tokens = try_execute!(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) });
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let mut auth_data = Some(auth_data);
@@ -788,7 +790,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
-        let mut input_tokens = try_execute!(unsafe { sec_buffer_desc_to_security_buffers(p_input) });
+        let input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let mut input_tokens = try_execute!(input_tokens);
 
         // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
         let len = unsafe { (*p_output).c_buffers };
@@ -802,7 +805,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut output_tokens = try_execute!(unsafe { p_sec_buffers_to_security_buffers(raw_buffers) });
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let mut auth_data = Some(auth_data);
@@ -1618,7 +1622,8 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
         let p_buffers = unsafe { from_raw_parts(p_output.p_buffers, len) };
         // SAFETY:
         // - `p_buffers` must contain valid [SecBuffer] structures: upheld by the user.
-        let mut output_tokens = try_execute!(unsafe { p_sec_buffers_to_security_buffers(p_buffers) });
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(p_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let change_password = ChangePasswordBuilder::new()

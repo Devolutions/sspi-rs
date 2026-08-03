@@ -110,6 +110,7 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let scard_context = WinScardContextHandle::with_scard_context(scard_context);
 
     let raw_ptr = into_raw_ptr(scard_context).expose_provenance();
+    #[allow(clippy::useless_conversion)]
     let raw_ptr = try_execute!(raw_ptr.try_into(), ErrorKind::InvalidHandle);
     info!(new_established_context = ?raw_ptr);
     // SAFETY: The `context` is guaranteed to be non-null due to the prior check.
