@@ -7,7 +7,7 @@ use rand_core::{Rng as _, SeedableRng as _};
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
 use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body};
-use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
+use crate::kerberos::client::principal::{get_client_principal_name_from_auth_identity, get_client_principal_realm};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::{TGT_SERVICE_NAME, client};
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
@@ -43,14 +43,11 @@ pub(crate) async fn request_tgt(
 
     let (username, password, realm, cname_type) = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
-            let username = auth_identity.user.to_string();
-            let domain = auth_identity.domain.to_string();
+            let principal = get_client_principal_name_from_auth_identity(auth_identity)?;
+            let realm = get_client_principal_realm(&principal.name, &principal.realm_domain);
             let password = auth_identity.password.as_ref().as_ref().to_string();
 
-            let realm = get_client_principal_realm(&username, &domain);
-            let cname_type = get_client_principal_name_type(&username, &domain);
-
-            (username, password, realm, cname_type)
+            (principal.name, password, realm, principal.name_type)
         }
         #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(_) => {

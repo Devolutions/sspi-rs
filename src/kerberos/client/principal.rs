@@ -5,8 +5,8 @@ use std::path::Path;
 
 use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL};
 
-use crate::Username;
 use crate::krb::Krb5Conf;
+use crate::{AuthIdentity, AuthIdentityBuffers, Result, Username};
 
 /// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
@@ -41,6 +41,13 @@ pub struct ClientPrincipalName<'a> {
     pub name_type: u8,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct OwnedClientPrincipalName {
+    pub name: String,
+    pub realm_domain: String,
+    pub name_type: u8,
+}
+
 /// Derives the [`ClientPrincipalName`] for a principal from its user name format.
 pub fn get_client_principal_name(username: &Username) -> ClientPrincipalName<'_> {
     match username {
@@ -55,6 +62,19 @@ pub fn get_client_principal_name(username: &Username) -> ClientPrincipalName<'_>
             name_type: NT_PRINCIPAL,
         },
     }
+}
+
+pub(crate) fn get_client_principal_name_from_auth_identity(
+    auth_identity: &AuthIdentityBuffers,
+) -> Result<OwnedClientPrincipalName> {
+    let auth_identity = AuthIdentity::try_from(auth_identity)?;
+    let principal = get_client_principal_name(&auth_identity.username);
+
+    Ok(OwnedClientPrincipalName {
+        name: principal.name.to_owned(),
+        realm_domain: principal.realm_domain.to_owned(),
+        name_type: principal.name_type,
+    })
 }
 
 // FIXME: like `get_client_principal_name_type`, this should take a `&Username`
@@ -133,6 +153,7 @@ fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AuthIdentity, AuthIdentityBuffers};
 
     const KRB5_CONFIG_FILE_PATH: &str = "test_assets/krb5.conf";
 
@@ -152,6 +173,34 @@ mod tests {
         assert_eq!(cname.name, "user");
         assert_eq!(cname.realm_domain, "EXAMPLE");
         assert_eq!(cname.name_type, NT_PRINCIPAL);
+    }
+
+    #[test]
+    fn auth_identity_down_level_account_with_at_is_principal() {
+        let identity = AuthIdentity {
+            username: Username::new_down_level_logon_name("alice@dept", Some("EXAMPLE")).unwrap(),
+            password: String::new().into(),
+        };
+        let buffers = AuthIdentityBuffers::try_from(&identity).unwrap();
+        let cname = get_client_principal_name_from_auth_identity(&buffers).unwrap();
+
+        assert_eq!(cname.name, "alice@dept");
+        assert_eq!(cname.realm_domain, "EXAMPLE");
+        assert_eq!(cname.name_type, NT_PRINCIPAL);
+    }
+
+    #[test]
+    fn auth_identity_upn_is_enterprise() {
+        let identity = AuthIdentity {
+            username: Username::new_upn("alice", "dept.example.com").unwrap(),
+            password: String::new().into(),
+        };
+        let buffers = AuthIdentityBuffers::try_from(&identity).unwrap();
+        let cname = get_client_principal_name_from_auth_identity(&buffers).unwrap();
+
+        assert_eq!(cname.name, "alice@dept.example.com");
+        assert_eq!(cname.realm_domain, "dept.example.com");
+        assert_eq!(cname.name_type, NT_ENTERPRISE);
     }
 
     #[test]
