@@ -122,8 +122,9 @@ pub(crate) static LOCAL_CHALLENGE_MESSAGE: LazyLock<[u8; LOCAL_CHALLENGE_MESSAGE
 
 pub(crate) static TEST_CREDENTIALS: LazyLock<AuthIdentityBuffers> = LazyLock::new(|| {
     AuthIdentity {
-        username: Username::new("User", Some("Domain")).unwrap(),
+        username: Username::new_down_level_logon_name("User", Some("Domain")).unwrap(),
         password: String::from("Password").into(),
     }
-    .into()
+    .try_into()
+    .unwrap()
 });

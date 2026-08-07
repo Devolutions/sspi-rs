@@ -105,8 +105,8 @@ use utils::map_keb_error_code_to_sspi_error;
 pub use utils::modpow;
 
 pub use self::auth_identity::{
-    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, DownLevelLogonNameParts, KeytabIdentity,
-    UserNameFormat, UserPrincipalNameParts, Username, UsernameParts,
+    AuthIdentity, AuthIdentityBuffers, AuthIdentityBuffersError, Credentials, CredentialsBuffers, DownLevelLogonName,
+    KeytabIdentity, UserPrincipalName, Username, UsernameComponent, UsernameError,
 };
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{CertificateRaw, SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
@@ -289,7 +289,10 @@ where
     /// let mut ntlm = sspi::Ntlm::new();
     ///
     /// let identity = sspi::AuthIdentity {
-    ///     username: Username::new(&whoami::username().unwrap(), Some(&whoami::hostname().unwrap())).unwrap(),
+    ///     username: Username::new_down_level_logon_name(
+    ///         &whoami::username().unwrap(),
+    ///         Some(&whoami::hostname().unwrap()),
+    ///     ).unwrap(),
     ///     password: String::from("password").into(),
     /// };
     ///
@@ -1010,8 +1013,13 @@ where
     ///     .execute(&mut ntlm).unwrap();
     ///
     /// let names = ntlm.query_context_names().unwrap();
-    /// println!("Username: {:?}", names.username.account_name());
-    /// println!("Parts: {:?}", names.username.parts());
+    /// println!("Username: {}", names.username.as_str());
+    /// match names.username {
+    ///     Username::UserPrincipalName(upn) => println!("UPN suffix: {}", upn.suffix()),
+    ///     Username::DownLevelLogonName(down_level) => {
+    ///         println!("NetBIOS domain: {:?}", down_level.netbios_domain())
+    ///     }
+    /// }
     /// ```
     ///
     /// # MSDN
@@ -2247,9 +2255,15 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<auth_identity::UsernameError> for Error {
-    fn from(value: auth_identity::UsernameError) -> Self {
-        Error::new(ErrorKind::UnknownCredentials, value)
+impl From<UsernameError> for Error {
+    fn from(value: UsernameError) -> Self {
+        Error::new(ErrorKind::InvalidParameter, value)
+    }
+}
+
+impl From<AuthIdentityBuffersError> for Error {
+    fn from(value: AuthIdentityBuffersError) -> Self {
+        Error::new(ErrorKind::InvalidParameter, value)
     }
 }
 

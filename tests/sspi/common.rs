@@ -9,7 +9,7 @@ use sspi::{
 use time::OffsetDateTime;
 
 pub(crate) static CREDENTIALS: LazyLock<AuthIdentity> = LazyLock::new(|| AuthIdentity {
-    username: Username::new("Username", Some("Domain")).unwrap(),
+    username: Username::new_down_level_logon_name("Username", Some("Domain")).unwrap(),
     password: String::from("Password").into(),
 });
 
@@ -29,7 +29,15 @@ impl credssp::CredentialsProxy for CredentialsProxyImpl<'_> {
     type AuthenticationData = AuthIdentity;
 
     fn auth_data_by_user(&mut self, username: &Username) -> io::Result<Self::AuthenticationData> {
-        assert_eq!(username.account_name(), self.credentials.username.account_name());
+        let requested_account = match username {
+            Username::UserPrincipalName(upn) => upn.account_name(),
+            Username::DownLevelLogonName(down_level) => down_level.account_name(),
+        };
+        let expected_account = match &self.credentials.username {
+            Username::UserPrincipalName(upn) => upn.account_name(),
+            Username::DownLevelLogonName(down_level) => down_level.account_name(),
+        };
+        assert_eq!(requested_account, expected_account);
 
         Ok(self.credentials.clone())
     }

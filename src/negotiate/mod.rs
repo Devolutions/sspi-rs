@@ -322,12 +322,8 @@ impl Negotiate {
             .filter(|auth_data| {
                 trace!("Comparing usernames: {:?} with {:?}", auth_data.username, username);
 
-                // Usernames match only when they share the same format and the same components.
-                // `eq_ignore_ascii_case` is format-aware, so it is safe to fold the UPN suffix and the
-                // NetBIOS domain into a single "domain" comparison here: a UPN and a down-level logon
-                // name are distinct identities and never compare equal, which means the qualifier being
-                // compared always has one unambiguous meaning (a UPN suffix is only ever matched against
-                // a UPN suffix, a NetBIOS domain only ever against a NetBIOS domain).
+                // This compares tagged representations, not canonical directory identities. A UPN and
+                // a down-level name compare unequal, so suffixes and NetBIOS domains are never conflated.
                 auth_data.username.eq_ignore_ascii_case(&username)
             })
             .cloned()
@@ -794,11 +790,8 @@ impl SspiImpl for Negotiate {
         }
 
         if let Some(Credentials::AuthIdentity(identity)) = builder.auth_data {
-            let account_name = identity.username.account_name();
-            // `realm_domain` is the per-format "authority" (UPN suffix or NetBIOS domain) used purely
-            // as a best-effort realm/Azure-AD hint for protocol negotiation, not as an identity.
-            let domain_name = get_client_principal_name(&identity.username).realm_domain;
-            self.negotiate_protocol(account_name, domain_name)?;
+            let principal = get_client_principal_name(&identity.username);
+            self.negotiate_protocol(principal.name, principal.realm_domain)?;
         }
 
         self.auth_identity = builder

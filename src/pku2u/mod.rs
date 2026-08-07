@@ -391,7 +391,7 @@ impl SspiImpl for Pku2u {
             ));
         }
 
-        self.auth_identity = builder.auth_data.cloned().map(AuthIdentityBuffers::from);
+        self.auth_identity = builder.auth_data.map(AuthIdentityBuffers::try_from).transpose()?;
 
         Ok(AcquireCredentialsHandleResult {
             credentials_handle: self.auth_identity.clone(),
@@ -844,7 +844,7 @@ impl Pku2u {
 impl SspiEx for Pku2u {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
-        self.auth_identity = Some(identity.into());
+        self.auth_identity = Some(identity.try_into()?);
 
         Ok(())
     }
