@@ -785,24 +785,24 @@ impl SspiEx for Ntlm {
             return Err(Error::new(ErrorKind::NoCredentials, "no credentials provided"));
         }
 
+        let allowed_identities = identities
+            .iter()
+            .map(AuthIdentityBuffers::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let first_identity = &allowed_identities[0];
+
         // Set identity from the first candidate (for wire user/domain
         // during complete_authenticate), without going through
         // custom_set_auth_identity which would also set allowed_identities.
         if let Some(credentials) = &mut self.identity {
             if credentials.password.as_ref().as_ref().is_empty() {
-                let identity = AuthIdentityBuffers::try_from(&identities[0])?;
-                credentials.password = identity.password;
+                credentials.password = first_identity.password.clone();
             }
         } else {
-            self.identity = Some(AuthIdentityBuffers::try_from(&identities[0])?);
+            self.identity = Some(first_identity.clone());
         }
 
-        self.allowed_identities = Some(
-            identities
-                .iter()
-                .map(AuthIdentityBuffers::try_from)
-                .collect::<Result<_, _>>()?,
-        );
+        self.allowed_identities = Some(allowed_identities);
 
         Ok(())
     }

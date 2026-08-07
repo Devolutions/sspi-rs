@@ -612,7 +612,7 @@ impl<'a> Negotiate {
 impl SspiEx for Negotiate {
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
-        self.auth_identity = Some(identity.clone().try_into().unwrap());
+        let auth_identity = identity.clone().try_into()?;
 
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => {
@@ -632,25 +632,28 @@ impl SspiEx for Negotiate {
                     )
                 })?)
             }
-        }
+        }?;
+
+        self.auth_identity = Some(auth_identity);
+
+        Ok(())
     }
 
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
-        if let Some(first) = identities.first() {
-            self.auth_identity = Some(first.clone().try_into().map_err(|_| {
-                Error::new(
-                    ErrorKind::IncompleteCredentials,
-                    "provided credentials are not password-based",
-                )
-            })?);
-        }
-
         match &mut self.protocol {
             NegotiatedProtocol::Ntlm(ntlm) => {
+                let auth_identity = identities
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "no credentials provided"))?
+                    .try_into()?;
                 // NOTE: non-AuthIdentity credentials (e.g. SmartCard) are silently
                 // dropped here. Multi-credential only applies to password-based auth.
                 let auth_identities: Vec<_> = identities.into_iter().filter_map(|c| c.auth_identity()).collect();
-                ntlm.custom_set_auth_identities(auth_identities)
+                ntlm.custom_set_auth_identities(auth_identities)?;
+                self.auth_identity = Some(auth_identity);
+
+                Ok(())
             }
             _ => match identities.into_iter().next() {
                 Some(identity) => self.custom_set_auth_identity(identity),
@@ -880,5 +883,28 @@ impl<'a> Negotiate {
                 "cannot change password for this protocol",
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn custom_set_auth_identity_rejects_unrepresentable_username_without_panicking() {
+        let config = NegotiateConfig::from_protocol_config(Box::<NtlmConfig>::default(), "client".to_owned());
+        let mut negotiate = Negotiate::new_client(config).expect("negotiate client");
+        let identity = AuthIdentity {
+            username: crate::Username::new_down_level_logon_name("alice@example.com", None)
+                .expect("domain-less down-level name"),
+            password: "password".to_owned().into(),
+        };
+
+        let error = negotiate
+            .custom_set_auth_identity(Credentials::AuthIdentity(identity))
+            .expect_err("raw buffers cannot preserve this username format");
+
+        assert_eq!(error.error_type, ErrorKind::InvalidParameter);
+        assert!(negotiate.auth_identity.is_none());
     }
 }
