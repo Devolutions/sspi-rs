@@ -520,16 +520,16 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let user = unsafe { credentials_str_into_bytes(user.cast(), usize::try_from(user_len)?) };
+    let user = unsafe { credentials_str_into_bytes(user.cast(), usize::try_from(user_len)? * 2) };
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let domain = unsafe { credentials_str_into_bytes(domain.cast(), usize::try_from(domain_len)?) };
+    let domain = unsafe { credentials_str_into_bytes(domain.cast(), usize::try_from(domain_len)? * 2) };
     let password: Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        unsafe { credentials_str_into_bytes(password.cast(), usize::try_from(password_len)?) }.into();
+        unsafe { credentials_str_into_bytes(password.cast(), usize::try_from(password_len)? * 2) }.into();
 
     let mut username = user.clone();
     username.extend_from_slice(&[0, 0]);
