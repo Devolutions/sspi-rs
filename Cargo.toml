@@ -60,6 +60,7 @@ undocumented_unsafe_blocks = "warn"
 multiple_unsafe_ops_per_block = "warn"
 
 # == Correctness == #
+as_conversions = "warn"
 as_underscore = "warn"
 filetype_is_file = "warn"
 float_cmp_const = "warn"

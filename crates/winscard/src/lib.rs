@@ -351,7 +351,10 @@ pub enum ErrorKind {
 
 impl From<ErrorKind> for u32 {
     fn from(value: ErrorKind) -> Self {
-        value as u32
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
     }
 }
 

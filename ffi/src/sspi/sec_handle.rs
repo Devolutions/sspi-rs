@@ -332,20 +332,18 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
 
         // SAFETY: `*context` is convertible to a reference.
         let context = unsafe { (*context).as_mut() }.expect("context should not be null");
-        context.dw_lower = into_raw_ptr(sspi_context) as c_ulonglong;
+
+        context.dw_lower = into_raw_ptr(sspi_context).expose_provenance().try_into()?;
+
         if context.dw_upper == 0 {
-            context.dw_upper = into_raw_ptr(name.to_owned()) as c_ulonglong;
+            context.dw_upper = into_raw_ptr(name.to_owned()).expose_provenance().try_into()?;
         }
     }
 
-    Ok(NonNull::new(ptr::with_exposed_provenance_mut(
-        // SAFETY: `*context` is guaranteed to be non-null due to the prior check.
-        unsafe { &**context }
-            .dw_lower
-            .try_into()
-            .expect("c_ulonglong should be castable to usize"),
-    ))
-    .expect("dw_lower must be initialized"))
+    // SAFETY: `*context` is guaranteed to be non-null due to the prior check.
+    let dw_lower = unsafe { &**context }.dw_lower;
+    let addr = usize::try_from(dw_lower)?;
+    Ok(NonNull::new(ptr::with_exposed_provenance_mut(addr)).expect("dw_lower must be initialized"))
 }
 
 fn verify_security_package(package_name: &str) -> Result<()> {
@@ -409,13 +407,15 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
             unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) }
         );
 
+        let handle = into_raw_ptr(CredentialsHandle {
+            credentials,
+            security_package_name,
+            attributes: CredentialsAttributes::new_with_package_list(package_list),
+        }).expose_provenance();
+        let handle = try_execute!(handle.try_into(), ErrorKind::InvalidHandle);
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
-            (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
-                credentials,
-                security_package_name,
-                attributes: CredentialsAttributes::new_with_package_list(package_list),
-            }) as c_ulonglong;
+            (*ph_credential).dw_lower = handle;
         }
 
         0
@@ -485,13 +485,15 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
             unsafe { auth_data_to_identity_buffers(&security_package_name, p_auth_data, &mut package_list) }
         );
 
+        let handle = into_raw_ptr(CredentialsHandle {
+            credentials,
+            security_package_name,
+            attributes: CredentialsAttributes::new_with_package_list(package_list),
+        }).expose_provenance();
+        let handle = try_execute!(handle.try_into(), ErrorKind::InvalidHandle);
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
-            (*ph_credential).dw_lower = into_raw_ptr(CredentialsHandle {
-                credentials,
-                security_package_name,
-                attributes: CredentialsAttributes::new_with_package_list(package_list),
-            }) as c_ulonglong;
+            (*ph_credential).dw_lower = handle;
         }
 
         0
@@ -598,7 +600,9 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         debug!(?service_principal, "Target name (SPN)");
 
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
-        let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+        let dw_lower = unsafe { (*ph_credential).dw_lower };
+        let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+        let credentials_handle: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
 
         // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
         let transformted_credentials_handle = unsafe { transform_credentials_handle(credentials_handle) };
@@ -622,10 +626,12 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
-        let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let mut input_tokens = try_execute!(input_tokens);
 
         // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
-        let len = unsafe { (*p_output).c_buffers as usize };
+        let len = unsafe { (*p_output).c_buffers };
+        let len = try_execute!(len.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
         // - `p_output_buffers` is guaranteed to be non-null due to the prior check.
@@ -635,7 +641,8 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let mut auth_data = Some(auth_data);
@@ -661,7 +668,8 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         // SAFETY: `ph_new_context` is convertible to a reference.
         let new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context is non-null");
 
-        new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
+        let dw_lower = sspi_context_ptr.as_ptr().expose_provenance();
+        new_context.dw_lower = try_execute!(dw_lower.try_into(), ErrorKind::InvalidHandle);
         // SAFETY:
         // `ph_context` is guaranteed to be non-null since it is initialized in the `p_ctxt_handle_to_sspi_context`
         // if it was previously null.
@@ -756,7 +764,9 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         debug!(?service_principal, "Target name (SPN)");
 
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
-        let credentials_handle = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+        let dw_lower = unsafe { (*ph_credential).dw_lower };
+        let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+        let credentials_handle: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
 
         // SAFETY: `credentials_handle` is either null or a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
         let transformted_credentials_handle = unsafe { transform_credentials_handle(credentials_handle) };
@@ -780,10 +790,12 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         let sspi_context = unsafe { sspi_context_ptr.as_mut() };
 
         // SAFETY: `p_input` is either null or a pointer to a valid `SecBufferDesc` structure convertible to a reference.
-        let mut input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let input_tokens = unsafe { sec_buffer_desc_to_security_buffers(p_input) };
+        let mut input_tokens = try_execute!(input_tokens);
 
         // SAFETY: `p_output` is guaranteed to be non-null due to the prior check.
-        let len = unsafe { (*p_output).c_buffers as usize };
+        let len = unsafe { (*p_output).c_buffers };
+        let len = try_execute!(len.try_into(), ErrorKind::InvalidParameter);
 
         // SAFETY:
         // - `p_output_buffers` is guaranteed to be non-null due to the prior check.
@@ -793,7 +805,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // SAFETY:
         // - `raw_buffers` array contains valid `SecBuffer` structures.
         // - Each `SecBuffer` have a valid `pv_buffer` pointer that is valid for reads of `cb_buffer` bytes.
-        let mut output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(raw_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let mut auth_data = Some(auth_data);
@@ -821,7 +834,8 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         // SAFETY: `ph_new_context` is convertible to a reference.
         let new_context = unsafe { ph_new_context.as_mut() }.expect("ph_new_context is non-null");
 
-        new_context.dw_lower = sspi_context_ptr.as_ptr() as c_ulonglong;
+        let dw_lower = sspi_context_ptr.as_ptr().expose_provenance();
+        new_context.dw_lower = try_execute!(dw_lower.try_into(), ErrorKind::InvalidHandle);
         // SAFETY:
         // `ph_context` is guaranteed to be non-null since it is initialized in the `p_ctxt_handle_to_sspi_context`
         // if it was previously null.
@@ -1025,7 +1039,7 @@ unsafe fn query_context_attributes_common(
 
                 // SAFETY: `sec_pkg_context_session_key` is non-null because it was cast from a non-null `p_buffer`.
                 unsafe {
-                    (*sec_pkg_context_session_key).session_key_len = session_key_len.try_into().expect("session key length should fit into u32");
+                    (*sec_pkg_context_session_key).session_key_len = try_execute!(session_key_len.try_into(), ErrorKind::InvalidParameter);
                 }
 
                 // SAFETY: Memory allocation is safe.
@@ -1366,7 +1380,9 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
         // SAFETY:
         // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
-        let credentials_handle_ptr = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+        let dw_lower = unsafe { (*ph_credential).dw_lower };
+        let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+        let credentials_handle_ptr: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
 
         // SAFETY:
         // - `credentials_handle` a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
@@ -1460,7 +1476,9 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         // SAFETY:
         // - `ph_credentials` is guaranteed to be non-null due to the prior check.
         // - `ph_credentials` points to a valid `credentials handle` allocated by an SSPI function.
-        let credentials_handle_ptr = unsafe { (*ph_credential).dw_lower as *mut CredentialsHandle };
+        let dw_lower = unsafe { (*ph_credential).dw_lower };
+        let addr = try_execute!(usize::try_from(dw_lower), ErrorKind::InvalidHandle);
+        let credentials_handle_ptr: *mut CredentialsHandle = ptr::with_exposed_provenance_mut(addr);
 
         // SAFETY:
         // - `credentials_handle` a valid pointer to the `CredentialsHandle` allocated by an SSPI function.
@@ -1604,7 +1622,8 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
         let p_buffers = unsafe { from_raw_parts(p_output.p_buffers, len) };
         // SAFETY:
         // - `p_buffers` must contain valid [SecBuffer] structures: upheld by the user.
-        let mut output_tokens = unsafe { p_sec_buffers_to_security_buffers(p_buffers) };
+        let output_tokens = unsafe { p_sec_buffers_to_security_buffers(p_buffers) };
+        let mut output_tokens = try_execute!(output_tokens);
         output_tokens.iter_mut().for_each(|s| s.buffer.clear());
 
         let change_password = ChangePasswordBuilder::new()
@@ -1846,7 +1865,7 @@ mod tests {
     use std::ffi::CStr;
     use std::ptr::{self, null, null_mut};
 
-    use libc::{c_ulonglong, c_void};
+    use libc::c_void;
     use num_traits::ToPrimitive;
     use sspi::SecurityStatus::ContinueNeeded;
     use sspi::{ErrorKind, U16CString, Utf16String, Utf16StringExt};
@@ -1895,16 +1914,18 @@ mod tests {
 
         let mut credentials = SecWinntAuthIdentityExW {
             version: SEC_WINNT_AUTH_IDENTITY_VERSION,
-            length: size_of::<SecWinntAuthIdentityExW>() as u32,
+            length: size_of::<SecWinntAuthIdentityExW>()
+                .try_into()
+                .expect("size of SecWinntAuthIdentityExW is a valid u32"),
             user: user.as_ptr(),
-            user_length: user.len() as u32,
+            user_length: user.len().try_into().expect("user length is a valid u32"),
             domain: domain.as_ptr(),
-            domain_length: domain.len() as u32,
+            domain_length: domain.len().try_into().expect("domain length is a valid u32"),
             password: password.as_ptr(),
-            password_length: password.len() as u32,
+            password_length: password.len().try_into().expect("password length is a valid u32"),
             flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             package_list: pkg_list.as_ptr(),
-            package_list_length: pkg_list.len() as u32,
+            package_list_length: pkg_list.len().try_into().expect("package list length is a valid u32"),
         };
 
         let mut cred_handle = SecHandle {
@@ -1938,7 +1959,7 @@ mod tests {
         let mut target_name = "TERMSRV/test_user@example.com\0".encode_utf16().collect::<Vec<_>>();
         let mut attrs = 0;
 
-        let mut out_buffer = vec![0; cb_max_token as usize];
+        let mut out_buffer = vec![0; cb_max_token.try_into().expect("cb_max_token is a valid usize")];
         let mut out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
             buffer_type: 2,
@@ -2037,7 +2058,7 @@ mod tests {
         let status = unsafe { EnumerateSecurityPackagesW(&mut pc_packages, &mut packages) };
         assert_eq!(status, 0);
 
-        for i in 0..pc_packages as usize {
+        for i in 0..usize::try_from(pc_packages).expect("pc_packages is a valid usize") {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
@@ -2063,13 +2084,16 @@ mod tests {
         let domain = "domain".encode_utf16().collect::<Vec<_>>();
         let password = "password".encode_utf16().collect::<Vec<_>>();
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = SecWinntAuthIdentityW {
             user: user.as_ptr(),
-            user_length: user.len() as u32,
+            user_length,
             domain: domain.as_ptr(),
-            domain_length: domain.len() as u32,
+            domain_length,
             password: password.as_ptr(),
-            password_length: password.len() as u32,
+            password_length,
             flags: 0,
         };
 
@@ -2104,7 +2128,7 @@ mod tests {
         let mut target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
         let mut attrs = 0;
 
-        let mut out_buffer = vec![0; cb_max_token as usize];
+        let mut out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
         let mut out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
             buffer_type: 2,
@@ -2178,7 +2202,7 @@ mod tests {
         let status = unsafe { EnumerateSecurityPackagesA(&mut pc_packages, &mut packages) };
         assert_eq!(status, 0);
 
-        for i in 0..pc_packages as usize {
+        for i in 0..usize::try_from(pc_packages).expect("pc_packages is a valid usize") {
             let pkg_info = unsafe { packages.add(i) };
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
@@ -2194,13 +2218,16 @@ mod tests {
         let domain = "domain";
         let password = "password";
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = SecWinntAuthIdentityA {
             user: user.as_ptr().cast(),
-            user_length: user.len() as u32,
+            user_length,
             domain: domain.as_ptr().cast(),
-            domain_length: domain.len() as u32,
+            domain_length,
             password: password.as_ptr().cast(),
-            password_length: password.len() as u32,
+            password_length,
             flags: 1,
         };
 
@@ -2235,7 +2262,7 @@ mod tests {
         let mut target_name = String::from("TERMSRV/some@example.com\0");
         let mut attrs = 0;
 
-        let mut out_buffer = vec![0; cb_max_token as usize];
+        let mut out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
         let mut out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
             buffer_type: 2,
@@ -2289,30 +2316,33 @@ mod tests {
         let domain = "domain".encode_utf16().collect::<Vec<_>>();
         let password = "password".encode_utf16().collect::<Vec<_>>();
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = vec![
             SecWinntAuthIdentityW {
                 user: null(),
                 user_length: 0,
                 domain: domain.as_ptr(),
-                domain_length: domain.len() as u32,
+                domain_length,
                 password: password.as_ptr(),
-                password_length: password.len() as u32,
+                password_length,
                 flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             },
             SecWinntAuthIdentityW {
                 user: user.as_ptr(),
-                user_length: user.len() as u32,
+                user_length,
                 domain: null(),
                 domain_length: 0,
                 password: password.as_ptr(),
-                password_length: password.len() as u32,
+                password_length,
                 flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
             },
             SecWinntAuthIdentityW {
                 user: user.as_ptr(),
-                user_length: user.len() as u32,
+                user_length,
                 domain: domain.as_ptr(),
-                domain_length: domain.len() as u32,
+                domain_length,
                 password: null(),
                 password_length: 0,
                 flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
@@ -2356,13 +2386,16 @@ mod tests {
         let domain = "".encode_utf16().collect::<Vec<_>>();
         let password = "".encode_utf16().collect::<Vec<_>>();
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = SecWinntAuthIdentityW {
             user: user.as_ptr(),
-            user_length: user.len() as u32,
+            user_length,
             domain: domain.as_ptr(),
-            domain_length: domain.len() as u32,
+            domain_length,
             password: password.as_ptr(),
-            password_length: password.len() as u32,
+            password_length,
             flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
         };
 
@@ -2401,30 +2434,33 @@ mod tests {
         let domain = "domain";
         let password = "password";
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = vec![
             SecWinntAuthIdentityA {
                 user: null(),
                 user_length: 0,
                 domain: domain.as_ptr().cast(),
-                domain_length: domain.len() as u32,
+                domain_length,
                 password: password.as_ptr().cast(),
-                password_length: password.len() as u32,
+                password_length,
                 flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
                 user: user.as_ptr().cast(),
-                user_length: user.len() as u32,
+                user_length,
                 domain: null(),
                 domain_length: 0,
                 password: password.as_ptr().cast(),
-                password_length: password.len() as u32,
+                password_length,
                 flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
             },
             SecWinntAuthIdentityA {
                 user: user.as_ptr().cast(),
-                user_length: user.len() as u32,
+                user_length,
                 domain: domain.as_ptr().cast(),
-                domain_length: domain.len() as u32,
+                domain_length,
                 password: null(),
                 password_length: 0,
                 flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
@@ -2468,13 +2504,16 @@ mod tests {
         let domain = "";
         let password = "";
 
+        let user_length = user.len().try_into().expect("user length is a valid u32");
+        let domain_length = domain.len().try_into().expect("domain length is a valid u32");
+        let password_length = password.len().try_into().expect("password length is a valid u32");
         let credentials = SecWinntAuthIdentityA {
             user: user.as_ptr().cast(),
-            user_length: user.len() as u32,
+            user_length,
             domain: domain.as_ptr().cast(),
-            domain_length: domain.len() as u32,
+            domain_length,
             password: password.as_ptr().cast(),
-            password_length: password.len() as u32,
+            password_length,
             flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
         };
 
@@ -2517,10 +2556,13 @@ mod tests {
         // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
         // We use Kerberos fake_client because we need established security context to query the session key.
         let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-        let sspi_context_ptr = into_raw_ptr(sspi_context);
+        let sspi_context_ptr = into_raw_ptr(sspi_context).expose_provenance();
         let mut sec_handle = SecHandle {
-            dw_lower: sspi_context_ptr as c_ulonglong,
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+            dw_lower: sspi_context_ptr.try_into().unwrap(),
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string())
+                .expose_provenance()
+                .try_into()
+                .unwrap(),
         };
 
         let mut session_key = SecPkgContextSessionKey {
@@ -2538,7 +2580,15 @@ mod tests {
         assert_eq!(status, 0);
 
         // Print the session key
-        let key = unsafe { from_raw_parts(session_key.session_key, session_key.session_key_len as usize) };
+        let key = unsafe {
+            from_raw_parts(
+                session_key.session_key,
+                session_key
+                    .session_key_len
+                    .try_into()
+                    .expect("session key length is a valid usize"),
+            )
+        };
         println!("Session key length: {}", session_key.session_key_len);
         println!("Session key: {:02x?}", key);
 
@@ -2546,8 +2596,11 @@ mod tests {
         let status = unsafe { FreeContextBuffer(session_key.session_key.cast()) };
         assert_eq!(status, 0);
 
-        let _ = unsafe { Box::from_raw(sec_handle.dw_upper as *mut String) };
-        let _ = unsafe { Box::from_raw(sec_handle.dw_lower as *mut SspiHandle) };
+        let dw_upper_ptr: *mut String = ptr::with_exposed_provenance_mut(sec_handle.dw_upper.try_into().unwrap());
+        let _ = unsafe { Box::from_raw(dw_upper_ptr) };
+
+        let dw_lower_ptr: *mut SspiHandle = ptr::with_exposed_provenance_mut(sec_handle.dw_lower.try_into().unwrap());
+        let _ = unsafe { Box::from_raw(dw_lower_ptr) };
     }
 
     #[test]
@@ -2565,10 +2618,13 @@ mod tests {
         // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
         // We use Kerberos fake_client because we need established security context to query the names.
         let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-        let sspi_context_ptr = into_raw_ptr(sspi_context);
+        let sspi_context_ptr = into_raw_ptr(sspi_context).expose_provenance();
         let mut sec_handle = SecHandle {
-            dw_lower: sspi_context_ptr as c_ulonglong,
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string()) as c_ulonglong,
+            dw_lower: sspi_context_ptr.try_into().unwrap(),
+            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string())
+                .expose_provenance()
+                .try_into()
+                .unwrap(),
         };
 
         let mut names_w = SecPkgContextNamesW { user_name: null_mut() };
@@ -2601,7 +2657,10 @@ mod tests {
         let status = unsafe { FreeContextBuffer(names_a.user_name.cast()) };
         assert_eq!(status, 0);
 
-        let _ = unsafe { Box::from_raw(sec_handle.dw_upper as *mut String) };
-        let _ = unsafe { Box::from_raw(sec_handle.dw_lower as *mut SspiHandle) };
+        let dw_upper_ptr: *mut String = ptr::with_exposed_provenance_mut(sec_handle.dw_upper.try_into().unwrap());
+        let _ = unsafe { Box::from_raw(dw_upper_ptr) };
+
+        let dw_lower_ptr: *mut SspiHandle = ptr::with_exposed_provenance_mut(sec_handle.dw_lower.try_into().unwrap());
+        let _ = unsafe { Box::from_raw(dw_lower_ptr) };
     }
 }

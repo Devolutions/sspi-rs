@@ -86,7 +86,7 @@ pub(super) unsafe fn build_buf_request_type_wide<'data>(
         // SAFETY:
         // - `p_buf` is guaranteed to be non-null due to the prior check.
         // - `p_buf` is valid for both reads and writes for `pcb_buf` many bytes, and it is properly aligned.
-        RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf as *mut u8, len) })
+        RequestedBufferType::Buf(unsafe { from_raw_parts_mut(p_buf.cast::<u8>(), len) })
     })
 }
 
@@ -166,7 +166,8 @@ pub(super) unsafe fn save_out_buf_wide(out_buf: OutBuffer<'_>, p_buf: LpWStr, pc
             //
             // SAFETY: The `p_buf` is guaranteed to be non-null due to the prior check.
             unsafe {
-                *(p_buf as *mut *mut u8) = data.as_mut_ptr();
+                let p_buf_typed = p_buf.cast::<*mut u8>();
+                *p_buf_typed = data.as_mut_ptr();
             }
             // SAFETY: The `p_buf` is guaranteed to be non-null due to the prior check.
             unsafe {

@@ -124,7 +124,7 @@ pub extern "system" fn InitSecurityInterfaceA() -> PSecurityFunctionTableA {
     crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableA {
-        dwVersion: KERBEROS_VERSION as u32,
+        dwVersion: u32::from(KERBEROS_VERSION),
         EnumerateSecurityPackagesA,
         QueryCredentialsAttributesA,
         AcquireCredentialsHandleA,
@@ -167,7 +167,7 @@ pub extern "system" fn InitSecurityInterfaceW() -> PSecurityFunctionTableW {
     crate::logging::setup_logger();
 
     into_raw_ptr(SecurityFunctionTableW {
-        dwVersion: KERBEROS_VERSION as u32,
+        dwVersion: u32::from(KERBEROS_VERSION),
         EnumerateSecurityPackagesW,
         QueryCredentialsAttributesW,
         AcquireCredentialsHandleW,

@@ -30,8 +30,10 @@ impl ChannelBindings {
 
         let initiator_addr_type = u32::from_le_bytes(data[0..4].try_into().unwrap());
 
-        let initiator_len = u32::from_le_bytes(data[4..8].try_into().unwrap()) as usize;
-        let initiator_offset = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
+        let initiator_len: usize = u32::from_le_bytes(data[4..8].try_into().unwrap()).try_into()?;
+
+        let initiator_offset: usize = u32::from_le_bytes(data[8..12].try_into().unwrap()).try_into()?;
+
         if initiator_offset + initiator_len > data.len() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -49,10 +51,26 @@ impl ChannelBindings {
             Vec::new()
         };
 
-        let acceptor_addr_type = u32::from_le_bytes(data[12..16].try_into().unwrap());
+        let acceptor_addr_type = u32::from_le_bytes(
+            data[12..16]
+                .try_into()
+                .expect("data[12..16] is castable to [u8; 4] because of prior check"),
+        );
 
-        let acceptor_len = u32::from_le_bytes(data[16..20].try_into().unwrap()) as usize;
-        let acceptor_offset = u32::from_le_bytes(data[20..24].try_into().unwrap()) as usize;
+        let acceptor_len: usize = u32::from_le_bytes(
+            data[16..20]
+                .try_into()
+                .expect("data[16..20] is castable to [u8; 4] because of prior check"),
+        )
+        .try_into()?;
+
+        let acceptor_offset: usize = u32::from_le_bytes(
+            data[20..24]
+                .try_into()
+                .expect("data[20..24] is castable to [u8; 4] because of prior check"),
+        )
+        .try_into()?;
+
         if acceptor_offset + acceptor_len > data.len() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -70,8 +88,20 @@ impl ChannelBindings {
             Vec::new()
         };
 
-        let application_len = u32::from_le_bytes(data[24..28].try_into().unwrap()) as usize;
-        let application_offset = u32::from_le_bytes(data[28..32].try_into().unwrap()) as usize;
+        let application_len: usize = u32::from_le_bytes(
+            data[24..28]
+                .try_into()
+                .expect("data[24..28] is castable to [u8; 4] because of prior check"),
+        )
+        .try_into()?;
+
+        let application_offset: usize = u32::from_le_bytes(
+            data[28..32]
+                .try_into()
+                .expect("data[28..32] is castable to [u8; 4] because of prior check"),
+        )
+        .try_into()?;
+
         if application_offset + application_len > data.len() {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -115,11 +145,11 @@ mod tests {
 
         let channel_bindings_token = [1, 2, 3, 4];
         let application_offset = 32_u32;
-        let application_len = channel_bindings_token.len();
+        let application_len = u32::try_from(channel_bindings_token.len()).unwrap();
 
         let mut buffer = [0; 36];
 
-        buffer[24..28].copy_from_slice(&(application_len as u32).to_le_bytes());
+        buffer[24..28].copy_from_slice(&application_len.to_le_bytes());
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 
@@ -140,11 +170,11 @@ mod tests {
         let channel_bindings_token = [1, 2, 3, 4];
         let application_offset = 32_u32;
         // invalid len
-        let application_len = channel_bindings_token.len() + 2;
+        let application_len = u32::try_from(channel_bindings_token.len() + 2).unwrap();
 
         let mut buffer = [0; 36];
 
-        buffer[24..28].copy_from_slice(&(application_len as u32).to_le_bytes());
+        buffer[24..28].copy_from_slice(&application_len.to_le_bytes());
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 
@@ -158,11 +188,11 @@ mod tests {
         let channel_bindings_token = [1, 2, 3, 4];
         // invalid offset
         let application_offset = 32_u32 + 3;
-        let application_len = channel_bindings_token.len();
+        let application_len = u32::try_from(channel_bindings_token.len()).unwrap();
 
         let mut buffer = [0; 36];
 
-        buffer[24..28].copy_from_slice(&(application_len as u32).to_le_bytes());
+        buffer[24..28].copy_from_slice(&application_len.to_le_bytes());
         buffer[28..32].copy_from_slice(&application_offset.to_le_bytes());
         buffer[32..].copy_from_slice(&channel_bindings_token);
 

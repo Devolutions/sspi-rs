@@ -207,7 +207,7 @@ pub unsafe extern "system" fn DpapiProtectSecret(
         }
 
         // SAFETY: Memory allocation is safe.
-        let blob_buf = unsafe { libc::malloc(blob_data.len()) as *mut u8 };
+        let blob_buf = unsafe { libc::malloc(blob_data.len()).cast::<u8>() };
         if blob_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL");
             return NTE_NO_MEMORY;
@@ -374,7 +374,9 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
 
         let secret_data = match secret_data_result {
             Ok(secret_data) => secret_data,
-            Err(Error::Auth(AuthError::Sspi(sspi_error))) => { return sspi_error.error_type as u32 },
+            Err(Error::Auth(AuthError::Sspi(sspi_error))) => {
+                return u32::from(sspi_error.error_type)
+            },
             Err(Error::Gkdi(dpapi::gkdi::GkdiError::BadHresult(hresult))) => { return hresult },
             Err(Error::Gkdi(dpapi::gkdi::GkdiError::IsNotAuthorized)) => { return HRESULT_ERROR_ACCESS_DENIED },
             Err(err) => {
@@ -389,7 +391,7 @@ pub unsafe extern "system" fn DpapiUnprotectSecret(
         }
 
         // SAFETY: Memory allocation is safe.
-        let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()) as *mut u8 };
+        let secret_buf = unsafe { libc::malloc(secret_data.as_ref().len()).cast::<u8>() };
         if secret_buf.is_null() {
             error!("Failed to allocate memory for the output DPAPI blob: blob buf pointer is NULL.");
             return NTE_NO_MEMORY;
@@ -456,7 +458,7 @@ mod tests {
     #[test]
     fn test_dpapi_protect_secret() {
         let secret = b"secret-to-encrypt";
-        let secret_len = secret.len() as u32;
+        let secret_len: u32 = secret.len().try_into().expect("secret length must fit into u32");
         let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
         let server = "win-956cqossjtf.tbt.com\0";
         let username = "t2@tbt.com\0";
@@ -514,7 +516,7 @@ mod tests {
     #[test]
     fn test_dpapi_protect_secret_proxied() {
         let secret = b"secret-to-encrypt";
-        let secret_len = secret.len() as u32;
+        let secret_len: u32 = secret.len().try_into().expect("secret length must fit into u32");
         let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
         let server = "win-956cqossjtf.tbt.com\0";
         let username = "t2@tbt.com\0";

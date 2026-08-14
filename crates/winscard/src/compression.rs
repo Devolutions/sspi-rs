@@ -15,8 +15,8 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
     let mut compressor = Compress::new(Compression::fast(), /* zlib header */ true);
 
     loop {
-        let read_before = compressor.total_in() as usize;
-        let written_before = compressor.total_out() as usize;
+        let read_before = usize::try_from(compressor.total_in())?;
+        let written_before = usize::try_from(compressor.total_out())?;
 
         let status = compressor
             .compress(data_to_compress, &mut buff[total_written..], FlushCompress::Finish)
@@ -27,8 +27,8 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
                 )
             })?;
 
-        let read_after = compressor.total_in() as usize;
-        let written_after = compressor.total_out() as usize;
+        let read_after = usize::try_from(compressor.total_in())?;
+        let written_after = usize::try_from(compressor.total_out())?;
 
         let read_len = read_after - read_before;
         let written_len = written_after - written_before;

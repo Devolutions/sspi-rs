@@ -168,7 +168,7 @@ pub fn extract_status_code_from_krb_priv_response(
     let encryption_type = encryption_params
         .encryption_type
         .clone()
-        .unwrap_or(CipherSuite::try_from(
+        .unwrap_or(CipherSuite::try_from(usize::from(
             *krb_priv
                 .0
                 .enc_part
@@ -177,8 +177,8 @@ pub fn extract_status_code_from_krb_priv_response(
                 .0
                 .0
                 .first()
-                .unwrap_or(&((&DEFAULT_ENCRYPTION_TYPE).into())) as usize,
-        )?);
+                .unwrap_or(&((&DEFAULT_ENCRYPTION_TYPE).into())),
+        ))?);
 
     let cipher = encryption_type.cipher();
 

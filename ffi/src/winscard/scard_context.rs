@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::ffi::CStr;
+use std::ptr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::{LazyLock, Mutex};
 
@@ -108,7 +109,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
 
     let scard_context = WinScardContextHandle::with_scard_context(scard_context);
 
-    let raw_ptr = into_raw_ptr(scard_context) as ScardContext;
+    let raw_ptr = into_raw_ptr(scard_context).expose_provenance();
+    #[allow(clippy::useless_conversion)]
+    let raw_ptr = try_execute!(raw_ptr.try_into(), ErrorKind::InvalidHandle);
     info!(new_established_context = ?raw_ptr);
     // SAFETY: The `context` is guaranteed to be non-null due to the prior check.
     unsafe {
@@ -134,11 +137,12 @@ pub unsafe extern "system" fn SCardReleaseContext(context: ScardContext) -> Scar
     check_handle!(context);
 
     if is_present(context) {
+        let context_ptr: *mut WinScardContextHandle = ptr::with_exposed_provenance_mut(context);
         // SAFETY:
         // - `context` is guaranteed to be non-null due to the prior check.
         // - `context` is allocated by `SCardEstablishContext` function.
         //   It guarantees that the pointer was allocated using `Box::into_raw`.
-        let _ = unsafe { Box::from_raw(context as *mut WinScardContextHandle) };
+        let _ = unsafe { Box::from_raw(context_ptr) };
         release_context(context);
 
         info!("Scard context has been successfully released");
@@ -844,7 +848,10 @@ static START_EVENT_HANDLE: LazyLock<Handle> = LazyLock::new(|| {
         })
         .unwrap_or_default();
 
-    handle.0.expose_provenance() as isize
+    #[expect(clippy::as_conversions, reason = "raw pointer to integer handle cast")]
+    {
+        handle.0.expose_provenance() as isize
+    }
 });
 
 /// The `SCardAccessStartedEvent` function returns an event handle when an event signals that the smart
@@ -1018,15 +1025,11 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
         unsafe { scard_context_to_winscard_context(context) }
     );
 
+    let len = try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer);
     // SAFETY:
     // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
     // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
-    let c_reader_states = unsafe {
-        from_raw_parts_mut(
-            rg_reader_states,
-            try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
-        )
-    };
+    let c_reader_states = unsafe { from_raw_parts_mut(rg_reader_states, len) };
     let mut reader_states = try_execute!(
         c_reader_states
             .iter()
@@ -1039,7 +1042,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeA(
                     // - The memory region `c_reader.sz_reader` contains a valid null-terminator at the end of string.
                     // - The memory region `c_reader.sz_reader` points to is valid for reads of bytes up to and including null-terminator.
                     reader_name: unsafe { CStr::from_ptr(c_reader.sz_reader.cast()) }.to_string_lossy(),
-                    user_data: c_reader.pv_user_data as usize,
+                    user_data: c_reader.pv_user_data.expose_provenance(),
                     current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
                     event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
                     atr_len: c_reader.cb_atr.try_into()?,
@@ -1090,15 +1093,11 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
         unsafe { scard_context_to_winscard_context(context) }
     );
 
+    let len = try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer);
     // SAFETY:
     // - `rg_reader_state` is guaranteed to be non-null due to the prior check.
     // - `rh_reader_state` is valid for both reads and writes for `c_readers` many bytes.
-    let c_reader_states = unsafe {
-        from_raw_parts_mut(
-            rg_reader_states,
-            try_execute!(c_readers.try_into(), ErrorKind::InsufficientBuffer),
-        )
-    };
+    let c_reader_states = unsafe { from_raw_parts_mut(rg_reader_states, len) };
     let mut reader_states = try_execute!(
         c_reader_states
             .iter()
@@ -1116,7 +1115,7 @@ pub unsafe extern "system" fn SCardGetStatusChangeW(
                             .to_string()
                             .map_err(Error::from)?,
                     ),
-                    user_data: c_reader.pv_user_data as usize,
+                    user_data: c_reader.pv_user_data.expose_provenance(),
                     current_state: CurrentState::from_bits(c_reader.dw_current_state).unwrap_or_default(),
                     event_state: CurrentState::from_bits(c_reader.dw_event_state).unwrap_or_default(),
                     atr_len: c_reader.cb_atr.try_into()?,

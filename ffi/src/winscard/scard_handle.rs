@@ -75,11 +75,12 @@ impl WinScardContextHandle {
     #[instrument(level = "debug", ret)]
     pub(super) fn allocate_buffer(&mut self, size: usize) -> WinScardResult<*mut u8> {
         // SAFETY: Memory allocation is safe. Moreover, we check for the null value below.
-        let buff = unsafe { libc::malloc(size) as *mut u8 };
+        let buff = unsafe { libc::malloc(size).cast::<u8>() };
         if buff.is_null() {
             return Err(Error::new(ErrorKind::NoMemory, format!("cannot allocate {size} bytes")));
         }
-        self.allocations.push(buff as usize);
+        let addr = buff.expose_provenance();
+        self.allocations.push(addr);
 
         Ok(buff)
     }
@@ -92,9 +93,10 @@ impl WinScardContextHandle {
         if let Some(index) = self.allocations.iter().position(|x| *x == buff) {
             self.allocations.remove(index);
 
+            let buff = ptr::with_exposed_provenance_mut(buff);
             // SAFETY: The `allocations` collection contains only allocated memory pointers, so it's
             // safe to deallocate them using the `libc::free` function.
-            unsafe { libc::free(ptr::with_exposed_provenance_mut(buff)) }
+            unsafe { libc::free(buff) }
 
             true
         } else {
@@ -268,15 +270,17 @@ impl Drop for WinScardContextHandle {
         // [SCardReleaseContext](https://learn.microsoft.com/en-us/windows/win32/api/winscard/nf-winscard-scardreleasecontext)
         // ...freeing any resources allocated under that context, including SCARDHANDLE objects
         for scard in &self.scards {
+            let raw = ptr::with_exposed_provenance_mut::<WinScardHandle>(*scard);
             // SAFETY: The `WinScardContextHandle` contains only valid scard handles,
             // so it's safe to cast them to `WinScardHandle` pointer.
-            let _ = unsafe { Box::from_raw(*scard as *mut WinScardHandle) };
+            let _ = unsafe { Box::from_raw(raw) };
         }
         // ...and memory allocated using the SCARD_AUTOALLOCATE length designator.
         for buff in &self.allocations {
+            let buff = ptr::with_exposed_provenance_mut(*buff);
             // SAFETY: `WinScardContextHandle` contains only allocated memory pointers.
             unsafe {
-                libc::free(ptr::with_exposed_provenance_mut(*buff));
+                libc::free(buff);
             }
         }
     }
@@ -435,10 +439,11 @@ pub(super) unsafe fn scard_handle_to_winscard<'a>(handle: ScardHandle) -> WinSca
         return Err(Error::new(ErrorKind::InvalidHandle, "scard handle cannot be zero"));
     }
 
+    let handle_ptr: *mut WinScardHandle = ptr::with_exposed_provenance_mut(handle);
     // SAFETY:
     // - `handle` is guaranteed to be non-null due to the prior check.
     // - `handle` is a valid raw scard handle.
-    if let Some(scard) = unsafe { (handle as *mut WinScardHandle).as_mut() } {
+    if let Some(scard) = unsafe { handle_ptr.as_mut() } {
         Ok(scard.scard.as_mut())
     } else {
         Err(Error::new(
@@ -463,10 +468,11 @@ pub(super) unsafe fn raw_scard_handle_to_scard_handle<'a>(
         ));
     }
 
+    let h_card_ptr: *mut WinScardHandle = ptr::with_exposed_provenance_mut(h_card);
     // SAFETY:
     // - `h_card` is guaranteed to be non-null due to the prior check.
     // - `h_card` is a valid raw scard handle.
-    unsafe { (h_card as *mut WinScardHandle).as_mut() }
+    unsafe { h_card_ptr.as_mut() }
         .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
 }
 
@@ -485,10 +491,11 @@ pub(super) unsafe fn raw_scard_context_handle_to_scard_context_handle<'a>(
         ));
     }
 
+    let h_context_ptr: *mut WinScardContextHandle = ptr::with_exposed_provenance_mut(h_context);
     // SAFETY:
     // - `h_context` is guaranteed to be non-null due to the prior check.
     // - `h_context` is a valid raw scard context handle.
-    unsafe { (h_context as *mut WinScardContextHandle).as_mut() }
+    unsafe { h_context_ptr.as_mut() }
         .ok_or_else(|| Error::new(ErrorKind::InvalidHandle, "raw scard context handle is invalid"))
 }
 
@@ -507,10 +514,11 @@ pub(super) unsafe fn scard_context_to_winscard_context<'a>(
         ));
     }
 
+    let handle_ptr: *mut WinScardContextHandle = ptr::with_exposed_provenance_mut(handle);
     // SAFETY:
     // - `handle` is guaranteed to be non-null due to the prior check.
     // - `handle` is a valid raw scard context handle.
-    if let Some(context) = unsafe { (handle as *mut WinScardContextHandle).as_mut() } {
+    if let Some(context) = unsafe { handle_ptr.as_mut() } {
         Ok(context.scard_context.as_mut())
     } else {
         Err(Error::new(
@@ -561,7 +569,9 @@ pub(super) unsafe fn copy_io_request_to_scard_io_request(
     }
 
     // SAFETY: According to the documentation, the `pci_buffer` data is placed right after the `ScardIoRequest` structure.
-    let pci_buffer_ptr = unsafe { (scard_io_request as *mut u8).add(size_of::<ScardIoRequest>()) };
+    // SAFETY: `scard_io_request` is a valid non-null pointer to a `ScardIoRequest` and per the
+    // documentation the pci data immediately follows the struct in memory.
+    let pci_buffer_ptr = unsafe { (scard_io_request.cast::<u8>()).add(size_of::<ScardIoRequest>()) };
     // SAFETY: According to the documentation, it's safe to create a slice of the pci data.
     let pci_buffer = unsafe { from_raw_parts_mut(pci_buffer_ptr, pci_info_len) };
     pci_buffer.copy_from_slice(&io_request.pci_info);

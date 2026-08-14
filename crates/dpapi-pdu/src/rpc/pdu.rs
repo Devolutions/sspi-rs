@@ -92,7 +92,10 @@ pub enum IntRepr {
 
 impl IntRepr {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -107,7 +110,10 @@ pub enum CharacterRepr {
 
 impl CharacterRepr {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -124,7 +130,10 @@ pub enum FloatingPointRepr {
 
 impl FloatingPointRepr {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -155,7 +164,10 @@ pub enum PacketType {
 
 impl PacketType {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -196,7 +208,7 @@ impl Encode for DataRepr {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
-        let first_octet = ((self.byte_order.as_u8()) << 4) | self.character.as_u8();
+        let first_octet = (self.byte_order.as_u8() << 4) | self.character.as_u8();
         dst.write_u8(first_octet);
         dst.write_u8(self.floating_point.as_u8());
 
@@ -323,7 +335,10 @@ pub enum SecurityProvider {
 
 impl SecurityProvider {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 
@@ -342,7 +357,10 @@ pub enum AuthenticationLevel {
 
 impl AuthenticationLevel {
     pub fn as_u8(&self) -> u8 {
-        *self as u8
+        #[expect(clippy::as_conversions, reason = "primitive enum cast")]
+        {
+            *self as u8
+        }
     }
 }
 

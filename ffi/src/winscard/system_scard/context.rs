@@ -484,12 +484,22 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
     /// from a Microsoft legacy Cryptographic Storage Provider (CSP) can be used.
     ///
     /// We need the [KeySpec] value to build scard cache items correctly.
+    #[derive(Clone, Copy)]
     #[repr(u8)]
     enum KeySpec {
         /// RSA key that can be used for signing and decryption.
         AtKeyExchange = 1,
         /// RSA signature only key.
         AtSignature = 2,
+    }
+
+    impl KeySpec {
+        fn as_u8(&self) -> u8 {
+            #[expect(clippy::as_conversions, reason = "enum discriminant is a valid u8 value")]
+            {
+                *self as u8
+            }
+        }
     }
 
     cache.insert("ykmd_cardcf".to_owned(), CACHE_ITEM_HEADER.to_vec());
@@ -546,7 +556,7 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
             SlotId::KeyManagement => KeySpec::AtKeyExchange,
             SlotId::CardAuthentication => KeySpec::AtKeyExchange,
         };
-        value.push(key_spec as u8);
+        value.push(key_spec.as_u8());
 
         value.extend_from_slice(&[0x00, 0x08]); // KeySize.
         value.push(0x03); // Flags.
@@ -1211,7 +1221,7 @@ impl WinScardContext for SystemScardContext {
                         self.h_context,
                         c_card_name.as_ptr().cast(),
                         provider_id.into(),
-                        ((&mut data) as *mut *mut u8).cast(),
+                        std::ptr::addr_of_mut!(data).cast(),
                         &mut data_len,
                     )
                 },

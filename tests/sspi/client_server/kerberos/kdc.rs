@@ -38,6 +38,14 @@ pub(crate) const KDC_URL: &str = "tcp://192.168.1.103:88";
 pub(crate) const CLIENT_COMPUTER_NAME: &str = "DESKTOP-8F33RFH.example.com";
 pub(crate) const SERVER_COMPUTER_NAME: &str = "WIN-956CQOSSJTF.example.com";
 
+/// `AES256_CTS_HMAC_SHA1_96` cast to `u8` for use in ASN.1 encoding.
+/// The constant value fits in u8 by definition of the Kerberos etype numbering.
+#[expect(
+    clippy::as_conversions,
+    reason = "AES256_CTS_HMAC_SHA1_96 constant fits in u8 by definition"
+)]
+const AES256_ENC_TYPE: u8 = AES256_CTS_HMAC_SHA1_96 as u8;
+
 /// Represents user credentials in the internal KDC database.
 pub(crate) struct PasswordCreds {
     /// User's password.
@@ -151,9 +159,7 @@ impl KdcMock {
                             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
                             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
                                 picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
-                                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![
-                                        AES256_CTS_HMAC_SHA1_96 as u8,
-                                    ])),
+                                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                                     salt: Optional::from(Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
                                         IA5String::from_string(salt).unwrap(),
                                     )))),
@@ -275,7 +281,7 @@ impl KdcMock {
             realm: ExplicitContextTag1::from(realm),
             sname: ExplicitContextTag2::from(sname),
             enc_part: ExplicitContextTag3::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(ticket_enc_data)),
             }),
@@ -351,7 +357,7 @@ impl KdcMock {
 
         let as_rep_enc_part = EncAsRepPart::from(EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key.to_vec())),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(vec![LastReqInner {
@@ -387,7 +393,7 @@ impl KdcMock {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
                 padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
                     picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
-                        etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                        etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                         salt: Optional::from(Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
                             IA5String::from_string(creds.salt.clone()).unwrap(),
                         )))),
@@ -407,7 +413,7 @@ impl KdcMock {
                 username.0,
             )),
             enc_part: ExplicitContextTag6::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(as_rep_enc_data)),
             }),
@@ -578,7 +584,7 @@ impl KdcMock {
 
         let tgs_rep_enc_part = EncTgsRepPart::from(EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key.to_vec())),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(vec![LastReqInner {
@@ -622,7 +628,7 @@ impl KdcMock {
                 cname,
             )),
             enc_part: ExplicitContextTag6::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_CTS_HMAC_SHA1_96 as u8])),
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(tgs_rep_enc_data)),
             }),

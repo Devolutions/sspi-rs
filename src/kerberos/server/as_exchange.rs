@@ -117,7 +117,7 @@ pub(crate) async fn request_tgt(
 
     let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
 
-    let encryption_type = CipherSuite::try_from(encryption_type as usize)?;
+    let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
     server.encryption_params.encryption_type = Some(encryption_type);
 
     let mut session_key_extractor = AsRepSessionKeyExtractor::AuthIdentity {

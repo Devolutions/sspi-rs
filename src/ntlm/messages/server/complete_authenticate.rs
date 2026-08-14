@@ -137,7 +137,7 @@ fn check_mic_correctness(
         // we need empty the MIC part of auth. message and then will come back the MIC.
         let mic = mic.as_ref().unwrap();
         let mut authenticate_message = authenticate_message.to_vec();
-        authenticate_message[mic.offset as usize..mic.offset as usize + MESSAGE_INTEGRITY_CHECK_SIZE]
+        authenticate_message[usize::from(mic.offset)..usize::from(mic.offset) + MESSAGE_INTEGRITY_CHECK_SIZE]
             .clone_from_slice(&[0x00; MESSAGE_INTEGRITY_CHECK_SIZE]);
         let calculated_mic = compute_message_integrity_check(
             negotiate_message,

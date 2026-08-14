@@ -52,7 +52,7 @@ unsafe fn connect(
 
     let scard = WinScardHandle::new(handle, context);
 
-    let raw_card_handle = into_raw_ptr(scard) as ScardHandle;
+    let raw_card_handle: ScardHandle = into_raw_ptr(scard).expose_provenance();
 
     // SAFETY: `context` is a valid context handle.
     let context = unsafe { raw_scard_context_handle_to_scard_context_handle(context) }?;
@@ -519,13 +519,9 @@ pub unsafe extern "system" fn SCardTransmit(
         unsafe { scard_handle_to_winscard(handle) }
     );
 
+    let len = try_execute!(cb_send_length.try_into(), ErrorKind::InsufficientBuffer);
     // SAFETY: The `pb_send_buffer` parameter cannot be null (checked above).
-    let input_apdu = unsafe {
-        from_raw_parts(
-            pb_send_buffer,
-            try_execute!(cb_send_length.try_into(), ErrorKind::InsufficientBuffer),
-        )
-    };
+    let input_apdu = unsafe { from_raw_parts(pb_send_buffer, len) };
 
     let out_data = try_execute!(scard.transmit(input_apdu));
 
@@ -557,9 +553,10 @@ pub unsafe extern "system" fn SCardTransmit(
         );
     }
 
+    let len = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
     // SAFETY: `pcb_recv_length` is guaranteed to be non-null due to the prior check.
     unsafe {
-        *pcb_recv_length = try_execute!(out_apdu_len.try_into(), ErrorKind::InsufficientBuffer);
+        *pcb_recv_length = len;
     }
 
     ErrorKind::Success.into()
@@ -602,29 +599,23 @@ pub unsafe extern "system" fn SCardControl(
     );
 
     let in_buffer = if !lp_in_buffer.is_null() {
+        let ptr = lp_in_buffer.cast::<u8>();
+        let len = try_execute!(cb_in_buffer_size.try_into(), ErrorKind::InsufficientBuffer);
         // SAFETY:
         // - `lp_in_buffer` is guaranteed to be non-null due to the prior check.
         // - `lp_in_buffer` is valid for reads for `cb_in_buffer_size` many bytes.
-        unsafe {
-            from_raw_parts(
-                lp_in_buffer as *const u8,
-                try_execute!(cb_in_buffer_size.try_into(), ErrorKind::InsufficientBuffer),
-            )
-        }
+        unsafe { from_raw_parts(ptr, len) }
     } else {
         &[]
     };
 
     if !lp_out_buffer.is_null() {
+        let out_ptr = lp_out_buffer.cast::<u8>();
+        let len = try_execute!(cb_out_buffer_size.try_into(), ErrorKind::InvalidParameter);
         // SAFETY:
         // - `lp_out_buffer` is guaranteed to be non-null due to the prior check.
         // - `lp_out_buffer` is valid for reads for `cb_out_buffer_size` many bytes.
-        let lp_out_buffer = unsafe {
-            from_raw_parts_mut(
-                lp_out_buffer as *mut u8,
-                try_execute!(cb_out_buffer_size.try_into(), ErrorKind::InvalidParameter),
-            )
-        };
+        let lp_out_buffer = unsafe { from_raw_parts_mut(out_ptr, len) };
 
         let out_bytes_count = try_execute!(scard.control_with_output(dw_control_code, in_buffer, lp_out_buffer));
         if !lp_bytes_returned.is_null() {
@@ -711,10 +702,11 @@ pub unsafe extern "system" fn SCardSetAttrib(
     check_handle!(handle);
     check_null!(pb_attr);
 
+    let len = try_execute!(cb_attr_len.try_into(), ErrorKind::InvalidParameter);
     // SAFETY:
     // - `pb_attr` is guaranteed to be non-null due to the prior check.
     // - `pb_attr` is valid for reads for `cb_attr_len` many bytes.
-    let attr_data = unsafe { from_raw_parts(pb_attr, cb_attr_len.try_into().unwrap()) };
+    let attr_data = unsafe { from_raw_parts(pb_attr, len) };
     let attr_id = try_execute!(AttributeId::from_u32(dw_attr_id).ok_or_else(|| Error::new(
         ErrorKind::InvalidParameter,
         format!("Invalid attribute id: {dw_attr_id}")
