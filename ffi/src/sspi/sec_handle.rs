@@ -1075,8 +1075,7 @@ unsafe fn query_context_attributes_common(
 
                 if is_wide {
                     let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesW>();
-                    // We use `.inner()` instead of `.account_name()` because we want to return the full username, including the domain part.
-                    let wide_username = Utf16String::from_str(sspi_names.username.inner()).into_vec_with_nul();
+                    let wide_username = Utf16String::from_str(sspi_names.username.as_str()).into_vec_with_nul();
                     let username_len = wide_username.len();
 
                     // SAFETY: Memory allocation is safe.
@@ -1108,8 +1107,7 @@ unsafe fn query_context_attributes_common(
                 } else {
                     let sec_pkg_names = p_buffer.cast::<SecPkgContextNamesA>();
 
-                    // We use `.inner()` instead of `.account_name()` because we want to return the full username, including the domain part.
-                    let username = sspi_names.username.inner();
+                    let username = sspi_names.username.as_str();
 
                     // SAFETY: Memory allocation is safe.
                     let buf = unsafe {

@@ -6,15 +6,15 @@ use std::path::Path;
 use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL};
 
 use crate::krb::Krb5Conf;
-use crate::{Username, UsernameParts};
+use crate::{AuthIdentity, AuthIdentityBuffers, Result, Username};
 
 /// [MS-KILE] 3.3.5.6.1 Client Principal Lookup
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6435d3fb-8cf6-4df5-a156-1277690ed59c
 //
 // FIXME: this should take a `&Username` instead of two `&str` parameters. It currently sniffs for an
 // `@` to guess the name type (and ignores `_domain` entirely), which is exactly the lossy heuristic
-// `Username`/`UsernameParts` exist to replace: the name type can be read off the user name format
-// directly (see `get_client_principal_name`). Once the deprecated string-based callers are gone (#708),
+// `Username` exists to replace: the name type can be read off the user name format directly (see
+// `get_client_principal_name`). Once the deprecated string-based callers are gone (#708),
 // fold this into `get_client_principal_name`.
 pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
     if username.contains('@') {
@@ -27,8 +27,8 @@ pub fn get_client_principal_name_type(username: &str, _domain: &str) -> u8 {
 /// The Kerberos client name (cname) derived from a [`Username`], along with the pieces needed to
 /// build the AS-REQ.
 ///
-/// This centralizes the mapping from a [`UserNameFormat`](crate::UserNameFormat) to a Kerberos
-/// principal name type: it reads the name type off the username format explicitly instead of
+/// This centralizes the mapping from a [`Username`] variant to a Kerberos principal name type:
+/// it reads the name type off the username format explicitly instead of
 /// sniffing for an `@`, so a UPN principal is an NT-ENTERPRISE name (whose full value is the client
 /// name) and a down-level logon name is an NT-PRINCIPAL name identified by its account name alone.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -41,27 +41,47 @@ pub struct ClientPrincipalName<'a> {
     pub name_type: u8,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct OwnedClientPrincipalName {
+    pub name: String,
+    pub realm_domain: String,
+    pub name_type: u8,
+}
+
 /// Derives the [`ClientPrincipalName`] for a principal from its user name format.
 pub fn get_client_principal_name(username: &Username) -> ClientPrincipalName<'_> {
-    match username.parts() {
-        UsernameParts::UserPrincipalName(parts) => ClientPrincipalName {
-            name: parts.upn(),
-            realm_domain: parts.suffix(),
+    match username {
+        Username::UserPrincipalName(upn) => ClientPrincipalName {
+            name: upn.as_str(),
+            realm_domain: upn.suffix(),
             name_type: NT_ENTERPRISE,
         },
-        UsernameParts::DownLevelLogonName(parts) => ClientPrincipalName {
-            name: parts.account_name(),
-            realm_domain: parts.netbios_domain().unwrap_or_default(),
+        Username::DownLevelLogonName(down_level) => ClientPrincipalName {
+            name: down_level.account_name(),
+            realm_domain: down_level.netbios_domain().unwrap_or_default(),
             name_type: NT_PRINCIPAL,
         },
     }
 }
 
-// FIXME: like `get_client_principal_name_type`, this should take a `&Username` (or a `UsernameParts`)
+pub(crate) fn get_client_principal_name_from_auth_identity(
+    auth_identity: &AuthIdentityBuffers,
+) -> Result<OwnedClientPrincipalName> {
+    let auth_identity = AuthIdentity::try_from(auth_identity)?;
+    let principal = get_client_principal_name(&auth_identity.username);
+
+    Ok(OwnedClientPrincipalName {
+        name: principal.name.to_owned(),
+        realm_domain: principal.realm_domain.to_owned(),
+        name_type: principal.name_type,
+    })
+}
+
+// FIXME: like `get_client_principal_name_type`, this should take a `&Username`
 // instead of two `&str` parameters. `get_client_principal_realm_impl` re-derives the suffix by
-// splitting on `@` to reconcile the `username`/`domain` pair, which duplicates the parsing
-// `Username::parts()` already does. Migrating callers off the raw-string form (#708) would
-// let this take the parsed username directly and drop the ad-hoc split.
+// splitting on `@` to reconcile the `username`/`domain` pair, which duplicates `Username::parse`.
+// Migrating callers off the raw-string form (#708) would let this take the parsed username directly
+// and drop the ad-hoc split.
 pub fn get_client_principal_realm(username: &str, domain: &str) -> String {
     // https://web.mit.edu/kerberos/krb5-current/doc/user/user_config/kerberos.html#environment-variables
 
@@ -133,6 +153,7 @@ fn matches_domain(domain: &str, mapping_domain: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AuthIdentity, AuthIdentityBuffers};
 
     const KRB5_CONFIG_FILE_PATH: &str = "test_assets/krb5.conf";
 
@@ -152,6 +173,34 @@ mod tests {
         assert_eq!(cname.name, "user");
         assert_eq!(cname.realm_domain, "EXAMPLE");
         assert_eq!(cname.name_type, NT_PRINCIPAL);
+    }
+
+    #[test]
+    fn auth_identity_down_level_account_with_at_is_principal() {
+        let identity = AuthIdentity {
+            username: Username::new_down_level_logon_name("alice@dept", Some("EXAMPLE")).unwrap(),
+            password: String::new().into(),
+        };
+        let buffers = AuthIdentityBuffers::try_from(&identity).unwrap();
+        let cname = get_client_principal_name_from_auth_identity(&buffers).unwrap();
+
+        assert_eq!(cname.name, "alice@dept");
+        assert_eq!(cname.realm_domain, "EXAMPLE");
+        assert_eq!(cname.name_type, NT_PRINCIPAL);
+    }
+
+    #[test]
+    fn auth_identity_upn_is_enterprise() {
+        let identity = AuthIdentity {
+            username: Username::new_upn("alice", "dept.example.com").unwrap(),
+            password: String::new().into(),
+        };
+        let buffers = AuthIdentityBuffers::try_from(&identity).unwrap();
+        let cname = get_client_principal_name_from_auth_identity(&buffers).unwrap();
+
+        assert_eq!(cname.name, "alice@dept.example.com");
+        assert_eq!(cname.realm_domain, "dept.example.com");
+        assert_eq!(cname.name_type, NT_ENTERPRISE);
     }
 
     #[test]

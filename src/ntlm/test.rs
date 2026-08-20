@@ -27,6 +27,27 @@ pub(super) const SIGNATURE_FOR_TEST_DATA: [u8; 16] = [
 ];
 
 #[test]
+fn custom_set_auth_identities_is_atomic_when_conversion_fails() {
+    let mut context = Ntlm::new();
+    let valid = AuthIdentity {
+        username: Username::parse("alice").expect("valid username"),
+        password: "password".to_owned().into(),
+    };
+    let unrepresentable = AuthIdentity {
+        username: Username::new_down_level_logon_name("alice@example.com", None).expect("domain-less down-level name"),
+        password: "password".to_owned().into(),
+    };
+
+    let error = context
+        .custom_set_auth_identities(vec![valid, unrepresentable])
+        .expect_err("all identities must convert before state changes");
+
+    assert_eq!(error.error_type, ErrorKind::InvalidParameter);
+    assert!(context.identity.is_none());
+    assert!(context.allowed_identities.is_none());
+}
+
+#[test]
 fn encrypt_message_crypts_data() {
     let mut context = Ntlm::new();
     context.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
