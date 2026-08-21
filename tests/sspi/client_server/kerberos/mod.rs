@@ -51,7 +51,13 @@ pub(super) struct KrbEnvironment {
 /// * User logon credentials (password-based).
 /// * Kerberos services keys.
 /// * Target machine name.
-pub(super) fn init_krb_environment() -> KrbEnvironment {
+pub(super) fn init_krb_environment(target_name: Option<[&str; 2]>) -> KrbEnvironment {
+    let [service_name, target_machine_name] = if let Some(target_name) = target_name {
+        target_name
+    } else {
+        ["TERMSRV", "DESKTOP-8F33RFH.example.com"]
+    };
+
     let username = "pw13";
     let user_password = "qweQWE123!@#";
     let domain = "EXAMPLE";
@@ -59,9 +65,7 @@ pub(super) fn init_krb_environment() -> KrbEnvironment {
     let mut salt = realm.to_string();
     salt.push_str(username);
     let krbtgt = "krbtgt";
-    let termsrv = "TERMSRV";
-    let target_machine_name = "DESKTOP-8F33RFH.example.com";
-    let mut target_name = termsrv.to_string();
+    let mut target_name = service_name.to_string();
     target_name.push('/');
     target_name.push_str(target_machine_name);
 
@@ -98,7 +102,7 @@ pub(super) fn init_krb_environment() -> KrbEnvironment {
             UserName(PrincipalName {
                 name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
                 name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                    KerberosStringAsn1::from(IA5String::from_string(termsrv.into()).unwrap()),
+                    KerberosStringAsn1::from(IA5String::from_string(service_name.into()).unwrap()),
                     KerberosStringAsn1::from(IA5String::from_string(target_machine_name.into()).unwrap()),
                 ])),
             }),
@@ -136,8 +140,8 @@ pub(super) fn init_krb_environment() -> KrbEnvironment {
         target_service_name: PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
-                KerberosStringAsn1::from(IA5String::from_string("TERMSRV".into()).unwrap()),
-                KerberosStringAsn1::from(IA5String::from_string("DESKTOP-8F33RFH.example.com".into()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string(service_name.into()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string(target_machine_name.into()).unwrap()),
             ])),
         },
     }
@@ -258,7 +262,7 @@ fn kerberos_auth() {
         users,
         target_name,
         target_service_name,
-    } = init_krb_environment();
+    } = init_krb_environment(None);
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -354,7 +358,7 @@ fn spnego_kerberos_u2u() {
         users,
         target_name,
         target_service_name,
-    } = init_krb_environment();
+    } = init_krb_environment(None);
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -452,6 +456,66 @@ fn spnego_kerberos_u2u() {
     );
 }
 
+#[test]
+fn spnego_kerberos_rd_gateway_client() {
+    let KrbEnvironment {
+        realm,
+        credentials,
+        mut keys,
+        users,
+        target_name,
+        target_service_name,
+        ..
+    } = init_krb_environment(Some(["HTTP", "rdgateway.example.com"]));
+
+    let http_service_name = target_service_name.clone();
+    let service_key = keys[&UserName(target_service_name)].clone();
+    keys.insert(UserName(http_service_name), service_key);
+
+    let kdc = KdcMock::new(
+        realm,
+        keys,
+        users,
+        Validators {
+            as_req: Box::new(|_as_req| {}),
+            tgs_req: Box::new(|_tgs_req| {}),
+        },
+    );
+    let mut network_client = NetworkClientMock { kdc };
+
+    let client_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
+    };
+    let client = Negotiate::new_client(NegotiateConfig::new(
+        Box::new(client_config),
+        Some(String::from("kerberos,!ntlm")),
+        CLIENT_COMPUTER_NAME.into(),
+    ))
+    .unwrap();
+
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+    let mut client_credentials_handle = Some(credentials);
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+
+    let (status, token) = initialize_security_context(
+        &mut SspiContext::Negotiate(client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        Vec::new(),
+        &mut network_client,
+    );
+
+    // For RD Gateway auth, Kerberos authorization should be completed in one step.
+    assert_eq!(status, SecurityStatus::Ok);
+    assert!(!token.is_empty());
+}
+
 fn run_spnego(
     client_flags: ClientRequestFlags,
     server_flags: ServerRequestFlags,
@@ -468,7 +532,7 @@ fn run_spnego(
         users,
         target_name,
         target_service_name,
-    } = init_krb_environment();
+    } = init_krb_environment(None);
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -700,7 +764,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
         users,
         target_name: _,
         target_service_name,
-    } = init_krb_environment();
+    } = init_krb_environment(None);
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
