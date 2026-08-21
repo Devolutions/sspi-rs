@@ -583,6 +583,7 @@ impl Negotiate {
         true
     }
 
+    #[instrument(level = "debug", fields(protocol = self.protocol_name(), is_token_present = mic.is_some()), skip_all, ret)]
     fn verify_mic_token(&mut self, mic: Option<&[u8]>) -> Result<()> {
         if let Some(mic) = mic {
             self.protocol

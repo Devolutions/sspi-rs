@@ -103,7 +103,7 @@ pub(crate) async fn initialize_security_context<'a>(
                 .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
                 .await;
 
-            let first_token = match result {
+            let (first_token, security_status) = match result {
                 Ok(result) => {
                     if result.status != SecurityStatus::ContinueNeeded && result.status != SecurityStatus::Ok {
                         return Err(Error::new(
@@ -113,7 +113,7 @@ pub(crate) async fn initialize_security_context<'a>(
                     }
 
                     let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
-                    Some(mem::take(&mut token.buffer))
+                    (Some(mem::take(&mut token.buffer)), result.status)
                 }
                 Err(err)
                     if matches!(negotiate.protocol, NegotiatedProtocol::Kerberos(_))
@@ -143,7 +143,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
                     let token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
-                    Some(mem::take(&mut token.buffer))
+                    (Some(mem::take(&mut token.buffer)), result.status)
                 }
                 Err(err) => {
                     return Err(err);
@@ -162,10 +162,18 @@ pub(crate) async fn initialize_security_context<'a>(
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_neg_token_init;
 
-            negotiate.state = NegotiateState::InProgress;
+            let status = if security_status == SecurityStatus::Ok {
+                negotiate.state = NegotiateState::Ok;
+
+                SecurityStatus::Ok
+            } else {
+                negotiate.state = NegotiateState::InProgress;
+
+                SecurityStatus::ContinueNeeded
+            };
 
             Ok(InitializeSecurityContextResult {
-                status: SecurityStatus::ContinueNeeded,
+                status,
                 flags: ClientResponseFlags::empty(),
                 expiry: None,
             })
@@ -225,8 +233,18 @@ pub(crate) async fn initialize_security_context<'a>(
 
                     ACCEPT_COMPLETE.to_vec()
                 } else {
-                    result.status = SecurityStatus::ContinueNeeded;
-                    negotiate.state = NegotiateState::VerifyMic;
+                    // "HTTP/" prefix of the target name means RD Gateway authorization.
+                    // The RD Gateway server does not send an ACCEPT_COMPLETE response back but upgrades the connection to WebSocket.
+                    // So we do not wait for ACCEPT_COMPLETE and go directly to the final state.
+                    if let Some(target_name) = &builder.target_name
+                        && target_name.starts_with("HTTP/")
+                    {
+                        result.status = SecurityStatus::Ok;
+                        negotiate.state = NegotiateState::Ok;
+                    } else {
+                        result.status = SecurityStatus::ContinueNeeded;
+                        negotiate.state = NegotiateState::VerifyMic;
+                    }
 
                     ACCEPT_INCOMPLETE.to_vec()
                 };
