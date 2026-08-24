@@ -187,6 +187,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1373,7 +1379,7 @@ version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -1972,7 +1978,7 @@ version = "7.0.0-rc.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07ad9686b270be4eb3f3c23027d202ad488a25c2bec6d6be20c2164b28d2c86c"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "crypto-bigint",
  "crypto-common 0.2.2",
  "digest 0.11.3",
@@ -2029,7 +2035,7 @@ version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "859d4117bd1b1dc5646359ee7243c50c5000c0920ea2d1fb120335a2f4c684b8"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "crypto-bigint",
  "oid",
  "picky-asn1",
@@ -2461,7 +2467,7 @@ version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
- "base64",
+ "base64 0.22.1",
  "bytes",
  "futures-channel",
  "futures-core",
@@ -2914,7 +2920,7 @@ version = "0.21.4"
 dependencies = [
  "async-dnssd",
  "async-recursion",
- "base64",
+ "base64 0.23.1",
  "bitflags 2.13.1",
  "bytemuck",
  "byteorder",
@@ -3928,7 +3934,7 @@ dependencies = [
 name = "winscard"
 version = "0.3.3"
 dependencies = [
- "base64",
+ "base64 0.23.1",
  "bitflags 2.13.1",
  "crypto-bigint",
  "flate2",
