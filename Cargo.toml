@@ -158,7 +158,7 @@ windows-registry = "0.6"
 windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_System", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-uuid = { version = "1.23", features = ["js"]}
+uuid = { version = "1.23", default-features = false, features = ["js"]}
 getrandom = { version = "0.3", features = ["wasm_js"] }
 time = { version = "0.3", default-features = false, features = ["wasm-bindgen"] }
 

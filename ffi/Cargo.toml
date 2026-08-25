@@ -33,7 +33,7 @@ picky-asn1-der = "0.5"
 picky-asn1 = { version = "0.10", optional = true }
 picky-asn1-x509 = { version = "0.15", optional = true }
 
-uuid = "1.23"
+uuid = { version = "1.23", default-features = false }
 winscard = { workspace = true, features = ["std"], optional = true }
 dpapi = { workspace = true, optional = true }
 dpapi-transport = { workspace = true, optional = true }

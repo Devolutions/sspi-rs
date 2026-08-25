@@ -9,7 +9,7 @@ transport = { git = "https://github.com/Devolutions/devolutions-gateway.git", re
 tokio = "1.52"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 url = "2.5"
-uuid = { version = "1.23", features = ["v4"] }
+uuid = { version = "1.23", default-features = false, features = ["v4"] }
 tracing = { version = "0.1", default-features = false }
 dpapi-transport = { path = "../dpapi-transport", version = "0.1.0" }
 futures-util = "0.3"
