@@ -17,23 +17,23 @@ name = "dpapi"
 tsssp = ["sspi/tsssp"]
 
 [dependencies]
-bitflags.workspace = true
-byteorder.workspace = true
-num-derive.workspace = true
-num-traits = { workspace = true, default-features = true }
-uuid = { workspace = true, features = ["std"] }
-picky-asn1.workspace = true
-picky-asn1-der.workspace = true
-picky-krb.workspace = true
-picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
-sha1.workspace = true
-sha2.workspace = true
-rand.workspace = true
-rand_core.workspace = true
-hmac.workspace = true
+bitflags = "2.11"
+byteorder = "1.5"
+num-derive = "0.5"
+num-traits = { version = "0.2", default-features = true }
+uuid = { version = "1.23", features = ["std"] }
+picky-asn1 = "0.10"
+picky-asn1-der = "0.5"
+picky-krb = "0.12"
+picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
+sha1 = { version = "0.11", default-features = false }
+sha2 = "0.11"
+rand = "0.10"
+rand_core = "0.10"
+hmac = "0.13"
 digest = "0.11"
-tracing = { workspace = true, default-features = true }
-whoami.workspace = true
+tracing = { version = "0.1", default-features = true }
+whoami = "2.1"
 
 dpapi-core = { workspace = true, features = ["alloc"] }
 dpapi-pdu.workspace = true

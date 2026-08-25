@@ -77,26 +77,6 @@ suspicious_xor_used_as_pow = "warn"
 unused_result_ok = "warn"
 
 [workspace.dependencies]
-uuid = { version = "1.23", default-features = false }
-tracing = { version = "0.1",  default-features = false }
-bitflags = "2.11"
-rand = "0.10"
-rand_core = "0.10"
-getrandom = "0.3"
-cfg-if = "1"
-time = { version = "0.3", default-features = false }
-sha1 = { version = "0.11", default-features = false }
-sha2 = "0.11"
-num-derive = "0.5"
-num-traits = { version = "0.2", default-features = false }
-
-picky = { version = "=7.0.0-rc.26", default-features = false }
-picky-asn1 = "0.10"
-picky-asn1-der = "0.5"
-picky-asn1-x509 = "0.15"
-picky-krb = "0.12"
-
-tokio = "1.52"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.3", path = "crates/winscard" }
 
@@ -106,15 +86,6 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
-rsa = { version = "=0.10.0-rc.18", default-features = false }
-base64 = "0.23"
-whoami = "2.1"
-tracing-subscriber = "0.3"
-proptest = "1.6"
-serde = "1"
-byteorder = "1.5"
-crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
-hmac = "0.13"
 
 [features]
 default = ["aws-lc-rs"]
@@ -139,30 +110,30 @@ __rustls-used = ["dep:rustls"]
 __install-crypto-provider = []
 
 [dependencies]
-bitflags.workspace = true
-rand.workspace = true
-rand_core.workspace = true
-getrandom.workspace = true
-cfg-if.workspace = true
-picky.workspace = true
-sha1.workspace = true
-sha2.workspace = true
-num-derive.workspace = true
-num-traits = { workspace = true, default-features = true }
-picky-asn1-der.workspace = true
-picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
-uuid = { workspace = true, features = ["v4"], default-features = true }
+bitflags = "2.11"
+rand = "0.10"
+rand_core = "0.10"
+getrandom = "0.3"
+cfg-if = "1"
+picky = { version = "=7.0.0-rc.26", default-features = false }
+sha1 = { version = "0.11", default-features = false }
+sha2 = "0.11"
+num-derive = "0.5"
+num-traits = { version = "0.2", default-features = true }
+picky-asn1-der = "0.5"
+picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
+uuid = { version = "1.23", features = ["v4"], default-features = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
-rsa = { workspace = true }
-tracing = { workspace = true, default-features = true }
-serde.workspace = true
-picky-krb.workspace = true
-picky-asn1 = { workspace = true, features = ["time_conversion"] }
-byteorder.workspace = true
-crypto-bigint.workspace = true
-hmac.workspace = true
+rsa = { version = "=0.10.0-rc.18", default-features = false }
+tracing = { version = "0.1", default-features = true }
+serde = "1"
+picky-krb = "0.12"
+picky-asn1 = { version = "0.10", features = ["time_conversion"] }
+byteorder = "1.5"
+crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
+hmac = "0.13"
 widestring = "1.2"
 
 url = "2.5"
@@ -187,18 +158,18 @@ windows-registry = "0.6"
 windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_System", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-uuid = { workspace = true, features = ["js"]}
-getrandom = { workspace = true, features = ["wasm_js"] }
-time = { workspace = true, features = ["wasm-bindgen"] }
+uuid = { version = "1.23", features = ["js"]}
+getrandom = { version = "0.3", features = ["wasm_js"] }
+time = { version = "0.3", default-features = false, features = ["wasm-bindgen"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cryptoki = { version = "0.12", optional = true }
-time = { workspace = true, features = ["std"] }
+time = { version = "0.3", features = ["std"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { version = "1.52", features = ["time", "rt", "rt-multi-thread"] }
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
@@ -206,13 +177,13 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 pkcs1 = "=0.8.0-rc.4"
 
 [dev-dependencies]
-base64.workspace = true
+base64 = "0.23"
 static_assertions = "1"
-whoami.workspace = true
-picky = { workspace = true, features = ["x509"] }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
-proptest.workspace = true
-cfg-if.workspace = true
+whoami = "2.1"
+picky = { version = "=7.0.0-rc.26", features = ["x509"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+proptest = "1.6"
+cfg-if = "1"
 
 [lints]
 workspace = true

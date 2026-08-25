@@ -10,12 +10,12 @@ authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A minimal Rust implementation of the KDC (Key Distribution Center)"
 
 [dependencies]
-picky-asn1 = { workspace = true, features = ["time_conversion"] }
-picky-asn1-der.workspace = true
-picky-asn1-x509.workspace = true
-picky-krb.workspace = true
-tracing.workspace = true
-time.workspace = true
+picky-asn1 = { version = "0.10", features = ["time_conversion"] }
+picky-asn1-der = "0.5"
+picky-asn1-x509 = "0.15"
+picky-krb = "0.12"
+tracing = { version = "0.1", default-features = false }
+time = { version = "0.3", default-features = false }
 
 thiserror = "2.0"
 argon2 = { version = "0.5", features = ["std"] }

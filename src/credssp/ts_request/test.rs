@@ -598,7 +598,7 @@ fn buffer_len_correct_returns_len() {
     let buffer = NTLM_3_PHASE_TS_REQUEST;
     let ts_request = TsRequest::from_buffer(buffer.as_ref()).unwrap();
 
-    assert_eq!(buffer.len(), ts_request.buffer_len().unwrap().into());
+    assert_eq!(buffer.len(), usize::from(ts_request.buffer_len().unwrap()));
 }
 
 #[test]
@@ -611,5 +611,8 @@ fn buffer_len_correct_returns_len_with_garbage() {
 
     let ts_request = TsRequest::from_buffer(buffer.as_ref()).unwrap();
 
-    assert_eq!((buffer.len() - garbage_len), ts_request.buffer_len().unwrap().into());
+    assert_eq!(
+        buffer.len() - garbage_len,
+        usize::from(ts_request.buffer_len().unwrap())
+    );
 }

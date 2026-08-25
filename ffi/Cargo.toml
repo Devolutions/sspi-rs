@@ -21,28 +21,28 @@ ring = ["sspi/ring"]
 dpapi = ["dep:dpapi", "dep:dpapi-transport", "dep:dpapi-native-transport", "dep:tokio", "dep:url", "dep:ffi-types"]
 
 [dependencies]
-cfg-if.workspace = true
-num-traits = { workspace = true, default-features = true }
-whoami.workspace = true
-sha1.workspace = true
-sha2.workspace = true
+cfg-if = "1"
+num-traits = { version = "0.2", default-features = true }
+whoami = "2.1"
+sha1 = { version = "0.11", default-features = false }
+sha2 = "0.11"
 ffi-types = { workspace = true, features = ["winscard"], optional = true }
 
-picky = { workspace = true, features = ["x509"], optional = true }
-picky-asn1-der.workspace = true
-picky-asn1 = { workspace = true, optional = true }
-picky-asn1-x509 = { workspace = true, optional = true }
+picky = { version = "=7.0.0-rc.26", features = ["x509"], optional = true }
+picky-asn1-der = "0.5"
+picky-asn1 = { version = "0.10", optional = true }
+picky-asn1-x509 = { version = "0.15", optional = true }
 
-uuid.workspace = true
+uuid = "1.23"
 winscard = { workspace = true, features = ["std"], optional = true }
 dpapi = { workspace = true, optional = true }
 dpapi-transport = { workspace = true, optional = true }
 dpapi-native-transport = { workspace = true, optional = true }
 url = { version = "2.5", optional = true }
-tokio = { workspace = true, optional = true, features = ["rt"]}
+tokio = { version = "1.52", optional = true, features = ["rt"]}
 # logging
-tracing = { workspace = true, default-features = true }
-tracing-subscriber = { workspace = true, features = ["std", "fmt", "local-time", "env-filter"] }
+tracing = { version = "0.1", default-features = true }
+tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
 
 libc = "0.2"
 sspi = { path = "..", default-features = false, features = ["network_client"] }
@@ -57,7 +57,7 @@ windows = { version = "0.62", features = ["Win32_Security_Cryptography", "Win32_
 embed-resource = "3"
 
 [target.'cfg(not(windows))'.dependencies]
-bitflags = { workspace = true, optional = true }
+bitflags = { version = "2.11", optional = true }
 
 [target.'cfg(not(any(target_os="macos", target_os="ios", windows)))'.dependencies]
 sspi = { path = "..", default-features = false, features = ["dns_resolver"] }
