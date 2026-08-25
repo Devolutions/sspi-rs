@@ -463,7 +463,7 @@ pub async fn initialize_security_context<'a>(
 
             // "HTTP/" prefix of the target name means RD Gateway authorization.
             // The RD Gateway server does not send an AP_REP message, so we skip the AP_REP processing and go directly to the final state.
-            let security_status = if let Some(target_name) = &builder.target_name
+            if let Some(target_name) = &builder.target_name
                 && target_name.starts_with("HTTP/")
             {
                 client.state = KerberosState::Final;
@@ -473,9 +473,7 @@ pub async fn initialize_security_context<'a>(
                 client.state = KerberosState::ApExchange;
 
                 SecurityStatus::ContinueNeeded
-            };
-
-            security_status
+            }
         }
         KerberosState::ApExchange => {
             let input = builder

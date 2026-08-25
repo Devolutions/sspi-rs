@@ -52,11 +52,7 @@ pub(super) struct KrbEnvironment {
 /// * Kerberos services keys.
 /// * Target machine name.
 pub(super) fn init_krb_environment(target_name: Option<[&str; 2]>) -> KrbEnvironment {
-    let [service_name, target_machine_name] = if let Some(target_name) = target_name {
-        target_name
-    } else {
-        ["TERMSRV", "DESKTOP-8F33RFH.example.com"]
-    };
+    let [service_name, target_machine_name] = target_name.unwrap_or(["TERMSRV", "DESKTOP-8F33RFH.example.com"]);
 
     let username = "pw13";
     let user_password = "qweQWE123!@#";
