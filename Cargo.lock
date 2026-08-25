@@ -1979,36 +1979,25 @@ version = "7.0.0-rc.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07ad9686b270be4eb3f3c23027d202ad488a25c2bec6d6be20c2164b28d2c86c"
 dependencies = [
- "aes",
- "aes-gcm",
- "aes-kw",
  "base64 0.22.1",
- "cbc",
  "crypto-bigint",
  "crypto-common 0.2.2",
- "ctr",
- "des",
  "digest 0.11.3",
  "ed25519-dalek",
  "hex",
- "hmac",
- "http",
  "inout",
  "md-5",
  "p256",
  "p384",
  "p521",
- "pbkdf2",
  "picky-asn1",
  "picky-asn1-der",
  "picky-asn1-x509",
  "pkcs1",
  "rand 0.10.2",
  "rand_core 0.10.1",
- "rc2",
  "rsa",
  "serde",
- "serde_json",
  "sha1",
  "sha2",
  "sha3",
@@ -2433,15 +2422,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.5",
-]
-
-[[package]]
-name = "rc2"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ceda21af1ae61033b63175653a1af86cae399d79cd03ca80ba347eb3a6c4a7fe"
-dependencies = [
- "cipher",
 ]
 
 [[package]]

@@ -28,7 +28,7 @@ sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 ffi-types = { workspace = true, features = ["winscard"], optional = true }
 
-picky = { version = "=7.0.0-rc.26", features = ["x509"], optional = true }
+picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"], optional = true }
 picky-asn1-der = "0.5"
 picky-asn1 = { version = "0.10", optional = true }
 picky-asn1-x509 = { version = "0.15", optional = true }
