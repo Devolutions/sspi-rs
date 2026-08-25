@@ -21,7 +21,7 @@ pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>>
     Ok(data)
 }
 
-pub(super) fn validate_mic_token(
+pub(crate) fn validate_mic_token(
     is_client: bool,
     expected_seq_number: u64,
     raw_token: &[u8],
@@ -97,7 +97,7 @@ pub(super) fn validate_mic_token(
     Ok(())
 }
 
-pub(super) fn generate_mic_token(
+pub(crate) fn generate_mic_token(
     is_client: bool,
     seq_number: u64,
     mut payload: Vec<u8>,

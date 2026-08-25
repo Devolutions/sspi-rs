@@ -37,8 +37,11 @@ use self::generators::{
     generate_server_dh_parameters,
 };
 use crate::builders::{ChangePassword, FilledAcceptSecurityContext};
+use crate::channel_bindings::ChannelBindings;
 use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext, YieldPointLocal};
-use crate::kerberos::client::extractors::{decrypt_ap_rep, extract_sub_session_key_from_ap_rep};
+use crate::kerberos::client::extractors::{
+    decrypt_ap_rep, extract_seq_number_from_ap_rep, extract_sub_session_key_from_ap_rep,
+};
 use crate::kerberos::client::generators::{
     ChecksumOptions, EncKey, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_ap_req, generate_as_req,
     generate_as_req_kdc_body,
@@ -112,6 +115,9 @@ pub struct Pku2u {
     conversation_id: Uuid,
     auth_scheme: Option<Uuid>,
     seq_number: u32,
+    gss_seq_number: u32,
+    remote_gss_seq_number: u32,
+    channel_bindings: Option<ChannelBindings>,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
@@ -141,6 +147,9 @@ impl Pku2u {
             conversation_id: Uuid::default(),
             auth_scheme: Some(Uuid::from_str(DEFAULT_NEGOEX_AUTH_SCHEME).unwrap()),
             seq_number: 2,
+            gss_seq_number: 0,
+            remote_gss_seq_number: 0,
+            channel_bindings: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -166,6 +175,9 @@ impl Pku2u {
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
+            gss_seq_number: 0,
+            remote_gss_seq_number: 0,
+            channel_bindings: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -186,6 +198,47 @@ impl Pku2u {
         self.seq_number += 1;
 
         seq_num
+    }
+
+    fn next_gss_seq_number(&mut self) -> u32 {
+        let seq_num = self.gss_seq_number;
+        self.gss_seq_number += 1;
+
+        seq_num
+    }
+
+    fn is_client(&self) -> bool {
+        matches!(self.mode, Pku2uMode::Client)
+    }
+
+    fn read_channel_bindings(&mut self, input: Option<&[SecurityBuffer]>) -> Result<()> {
+        if let Some(input) = input
+            && let Ok(buffer) = SecurityBuffer::find_buffer(input, BufferType::ChannelBindings)
+        {
+            self.channel_bindings = Some(ChannelBindings::from_bytes(&buffer.buffer)?);
+        }
+
+        Ok(())
+    }
+
+    fn generate_mic(&self, sequence_number: u64, data: &[u8]) -> Result<Vec<u8>> {
+        let key = get_encryption_key(&self.encryption_params)?;
+        let aes_size = self
+            .encryption_params
+            .aes_size()
+            .unwrap_or(picky_krb::crypto::aes::AesSize::Aes256);
+
+        crate::kerberos::utils::generate_mic_token(self.is_client(), sequence_number, data.to_vec(), key, &aes_size)
+    }
+
+    fn verify_mic(&self, sequence_number: u64, token: &[u8], data: &[u8]) -> Result<()> {
+        crate::kerberos::utils::validate_mic_token(
+            self.is_client(),
+            sequence_number,
+            token,
+            &self.encryption_params,
+            data,
+        )
     }
 }
 
@@ -214,7 +267,7 @@ impl Sspi for Pku2u {
             .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
             .cipher();
 
-        let sequence_number = self.next_seq_number();
+        let sequence_number = self.next_gss_seq_number();
 
         let key = get_encryption_key(&self.encryption_params)?;
         let key_usage = self.encryption_params.sspi_encrypt_key_usage;
@@ -357,20 +410,28 @@ impl Sspi for Pku2u {
     fn make_signature(
         &mut self,
         _flags: u32,
-        _message: &mut [SecurityBufferRef<'_>],
-        _sequence_number: u32,
+        message: &mut [SecurityBufferRef<'_>],
+        sequence_number: u32,
     ) -> Result<()> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "make_signature is not supported",
-        ))
+        let data = SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
+            acc.extend_from_slice(buffer.data());
+            acc
+        });
+        let signature = self.generate_mic(sequence_number.into(), &data)?;
+        SecurityBufferRef::find_buffer_mut(message, BufferType::Token)?.write_data(&signature)
     }
 
-    fn verify_signature(&mut self, _message: &mut [SecurityBufferRef<'_>], _sequence_number: u32) -> Result<u32> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "verify_signature is not supported",
-        ))
+    fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> Result<u32> {
+        let token = SecurityBufferRef::find_buffer(message, BufferType::Token)?
+            .data()
+            .to_vec();
+        let data = SecurityBufferRef::buffers_of_type(message, BufferType::Data).fold(Vec::new(), |mut acc, buffer| {
+            acc.extend_from_slice(buffer.data());
+            acc
+        });
+        self.verify_mic(sequence_number.into(), &token, &data)?;
+
+        Ok(0)
     }
 }
 
@@ -439,6 +500,7 @@ impl Pku2u {
         builder: &mut crate::builders::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
+        self.read_channel_bindings(builder.input.as_deref())?;
 
         let status = match self.state {
             Pku2uState::Negotiate => {
@@ -690,6 +752,7 @@ impl Pku2u {
 
                 let exchange_seq_number = self.next_seq_number();
                 let verify_seq_number = self.next_seq_number();
+                self.gss_seq_number = exchange_seq_number;
 
                 let enc_type = self
                     .encryption_params
@@ -710,7 +773,7 @@ impl Pku2u {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),
                         checksum_value: AUTHENTICATOR_DEFAULT_CHECKSUM.into(),
                     }),
-                    channel_bindings: None,
+                    channel_bindings: self.channel_bindings.as_ref(),
                     extensions: vec![generate_authenticator_extension(
                         &authenticator_sub_key,
                         &self.gss_api_messages,
@@ -821,6 +884,7 @@ impl Pku2u {
                     &self.encryption_params,
                 )?;
                 let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
+                self.remote_gss_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
 
                 self.encryption_params.sub_session_key = Some(sub_session_key);
 
@@ -875,6 +939,15 @@ impl SspiEx for Pku2u {
 
         Ok(())
     }
+
+    fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
+        self.verify_mic(self.remote_gss_seq_number.into(), token, data)
+    }
+
+    fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
+        let sequence_number = self.next_gss_seq_number();
+        self.generate_mic(sequence_number.into(), data)
+    }
 }
 
 #[cfg(test)]
@@ -892,7 +965,10 @@ mod tests {
     use super::Pku2uMode;
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
     use crate::kerberos::EncryptionParams;
-    use crate::{EncryptionFlags, Pku2u, Pku2uConfig, Pku2uState, SecurityBufferRef, Sspi};
+    use crate::{
+        BufferType, EncryptionFlags, ErrorKind, Pku2u, Pku2uConfig, Pku2uState, SecurityBuffer, SecurityBufferRef,
+        Sspi, SspiEx,
+    };
 
     #[test]
     fn stream_buffer_decryption() {
@@ -1005,6 +1081,9 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
+            gss_seq_number: 0,
+            remote_gss_seq_number: 0,
+            channel_bindings: None,
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1034,11 +1113,79 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             conversation_id: Uuid::new_v4(),
             auth_scheme: None,
             seq_number: 0,
+            gss_seq_number: 0,
+            remote_gss_seq_number: 0,
+            channel_bindings: None,
             dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
             negoex_random,
         };
+
+        let mic = pku2u_server
+            .generate_mic_token(b"SPNEGO mech list", crate::private::Sealed)
+            .unwrap();
+        pku2u_client
+            .verify_mic_token(&mic, b"SPNEGO mech list", crate::private::Sealed)
+            .unwrap();
+        assert_eq!(
+            pku2u_client
+                .verify_mic_token(&mic, b"tampered mech list", crate::private::Sealed)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::MessageAltered
+        );
+
+        let mut aes128_server = pku2u_server.clone();
+        let mut aes128_client = pku2u_client.clone();
+        for context in [&mut aes128_server, &mut aes128_client] {
+            context.encryption_params.encryption_type = Some(CipherSuite::Aes128CtsHmacSha196);
+            context.encryption_params.session_key = Some(vec![0x11; 16].into());
+            context.encryption_params.sub_session_key = Some(vec![0x22; 16].into());
+            context.gss_seq_number = 0;
+            context.remote_gss_seq_number = 0;
+        }
+        let aes128_mic = aes128_server
+            .generate_mic_token(b"AES-128 mech list", crate::private::Sealed)
+            .unwrap();
+        aes128_client
+            .verify_mic_token(&aes128_mic, b"AES-128 mech list", crate::private::Sealed)
+            .unwrap();
+
+        let mut signature = [0; 64];
+        let mut signed_data = b"signed Pku2u message".to_vec();
+        let mut signed_message = [
+            SecurityBufferRef::token_buf(&mut signature),
+            SecurityBufferRef::data_buf(&mut signed_data),
+        ];
+        pku2u_server.make_signature(0, &mut signed_message, 42).unwrap();
+        pku2u_client.verify_signature(&mut signed_message, 42).unwrap();
+        let [mut signature_buffer, mut data_buffer] = signed_message;
+        let signature = signature_buffer.take_data();
+        let data = data_buffer.take_data();
+        data[0] ^= 1;
+        let mut tampered_message = [
+            SecurityBufferRef::token_buf(signature),
+            SecurityBufferRef::data_buf(data),
+        ];
+        assert_eq!(
+            pku2u_client
+                .verify_signature(&mut tampered_message, 42)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::MessageAltered
+        );
+
+        let mut channel_bindings = vec![0; 36];
+        channel_bindings[24..28].copy_from_slice(&4_u32.to_le_bytes());
+        channel_bindings[28..32].copy_from_slice(&32_u32.to_le_bytes());
+        channel_bindings[32..].copy_from_slice(&[1, 2, 3, 4]);
+        let input = [SecurityBuffer::new(channel_bindings, BufferType::ChannelBindings)];
+        pku2u_client.read_channel_bindings(Some(&input)).unwrap();
+        assert_eq!(
+            pku2u_client.channel_bindings.as_ref().unwrap().application_data,
+            [1, 2, 3, 4]
+        );
 
         let plain_message = b"some plain message";
 
