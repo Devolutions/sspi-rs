@@ -29,6 +29,7 @@ pub fn setup_logger() {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .pretty()
             .with_thread_names(true)
+            .with_thread_ids(true)
             .with_writer(file);
 
         tracing_subscriber::registry()

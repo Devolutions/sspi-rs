@@ -52,8 +52,8 @@ pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
     PCredHandle,
     PTimeStamp,
 ) -> SecurityStatus;
-pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
-pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
+pub type QueryCredentialsAttributesFnA = unsafe extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
+pub type QueryCredentialsAttributesFnW = unsafe extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
 pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
     PCredHandle,
     PCtxtHandle,
@@ -138,8 +138,10 @@ pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
 ) -> SecurityStatus;
 pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
-pub type QueryCredentialsAttributesExFnA = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
-pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
+pub type QueryCredentialsAttributesExFnA =
+    unsafe extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
+pub type QueryCredentialsAttributesExFnW =
+    unsafe extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[repr(C)]
 pub struct SecurityFunctionTableA {
