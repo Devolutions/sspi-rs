@@ -8,14 +8,14 @@ use sspi::{Error, ErrorKind, Result};
 use super::sspi_data_types::{SecChar, SecWChar};
 use super::utils::hostname;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KdcProxySettings {
     pub proxy_server: String,
     #[allow(dead_code)]
     pub client_tls_cred: Option<String>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct CredentialsAttributes {
     pub package_list: Option<String>,
     pub kdc_url: Option<String>,

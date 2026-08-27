@@ -198,11 +198,21 @@ namespace Devolutions.Sspi
         [DllImport(__DllName, EntryPoint = "AcquireCredentialsHandleW", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern uint AcquireCredentialsHandleW(ushort* _psz_principal, ushort* psz_package, uint _f_credential_use, void* _pv_logon_id, void* p_auth_data, delegate* unmanaged[Cdecl]<void*, void*, uint, void**, int*, void> _p_get_key_fn, void* _pv_get_key_argument, SecHandle* ph_credential, SecurityInteger* _pts_expiry);
 
+        /// <summary>
+        ///  # Safety
+        ///
+        ///  `ph_credential` must be null or a valid pointer to a `SecHandle` structure.
+        /// </summary>
         [DllImport(__DllName, EntryPoint = "QueryCredentialsAttributesA", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern uint QueryCredentialsAttributesA(SecHandle* _ph_credential, uint _ul_attribute, void* _p_buffer);
+        public static extern uint QueryCredentialsAttributesA(SecHandle* ph_credential, uint ul_attribute, void* _p_buffer);
 
+        /// <summary>
+        ///  # Safety
+        ///
+        ///  `ph_credential` must be null or a valid pointer to a `SecHandle` structure.
+        /// </summary>
         [DllImport(__DllName, EntryPoint = "QueryCredentialsAttributesW", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern uint QueryCredentialsAttributesW(SecHandle* _ph_credential, uint _ul_attribute, void* _p_buffer);
+        public static extern uint QueryCredentialsAttributesW(SecHandle* ph_credential, uint ul_attribute, void* _p_buffer);
 
         /// <summary>
         ///  The `InitializeSecurityContextA` function initiates the client side, outbound `security context` from
@@ -386,11 +396,21 @@ namespace Devolutions.Sspi
         [DllImport(__DllName, EntryPoint = "QueryContextAttributesExW", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern uint QueryContextAttributesExW(SecHandle* _ph_context, uint _ul_attribute, void* _p_buffer, uint _cb_buffer);
 
+        /// <summary>
+        ///  # Safety
+        ///
+        ///  `ph_credential` must be null or a valid pointer to a `SecHandle` structure.
+        /// </summary>
         [DllImport(__DllName, EntryPoint = "QueryCredentialsAttributesExA", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern uint QueryCredentialsAttributesExA(SecHandle* _ph_credential, uint _ul_attribute, void* _p_buffer, uint _c_buffers);
+        public static extern uint QueryCredentialsAttributesExA(SecHandle* ph_credential, uint ul_attribute, void* _p_buffer, uint _c_buffers);
 
+        /// <summary>
+        ///  # Safety
+        ///
+        ///  `ph_credential` must be null or a valid pointer to a `SecHandle` structure.
+        /// </summary>
         [DllImport(__DllName, EntryPoint = "QueryCredentialsAttributesExW", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
-        public static extern uint QueryCredentialsAttributesExW(SecHandle* _ph_aredential, uint _ul_attribute, void* _p_buffer, uint _c_buffers);
+        public static extern uint QueryCredentialsAttributesExW(SecHandle* ph_credential, uint ul_attribute, void* _p_buffer, uint _c_buffers);
 
         /// <summary>
         ///  The `EnumerateSecurityPackagesA` function returns an array of `SecPkgInfo` structures that provide
@@ -1206,10 +1226,23 @@ namespace Devolutions.Sspi
 
     }
 
+    /// <summary>
+    ///  Credentials or context handle, as defined by the SSPI API.
+    ///
+    ///  MSDN: [SSPI Handles](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-handles).
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecHandle
     {
+        /// <summary>
+        ///  If [SecHandle] is used as a context handle, this field contains the security package ID of the security context.
+        ///  If [SecHandle] is used as a credentials handle, this field contains the credentials handle pointer address.
+        /// </summary>
         public ulong dw_lower;
+        /// <summary>
+        ///  If [SecHandle] is used as a context handle, this field contains the pointer to the security context.
+        ///  If [SecHandle] is used as a credentials handle, this field is unused.
+        /// </summary>
         public ulong dw_upper;
     }
 
