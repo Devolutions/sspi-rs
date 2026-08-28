@@ -50,8 +50,9 @@ use time::{Duration, OffsetDateTime};
 
 use super::extractors::extract_krb_rep;
 use super::generators::{
-    GSS_EXTS_FINISHED, WELLKNOWN_REALM, generate_ap_rep, generate_as_req_username_from_certificate, generate_neg,
-    generate_neg_token_targ, generate_pku2u_nego_rep, get_default_parameters,
+    GSS_EXTS_FINISHED, WELLKNOWN_REALM, generate_ap_rep, generate_as_req_username_from_certificate,
+    generate_initial_neg_token_targ, generate_neg, generate_neg_token_targ, generate_pku2u_nego_rep,
+    get_default_parameters,
 };
 use super::validate::validate_signed_data;
 use super::{
@@ -65,7 +66,7 @@ use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate
 use crate::utils::generate_random_symmetric_key;
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, KERBEROS_VERSION, Result, Secret, SecurityBuffer,
-    SecurityStatus, ServerResponseFlags, SspiImpl,
+    SecurityStatus, ServerResponseFlags, SspiImpl, Username,
 };
 
 /// Maximum tolerated clock skew for PKINIT/Kerberos timestamp freshness checks. There is no
@@ -182,7 +183,7 @@ pub(crate) async fn accept_security_context(
 
             server.negoex_messages.extend_from_slice(&mech_token_out);
 
-            let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_neg_token_targ(mech_token_out, false)?)?;
+            let encoded_neg_token_targ = picky_asn1_der::to_vec(&generate_initial_neg_token_targ(mech_token_out)?)?;
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer.write_all(&encoded_neg_token_targ)?;
 
@@ -310,7 +311,9 @@ pub(crate) async fn accept_security_context(
                 ));
             }
 
+            record_authenticator(&ap_req, validated.client_time)?;
             server.remote_gss_seq_number = validated.remote_seq_number;
+            server.peer_name = Some(validated.peer_name);
             server.negoex_messages.extend_from_slice(initiator_verify_data);
 
             // Generate a fresh acceptor sub-session key for this AP-REP. Per RFC 4121 §4.2, the
@@ -770,8 +773,10 @@ fn select_cipher_suite(offered: &[IntegerAsn1]) -> Result<CipherSuite> {
 struct ValidatedApReq {
     ctime: KerberosTime,
     cusec: Microseconds,
+    client_time: OffsetDateTime,
     authenticator_subkey: Secret<Vec<u8>>,
     remote_seq_number: u32,
+    peer_name: Username,
 }
 
 /// Validates the initiator's AP-REQ against the Ticket this acceptor itself issued in [`build_as_rep`]:
@@ -937,13 +942,19 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
 
     let remote_seq_number = parse_authenticator_seq_number(seq_number)
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "authenticator has no sequence number"))?;
-    record_authenticator(ap_req, client_time)?;
+    let principal = cname.0.name_string.0[0].to_string();
+    let (domain, account_name) = principal
+        .split_once('\\')
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "PKU2U initiator name is not qualified"))?;
+    let peer_name = Username::new_qualified_down_level_logon_name(account_name, domain);
 
     Ok(ValidatedApReq {
         ctime: ctime.0.clone(),
         cusec: cusec.0.clone(),
+        client_time,
         authenticator_subkey,
         remote_seq_number,
+        peer_name,
     })
 }
 

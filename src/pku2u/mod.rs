@@ -129,6 +129,7 @@ pub struct Pku2u {
     channel_bindings: Option<ChannelBindings>,
     peer_certificate: Option<Certificate>,
     peer_certificate_trusted: bool,
+    peer_name: Option<crate::Username>,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
@@ -169,6 +170,7 @@ impl Pku2u {
             channel_bindings: None,
             peer_certificate: None,
             peer_certificate_trusted: false,
+            peer_name: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -201,6 +203,7 @@ impl Pku2u {
             channel_bindings: None,
             peer_certificate: None,
             peer_certificate_trusted: false,
+            peer_name: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -860,6 +863,12 @@ impl Sspi for Pku2u {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> Result<ContextNames> {
+        if let Some(username) = &self.peer_name {
+            return Ok(ContextNames {
+                username: username.clone(),
+            });
+        }
+
         if let Some(identity_buffers) = &self.auth_identity {
             let identity =
                 AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
@@ -1539,7 +1548,9 @@ mod tests {
     use rand_core::{Rng as _, SeedableRng as _};
     use uuid::Uuid;
 
-    use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
+    use super::generators::{
+        generate_as_req_username_from_certificate, generate_client_dh_parameters, generate_server_dh_parameters,
+    };
     use super::{
         PACKAGE_INFO, PKG_NAME, PKU2U_SECURITY_TRAILER, Pku2uMode, WRAP_SENT_BY_ACCEPTOR, decode_exchange_message,
         decode_nego_message,
@@ -1735,6 +1746,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             channel_bindings: None,
             peer_certificate: None,
             peer_certificate_trusted: false,
+            peer_name: None,
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1774,6 +1786,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             channel_bindings: None,
             peer_certificate: None,
             peer_certificate_trusted: false,
+            peer_name: None,
             dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -2100,6 +2113,10 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         );
         assert_eq!(client.query_context_remote_cert().unwrap().cert, server_certificate);
         assert_eq!(server.query_context_remote_cert().unwrap().cert, client_certificate);
+        assert_eq!(
+            server.query_context_names().unwrap().username.inner(),
+            generate_as_req_username_from_certificate(&client_certificate).unwrap()
+        );
 
         // Both sides now agree on the same session key and sub-session key.
         assert_eq!(

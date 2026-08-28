@@ -129,10 +129,24 @@ pub(super) fn generate_neg_token_init(mech_token: Vec<u8>) -> Result<Application
 /// initiator does not currently inspect `negResult`, but a spec-compliant peer does.
 #[instrument(level = "trace", ret)]
 pub(super) fn generate_neg_token_targ(token: Vec<u8>, complete: bool) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+    generate_neg_token_targ_inner(token, complete, false)
+}
+
+pub(super) fn generate_initial_neg_token_targ(token: Vec<u8>) -> Result<ExplicitContextTag1<NegTokenTarg>> {
+    generate_neg_token_targ_inner(token, false, true)
+}
+
+fn generate_neg_token_targ_inner(
+    token: Vec<u8>,
+    complete: bool,
+    include_supported_mech: bool,
+) -> Result<ExplicitContextTag1<NegTokenTarg>> {
     let neg_result = if complete { ACCEPT_COMPLETE } else { ACCEPT_INCOMPLETE };
     Ok(ExplicitContextTag1::from(NegTokenTarg {
         neg_result: Optional::from(Some(ExplicitContextTag0::from(Asn1RawDer(neg_result.to_vec())))),
-        supported_mech: Optional::from(None),
+        supported_mech: Optional::from(
+            include_supported_mech.then(|| ExplicitContextTag1::from(MechType::from(oids::negoex()))),
+        ),
         response_token: Optional::from(Some(ExplicitContextTag2::from(OctetStringAsn1::from(token)))),
         mech_list_mic: Optional::from(None),
     }))
@@ -444,7 +458,7 @@ mod tests {
     use picky_krb::crypto::ChecksumSuite;
     use picky_krb::pkinit::KrbFinished;
 
-    use super::generate_authenticator_extension;
+    use super::{generate_authenticator_extension, generate_initial_neg_token_targ};
 
     #[test]
     fn authenticator_extension_uses_negotiated_checksum_suite() {
@@ -462,5 +476,15 @@ mod tests {
                 suite.hasher().checksum(&key, KEY_USAGE_FINISHED, payload).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn initial_acceptor_token_selects_negoex() {
+        let token = generate_initial_neg_token_targ(Vec::new()).unwrap();
+
+        assert_eq!(
+            token.0.supported_mech.0.unwrap().0,
+            picky_asn1::wrapper::ObjectIdentifierAsn1::from(picky_asn1_x509::oids::negoex())
+        );
     }
 }
