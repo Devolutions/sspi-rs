@@ -47,7 +47,8 @@ use time::{Duration, OffsetDateTime};
 
 use super::extractors::extract_krb_rep;
 use super::generators::{
-    GSS_EXTS_FINISHED, WELLKNOWN_REALM, generate_ap_rep, generate_neg, generate_neg_token_targ, generate_pku2u_nego_rep,
+    GSS_EXTS_FINISHED, WELLKNOWN_REALM, generate_ap_rep, generate_as_req_username_from_certificate, generate_neg,
+    generate_neg_token_targ, generate_pku2u_nego_rep, get_default_parameters,
 };
 use super::validate::validate_signed_data;
 use super::{Pku2u, Pku2uState};
@@ -55,7 +56,7 @@ use crate::builders::FilledAcceptSecurityContext;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::generator::YieldPointLocal;
 use crate::pk_init::{DH_NONCE_LEN, Wrapper, generate_signer_info};
-use crate::pku2u::cert_utils::validation::validate_server_p2p_certificate;
+use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_server_p2p_certificate};
 use crate::utils::generate_random_symmetric_key;
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, KERBEROS_VERSION, Result, Secret, SecurityBuffer,
@@ -154,10 +155,6 @@ pub(crate) async fn accept_security_context(
                     ),
                 ));
             }
-            // Pick, among our own configured credentials, the one whose issuer the initiator
-            // announced it is about to present (see `select_credential_for_metadata`'s docs).
-            server.select_credential_for_metadata(&nego_req.metadata.0.0)?;
-
             server.negoex_messages.extend_from_slice(&mech_token);
 
             let mut mech_token_out = Vec::new();
@@ -453,6 +450,20 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     // *initiator's* certificate.
     let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
     validate_signed_data(&signed_data, &rsa_public_key)?;
+    let client_certificate = extract_signing_certificate(&signed_data)?;
+    if !server.config.trusted_client_certificates.contains(&client_certificate) {
+        return Err(Error::new(
+            ErrorKind::Pku2uCertFailure,
+            "PKU2U initiator certificate is not trusted",
+        ));
+    }
+    let expected_username = generate_as_req_username_from_certificate(&client_certificate)?;
+    if cname.name_string.0.len() != 1 || cname.name_string.0[0].to_string() != expected_username {
+        return Err(Error::new(
+            ErrorKind::Pku2uCertFailure,
+            "PKU2U initiator principal does not match its certificate",
+        ));
+    }
 
     if signed_data.content_info.content_type.0 != oids::pkinit_auth_data() {
         return Err(Error::new(
@@ -534,6 +545,13 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     let p = domain_params.p.as_unsigned_bytes_be().to_vec();
     let g = domain_params.g.as_unsigned_bytes_be().to_vec();
     let q = domain_params.q.as_unsigned_bytes_be().to_vec();
+    let (expected_p, expected_g, expected_q) = get_default_parameters();
+    if p != expected_p || g != expected_g || q != expected_q {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "PKU2U initiator proposed unsupported Diffie-Hellman parameters",
+        ));
+    }
     let client_public_value: IntegerAsn1 = picky_asn1_der::from_bytes(client_dh_req_info.0.key_value.payload_view())?;
     let client_public_value = client_public_value.as_unsigned_bytes_be().to_vec();
 
@@ -556,7 +574,10 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     }
 
     let mut rng = StdRng::try_from_rng(&mut SysRng)?;
-    let server_private_key = generate_private_key(&q, &mut rng).expect("infallible");
+    let server_private_key = match generate_private_key(&q, &mut rng) {
+        Ok(private_key) => private_key,
+        Err(error) => match error {},
+    };
     let server_public_value = compute_public_key(&server_private_key, &p, &g)?;
 
     server.dh_parameters.base = g;
@@ -758,7 +779,7 @@ struct ValidatedApReq {
 /// decrypts the Ticket and Authenticator, checks their name/realm/time consistency (RFC 4120 §3.2.3),
 /// validates channel bindings, and validates the "Finished" checksum extension binding the whole
 /// AS-REQ/AS-REP transcript (the PKU2U analogue of a TLS Finished message).
-fn validate_ap_req(server: &Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq> {
+fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq> {
     let ticket_key = check_if_empty!(
         server.ticket_encryption_key.as_ref(),
         "ticket encryption key is not set"
@@ -917,6 +938,13 @@ fn validate_ap_req(server: &Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq> {
 
     let remote_seq_number = parse_authenticator_seq_number(seq_number)
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "authenticator has no sequence number"))?;
+    let replay_key = [picky_asn1_der::to_vec(ctime)?, picky_asn1_der::to_vec(cusec)?].concat();
+    if !server.authenticator_cache.insert(replay_key) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "PKU2U authenticator replay detected",
+        ));
+    }
 
     Ok(ValidatedApReq {
         ctime: ctime.0.clone(),

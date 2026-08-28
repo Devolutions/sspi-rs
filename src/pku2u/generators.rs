@@ -92,19 +92,12 @@ pub(super) fn generate_pku2u_nego_req(service_names: &[&str], config: &Pku2uConf
 
 /// Builds the acceptor's `AcceptorMetaData` payload (`Pku2uNegoRep`).
 ///
-/// Its `metadata` field lists the issuers of every server credential this acceptor is configured
-/// with (the primary [`Pku2uConfig::p2p_certificate`] plus any [`Pku2uConfig::additional_credentials`]).
-/// The initiator uses this list to select, among its own candidate certificates, one issued by an
-/// issuer the acceptor advertises here (see the client-side `Pku2u::select_credential_for_metadata`).
+/// Its `metadata` field lists the client-certificate issuers trusted by this acceptor. The initiator
+/// uses this list to select one of its candidate credentials.
 #[instrument(level = "debug", ret)]
 pub(super) fn generate_pku2u_nego_rep(config: &Pku2uConfig) -> Result<Pku2uNegoRep> {
-    let mut metadata = Vec::with_capacity(1 + config.additional_credentials.len());
-    for certificate in std::iter::once(&config.p2p_certificate).chain(
-        config
-            .additional_credentials
-            .iter()
-            .map(|credential| &credential.certificate),
-    ) {
+    let mut metadata = Vec::with_capacity(config.trusted_client_certificates.len());
+    for certificate in &config.trusted_client_certificates {
         metadata.push(Pku2uNegoReqMetadata {
             inner: ImplicitContextTag0::from(OctetStringAsn1::from(picky_asn1_der::to_vec(
                 &certificate.tbs_certificate.issuer,

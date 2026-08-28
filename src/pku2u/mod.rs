@@ -7,6 +7,7 @@ pub mod macros;
 mod server;
 mod validate;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -121,6 +122,7 @@ pub struct Pku2u {
     remote_gss_seq_number: u32,
     request_nonce: Option<u32>,
     channel_bindings: Option<ChannelBindings>,
+    authenticator_cache: HashSet<Vec<u8>>,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
@@ -159,6 +161,7 @@ impl Pku2u {
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
+            authenticator_cache: HashSet::new(),
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -189,6 +192,7 @@ impl Pku2u {
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
+            authenticator_cache: HashSet::new(),
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -1354,6 +1358,8 @@ impl SspiEx for Pku2u {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use crypto_bigint::rand_core::TryRng;
     use picky::key::PrivateKey;
     use picky::oids;
@@ -1481,6 +1487,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
                 private_key: private_key.clone().into(),
                 client_hostname: "hostname".into(),
                 additional_credentials: Vec::new(),
+                trusted_client_certificates: vec![p2p_certificate.clone()],
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
@@ -1499,6 +1506,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
+            authenticator_cache: HashSet::new(),
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1512,10 +1520,11 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut pku2u_client = Pku2u {
             mode: Pku2uMode::Client,
             config: Pku2uConfig {
-                p2p_certificate,
+                p2p_certificate: p2p_certificate.clone(),
                 private_key: private_key.into(),
                 client_hostname: "hostname".into(),
                 additional_credentials: Vec::new(),
+                trusted_client_certificates: vec![p2p_certificate.clone()],
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
@@ -1534,6 +1543,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
+            authenticator_cache: HashSet::new(),
             dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1792,17 +1802,19 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
     /// (`generate_mic_token`/`verify_mic_token`) in both directions over the negotiated session.
     #[test]
     fn full_handshake_then_wrap_and_mic() {
-        let (p2p_certificate, private_key) = test_p2p_identity();
+        let (server_certificate, private_key) = test_p2p_identity();
+        let mut client_certificate = server_certificate.clone();
+        client_certificate.tbs_certificate.issuer = client_certificate.tbs_certificate.subject.clone();
 
         let mut client = Pku2u::new_client_from_config(Pku2uConfig::new(
-            p2p_certificate.clone(),
+            client_certificate.clone(),
             private_key.clone(),
             "client-host".into(),
         ))
         .unwrap();
-        let mut server =
-            Pku2u::new_server_from_config(Pku2uConfig::new(p2p_certificate, private_key, "server-host".into()))
-                .unwrap();
+        let server_config = Pku2uConfig::new(server_certificate, private_key, "server-host".into())
+            .with_trusted_client_certificate(client_certificate);
+        let mut server = Pku2u::new_server_from_config(server_config).unwrap();
 
         // Leg 1 (initiator -> acceptor): InitiatorNego + InitiatorMetaData.
         let (status, msg) = client_step(&mut client, None).unwrap();

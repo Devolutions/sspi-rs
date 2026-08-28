@@ -58,15 +58,18 @@ pub struct Pku2uConfig {
     pub private_key: Pku2uPrivateKey,
     pub client_hostname: String,
     pub additional_credentials: Vec<Pku2uCredential>,
+    pub trusted_client_certificates: Vec<Certificate>,
 }
 
 impl Pku2uConfig {
     pub fn new(p2p_certificate: Certificate, private_key: PrivateKey, client_hostname: String) -> Self {
+        let trusted_client_certificates = vec![p2p_certificate.clone()];
         Self {
             p2p_certificate,
             private_key: private_key.into(),
             client_hostname,
             additional_credentials: Vec::new(),
+            trusted_client_certificates,
         }
     }
 
@@ -78,17 +81,26 @@ impl Pku2uConfig {
         self
     }
 
+    pub fn with_trusted_client_certificate(mut self, certificate: Certificate) -> Self {
+        if !self.trusted_client_certificates.contains(&certificate) {
+            self.trusted_client_certificates.push(certificate);
+        }
+        self
+    }
+
     #[cfg(target_os = "windows")]
     pub fn default_client_config(client_hostname: String) -> Result<Self> {
         use super::cert_utils::extraction::extract_client_p2p_cert_and_key;
 
         let (p2p_certificate, private_key) = extract_client_p2p_cert_and_key()?;
+        let trusted_client_certificates = vec![p2p_certificate.clone()];
 
         Ok(Self {
             p2p_certificate,
             private_key,
             client_hostname,
             additional_credentials: Vec::new(),
+            trusted_client_certificates,
         })
     }
 }
@@ -96,6 +108,12 @@ impl Pku2uConfig {
 impl ProtocolConfig for Pku2uConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Clone::clone(
+            self,
+        ))?))
+    }
+
+    fn new_server_instance(&self) -> Result<NegotiatedProtocol> {
+        Ok(NegotiatedProtocol::Pku2u(Pku2u::new_server_from_config(Clone::clone(
             self,
         ))?))
     }

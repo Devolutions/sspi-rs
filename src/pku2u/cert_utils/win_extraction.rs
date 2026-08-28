@@ -82,9 +82,9 @@ impl Drop for CngPrivateKey {
             let _ = unsafe { NCryptFreeObject(NCRYPT_HANDLE(handle)) };
         }
         if let Some(certificate_context) = self.certificate_context {
+            let certificate_context = std::ptr::with_exposed_provenance::<CERT_CONTEXT>(certificate_context);
             // SAFETY: this is a duplicated certificate-context reference retained
             // to preserve a provider-owned key handle.
-            let certificate_context = std::ptr::with_exposed_provenance::<CERT_CONTEXT>(certificate_context);
             let _ = unsafe { CertFreeCertificateContext(Some(certificate_context)) };
         }
     }
