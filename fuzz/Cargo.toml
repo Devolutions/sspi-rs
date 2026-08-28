@@ -11,7 +11,7 @@ cargo-fuzz = true
 [dependencies]
 dpapi-fuzzing.path = "../crates/dpapi-fuzzing"
 libfuzzer-sys = "0.4"
-sspi.path = ".."
+sspi = { path = "..", features = ["__test-data"] }
 
 # Prevent this from interfering with workspaces
 [workspace]
@@ -31,6 +31,13 @@ bench = false
 [[bin]]
 name = "dpapi_decoding"
 path = "fuzz_targets/dpapi_decoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pku2u_tokens"
+path = "fuzz_targets/pku2u_tokens.rs"
 test = false
 doc = false
 bench = false

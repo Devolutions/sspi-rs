@@ -7,7 +7,6 @@ pub mod macros;
 mod server;
 mod validate;
 
-use std::collections::HashSet;
 use std::io::Write;
 use std::str::FromStr;
 use std::sync::LazyLock;
@@ -52,14 +51,16 @@ use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, RRC};
 use crate::pk_init::{
     DhParameters, GenerateAsPaDataOptions, extract_server_dh_public_key, generate_pa_datas_for_as_req,
 };
+use crate::pku2u::cert_utils::validation::extract_signing_certificate;
 use crate::pku2u::extractors::{extract_krb_rep, extract_krb_result, extract_session_key_and_nonce_from_as_rep};
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
-    CertTrustStatus, ClientResponseFlags, ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags,
-    Error, ErrorKind, InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, Secret,
-    SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
+    CertContext, CertEncodingType, CertTrustErrorStatus, CertTrustInfoStatus, CertTrustStatus, ClientResponseFlags,
+    ContextNames, ContextSizes, CredentialUse, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
+    InitializeSecurityContextResult, PackageCapabilities, PackageInfo, Result, Secret, SecurityBuffer,
+    SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
 };
 
 pub const PKG_NAME: &str = "pku2u";
@@ -75,6 +76,10 @@ const WRAP_ACCEPTOR_SUBKEY: u8 = 0x04;
 const ENCRYPTED_WRAP_EC: u16 = 16;
 const INTEGRITY_ONLY_RRC: u16 = 12;
 const PKU2U_SECURITY_TRAILER: usize = 76;
+const NEGOEX_HEADER_LEN: usize = 40;
+const NEGOEX_NEGO_HEADER_LEN: usize = 96;
+const NEGOEX_EXCHANGE_HEADER_LEN: usize = 64;
+const NEGOEX_VERIFY_HEADER_LEN: usize = 80;
 
 pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     capabilities: PackageCapabilities::INTEGRITY
@@ -122,7 +127,8 @@ pub struct Pku2u {
     remote_gss_seq_number: u32,
     request_nonce: Option<u32>,
     channel_bindings: Option<ChannelBindings>,
-    authenticator_cache: HashSet<Vec<u8>>,
+    peer_certificate: Option<Certificate>,
+    peer_certificate_trusted: bool,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
@@ -161,7 +167,8 @@ impl Pku2u {
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
-            authenticator_cache: HashSet::new(),
+            peer_certificate: None,
+            peer_certificate_trusted: false,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -192,7 +199,8 @@ impl Pku2u {
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
-            authenticator_cache: HashSet::new(),
+            peer_certificate: None,
+            peer_certificate_trusted: false,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -239,10 +247,9 @@ impl Pku2u {
 
     /// Selects, among this side's configured credentials (the primary [`Pku2uConfig::p2p_certificate`]
     /// followed by [`Pku2uConfig::additional_credentials`]), the first one whose own issuer appears in
-    /// `trusted_issuers`. Used symmetrically by both roles: the initiator calls this with the acceptor's
-    /// `AcceptorMetaData` (trusted issuers the acceptor advertises), and the acceptor calls this with the
-    /// initiator's `InitiatorMetaData` (the issuer of the certificate the initiator is about to present) so a
-    /// multi-identity peer picks the credential that matches the other side's certificate authority.
+    /// `trusted_issuers`. The initiator calls this with the acceptor's `AcceptorMetaData` so a
+    /// multi-identity client picks a credential issued by an authority the acceptor trusts. The acceptor
+    /// validates the initiator certificate separately against `trusted_client_certificates`.
     /// A `trusted_issuers` is empty when the peer advertises no metadata, in which case the
     /// currently-configured credential is kept as-is.
     fn select_credential_for_metadata(&mut self, trusted_issuers: &[Pku2uNegoReqMetadata]) -> Result<()> {
@@ -407,6 +414,123 @@ fn validate_inner_wrap_header(wrap_token: &WrapToken, inner_header: &[u8]) -> Re
         ));
     }
     Ok(())
+}
+
+fn read_negoex_u32(buffer: &[u8], offset: usize) -> Result<u32> {
+    let bytes = buffer
+        .get(offset..offset + 4)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "NEGOEX message is truncated"))?;
+    Ok(u32::from_le_bytes(
+        bytes.try_into().expect("slice has exactly four bytes"),
+    ))
+}
+
+fn validate_negoex_vector(
+    message: &[u8],
+    descriptor_offset: usize,
+    element_size: usize,
+    payload_start: usize,
+) -> Result<(usize, usize)> {
+    let offset = usize::try_from(read_negoex_u32(message, descriptor_offset)?)
+        .map_err(|_| Error::new(ErrorKind::InvalidToken, "NEGOEX vector offset does not fit into usize"))?;
+    let count = usize::try_from(read_negoex_u32(message, descriptor_offset + 4)?)
+        .map_err(|_| Error::new(ErrorKind::InvalidToken, "NEGOEX vector count does not fit into usize"))?;
+    if count == 0 {
+        if offset > message.len() {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "empty NEGOEX vector points outside its message",
+            ));
+        }
+        return Ok((offset, count));
+    }
+
+    let byte_len = count
+        .checked_mul(element_size)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "NEGOEX vector length overflows"))?;
+    let end = offset
+        .checked_add(byte_len)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "NEGOEX vector range overflows"))?;
+    if offset < payload_start || end > message.len() {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "NEGOEX vector points outside its message",
+        ));
+    }
+
+    Ok((offset, count))
+}
+
+fn validate_negoex_message(
+    buffer: &[u8],
+    expected_type: MessageType,
+    expected_header_len: usize,
+) -> Result<(&[u8], &[u8])> {
+    if buffer.len() < NEGOEX_HEADER_LEN {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "NEGOEX message header is truncated",
+        ));
+    }
+
+    let actual_type = read_negoex_u32(buffer, 8)?;
+    if actual_type != u32::from(&expected_type) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("unexpected NEGOEX message type {actual_type}"),
+        ));
+    }
+
+    let header_len = usize::try_from(read_negoex_u32(buffer, 16)?)
+        .map_err(|_| Error::new(ErrorKind::InvalidToken, "NEGOEX header length does not fit into usize"))?;
+    let message_len = usize::try_from(read_negoex_u32(buffer, 20)?)
+        .map_err(|_| Error::new(ErrorKind::InvalidToken, "NEGOEX message length does not fit into usize"))?;
+    if header_len != expected_header_len || message_len < header_len || message_len > buffer.len() {
+        return Err(Error::new(ErrorKind::InvalidToken, "invalid NEGOEX message length"));
+    }
+
+    Ok((&buffer[..message_len], &buffer[message_len..]))
+}
+
+fn decode_nego_message(buffer: &[u8], expected_type: MessageType) -> Result<(Nego, &[u8])> {
+    let (message, tail) = validate_negoex_message(buffer, expected_type, NEGOEX_NEGO_HEADER_LEN)?;
+    validate_negoex_vector(message, 80, 16, NEGOEX_NEGO_HEADER_LEN)?;
+    let (extensions_offset, extensions_count) = validate_negoex_vector(message, 88, 12, NEGOEX_NEGO_HEADER_LEN)?;
+    for index in 0..extensions_count {
+        let extension_offset = extensions_offset + index * 12;
+        validate_negoex_vector(message, extension_offset + 4, 1, NEGOEX_NEGO_HEADER_LEN)?;
+    }
+
+    Ok((Nego::decode(message)?, tail))
+}
+
+fn decode_exchange_message(buffer: &[u8], expected_type: MessageType) -> Result<(Exchange, &[u8])> {
+    let (message, tail) = validate_negoex_message(buffer, expected_type, NEGOEX_EXCHANGE_HEADER_LEN)?;
+    validate_negoex_vector(message, 56, 1, NEGOEX_EXCHANGE_HEADER_LEN)?;
+    Ok((Exchange::decode(message)?, tail))
+}
+
+fn decode_verify_message(buffer: &[u8]) -> Result<(Verify, &[u8])> {
+    let (message, tail) = validate_negoex_message(buffer, MessageType::Verify, NEGOEX_VERIFY_HEADER_LEN)?;
+    if read_negoex_u32(message, 56)? != 20 {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "invalid NEGOEX checksum header length",
+        ));
+    }
+    validate_negoex_vector(message, 68, 1, NEGOEX_VERIFY_HEADER_LEN)?;
+    Ok((Verify::decode(message)?, tail))
+}
+
+fn ensure_no_negoex_tail(tail: &[u8]) -> Result<()> {
+    if tail.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidToken,
+            "unexpected trailing NEGOEX message",
+        ))
+    }
 }
 
 fn decrypt_sealed_wrap(
@@ -758,10 +882,32 @@ impl Sspi for Pku2u {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_cert_trust_status(&mut self) -> Result<CertTrustStatus> {
-        Err(Error::new(
-            ErrorKind::UnsupportedFunction,
-            "Certificate trust status is not supported".to_owned(),
-        ))
+        self.ensure_message_protection_ready()?;
+        Ok(if self.peer_certificate_trusted {
+            CertTrustStatus {
+                error_status: CertTrustErrorStatus::NO_ERROR,
+                info_status: CertTrustInfoStatus::IS_PEER_TRUSTED,
+            }
+        } else {
+            CertTrustStatus {
+                error_status: CertTrustErrorStatus::IS_UNTRUSTED_ROOT,
+                info_status: CertTrustInfoStatus::empty(),
+            }
+        })
+    }
+
+    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    fn query_context_remote_cert(&mut self) -> Result<CertContext> {
+        self.ensure_message_protection_ready()?;
+        let certificate = self
+            .peer_certificate
+            .clone()
+            .ok_or_else(|| Error::new(ErrorKind::CertificateUnknown, "PKU2U peer certificate is not available"))?;
+        Ok(CertContext {
+            encoding_type: CertEncodingType::X509AsnEncoding,
+            raw_cert: picky_asn1_der::to_vec(&certificate)?,
+            cert: certificate,
+        })
     }
 
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
@@ -931,7 +1077,7 @@ impl Pku2u {
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
-                let acceptor_nego = Nego::decode(&buffer)?;
+                let (acceptor_nego, acceptor_exchange_data) = decode_nego_message(&buffer, MessageType::AcceptorNego)?;
                 trace!(?acceptor_nego, "NEGOEX ACCEPTOR NEGOTIATE");
 
                 check_conversation_id!(acceptor_nego.header.conversation_id, self.conversation_id);
@@ -956,24 +1102,9 @@ impl Pku2u {
                     ));
                 }
 
-                let nego_header_len = acceptor_nego.header.header_len.try_into().map_err(|_| {
-                    Error::new(
-                        ErrorKind::InvalidToken,
-                        "NEGOEX header length is too big to fit into usize",
-                    )
-                })?;
-                if buffer.len() < nego_header_len {
-                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
-                }
-
-                let nego_message_len = acceptor_nego.header.message_len.try_into().map_err(|_| {
-                    Error::new(
-                        ErrorKind::InvalidToken,
-                        "NEGOEX message length is too big to fit into usize",
-                    )
-                })?;
-                let acceptor_exchange_data = &buffer[nego_message_len..];
-                let acceptor_exchange = Exchange::decode(acceptor_exchange_data)?;
+                let (acceptor_exchange, tail) =
+                    decode_exchange_message(acceptor_exchange_data, MessageType::AcceptorMetaData)?;
+                ensure_no_negoex_tail(tail)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
@@ -1062,7 +1193,8 @@ impl Pku2u {
 
                 self.negoex_messages.extend_from_slice(&buffer);
 
-                let acceptor_exchange = Exchange::decode(&buffer)?;
+                let (acceptor_exchange, tail) = decode_exchange_message(&buffer, MessageType::ApRequest)?;
+                ensure_no_negoex_tail(tail)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE MESSAGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
@@ -1092,6 +1224,17 @@ impl Pku2u {
 
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
+                let server_certificate = extract_signing_certificate(&signed_data)?;
+                if !self.config.trusted_server_certificates.is_empty()
+                    && !self.config.trusted_server_certificates.contains(&server_certificate)
+                {
+                    return Err(Error::new(
+                        ErrorKind::Pku2uCertFailure,
+                        "PKU2U acceptor certificate is not trusted",
+                    ));
+                }
+                self.peer_certificate_trusted = self.config.trusted_server_certificates.contains(&server_certificate);
+                self.peer_certificate = Some(server_certificate);
 
                 let public_key = extract_server_dh_public_key(&signed_data)?;
                 self.dh_parameters.other_public_key = Some(public_key);
@@ -1231,33 +1374,19 @@ impl Pku2u {
                     .0
                     .0;
 
-                let acceptor_exchange = Exchange::decode(&buffer)?;
+                let (acceptor_exchange, acceptor_verify_data) =
+                    decode_exchange_message(&buffer, MessageType::ApRequest)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR EXCHANGE MESSAGE");
 
                 check_conversation_id!(acceptor_exchange.header.conversation_id, self.conversation_id);
                 check_sequence_number!(acceptor_exchange.header.sequence_num, self.next_seq_number());
                 check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
-                let exchange_header_len = acceptor_exchange.header.header_len.try_into().map_err(|_| {
-                    Error::new(
-                        ErrorKind::InvalidToken,
-                        "NEGOEX header length is too big to fit into usize",
-                    )
-                })?;
-                if buffer.len() < exchange_header_len {
-                    return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
-                }
-
-                let exchange_message_len = acceptor_exchange.header.message_len.try_into().map_err(|_| {
-                    Error::new(
-                        ErrorKind::InvalidToken,
-                        "NEGOEX message length is too big to fit into usize",
-                    )
-                })?;
+                let exchange_message_len = buffer.len() - acceptor_verify_data.len();
                 self.negoex_messages.extend_from_slice(&buffer[0..exchange_message_len]);
 
-                let acceptor_verify_data = &buffer[exchange_message_len..];
-                let acceptor_verify = Verify::decode(acceptor_verify_data)?;
+                let (acceptor_verify, tail) = decode_verify_message(acceptor_verify_data)?;
+                ensure_no_negoex_tail(tail)?;
                 trace!(?acceptor_exchange, "NEGOEX ACCEPTOR VERIFY MESSAGE");
 
                 check_conversation_id!(acceptor_verify.header.conversation_id, self.conversation_id);
@@ -1356,10 +1485,46 @@ impl SspiEx for Pku2u {
     }
 }
 
+#[cfg(feature = "__test-data")]
+#[doc(hidden)]
+pub fn fuzz_token(data: &[u8]) {
+    use std::io::Cursor;
+
+    use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit, KrbMessage, MicToken};
+    use picky_krb::messages::{ApReq, AsReq, KrbError};
+
+    if let Ok(token) = picky_asn1_der::from_bytes::<ApplicationTag0<GssApiNegInit>>(data)
+        && let Some(mech_token) = token.0.neg_token_init.0.mech_token.0
+    {
+        let mech_token = mech_token.0.0;
+        if let Ok((_, tail)) = decode_nego_message(&mech_token, MessageType::InitiatorNego) {
+            let _ = decode_exchange_message(tail, MessageType::InitiatorMetaData);
+        }
+        if let Ok((_, tail)) = decode_nego_message(&mech_token, MessageType::AcceptorNego) {
+            let _ = decode_exchange_message(tail, MessageType::AcceptorMetaData);
+        }
+    }
+
+    if let Ok(token) = picky_asn1_der::from_bytes::<NegTokenTarg1>(data)
+        && let Some(response_token) = token.0.response_token.0
+    {
+        let response_token = response_token.0.0;
+        if let Ok((_, tail)) = decode_exchange_message(&response_token, MessageType::ApRequest) {
+            let _ = decode_verify_message(tail);
+        }
+    }
+
+    let _ = extract_krb_result::<AsRep>(data);
+    let _ = KrbMessage::<AsReq>::decode_application_krb_message(data);
+    let _ = KrbMessage::<KrbError>::decode_application_krb_message(data);
+    let _ = KrbMessage::<ApReq>::decode_application_krb_message(data);
+    let _ = KrbMessage::<ApRep>::decode_application_krb_message(data);
+    let _ = WrapToken::decode(Cursor::new(data));
+    let _ = MicToken::decode(Cursor::new(data));
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use crypto_bigint::rand_core::TryRng;
     use picky::key::PrivateKey;
     use picky::oids;
@@ -1367,19 +1532,80 @@ mod tests {
     use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, INITIATOR_SEAL};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::gss_api::{ApplicationTag0, GssApiNegInit};
-    use picky_krb::negoex::RANDOM_ARRAY_SIZE;
+    use picky_krb::negoex::data_types::MessageType;
+    use picky_krb::negoex::messages::{Exchange, Nego};
+    use picky_krb::negoex::{NegoexMessage, RANDOM_ARRAY_SIZE};
     use rand::rngs::{StdRng, SysRng};
     use rand_core::{Rng as _, SeedableRng as _};
     use uuid::Uuid;
 
     use super::generators::{generate_client_dh_parameters, generate_server_dh_parameters};
-    use super::{PACKAGE_INFO, PKG_NAME, PKU2U_SECURITY_TRAILER, Pku2uMode, WRAP_SENT_BY_ACCEPTOR};
+    use super::{
+        PACKAGE_INFO, PKG_NAME, PKU2U_SECURITY_TRAILER, Pku2uMode, WRAP_SENT_BY_ACCEPTOR, decode_exchange_message,
+        decode_nego_message,
+    };
     use crate::kerberos::EncryptionParams;
     use crate::{
-        AuthIdentityBuffers, BufferType, ClientRequestFlags, DataRepresentation, EncryptionFlags, ErrorKind, Negotiate,
-        NegotiateConfig, PackageCapabilities, Pku2u, Pku2uConfig, Pku2uState, Result, SecurityBuffer,
-        SecurityBufferFlags, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl,
+        AuthIdentityBuffers, BufferType, CertTrustErrorStatus, ClientRequestFlags, DataRepresentation, EncryptionFlags,
+        ErrorKind, Negotiate, NegotiateConfig, PackageCapabilities, Pku2u, Pku2uConfig, Pku2uState, Result,
+        SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, SspiEx,
+        SspiImpl,
     };
+
+    #[test]
+    fn negoex_decode_rejects_out_of_bounds_auth_scheme_vector() {
+        let mut encoded = Vec::new();
+        Nego::new(
+            MessageType::InitiatorNego,
+            Uuid::nil(),
+            0,
+            [0; RANDOM_ARRAY_SIZE],
+            vec![Uuid::nil()],
+            Vec::new(),
+        )
+        .encode(&mut encoded)
+        .unwrap();
+        encoded[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        assert_eq!(
+            decode_nego_message(&encoded, MessageType::InitiatorNego)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+    }
+
+    #[test]
+    fn negoex_decode_rejects_out_of_bounds_exchange_vector() {
+        let mut encoded = Vec::new();
+        Exchange::new(MessageType::ApRequest, Uuid::nil(), 0, Uuid::nil(), vec![1])
+            .encode(&mut encoded)
+            .unwrap();
+        encoded[56..60].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        assert_eq!(
+            decode_exchange_message(&encoded, MessageType::ApRequest)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+    }
+
+    #[test]
+    fn negoex_decode_rejects_out_of_bounds_empty_vector() {
+        let mut encoded = Vec::new();
+        Exchange::new(MessageType::ApRequest, Uuid::nil(), 0, Uuid::nil(), Vec::new())
+            .encode(&mut encoded)
+            .unwrap();
+        encoded[56..60].copy_from_slice(&u32::MAX.to_le_bytes());
+
+        assert_eq!(
+            decode_exchange_message(&encoded, MessageType::ApRequest)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+    }
 
     /// A real device-registration ("PKU2U") certificate + RSA private key pair, extracted from a live
     /// Windows PKU2U exchange, used by several tests below as a stand-in server/client identity.
@@ -1488,6 +1714,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
                 client_hostname: "hostname".into(),
                 additional_credentials: Vec::new(),
                 trusted_client_certificates: vec![p2p_certificate.clone()],
+                trusted_server_certificates: Vec::new(),
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
@@ -1506,7 +1733,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
-            authenticator_cache: HashSet::new(),
+            peer_certificate: None,
+            peer_certificate_trusted: false,
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1525,6 +1753,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
                 client_hostname: "hostname".into(),
                 additional_credentials: Vec::new(),
                 trusted_client_certificates: vec![p2p_certificate.clone()],
+                trusted_server_certificates: Vec::new(),
             },
             state: Pku2uState::Final,
             encryption_params: EncryptionParams {
@@ -1543,7 +1772,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             remote_gss_seq_number: 0,
             request_nonce: None,
             channel_bindings: None,
-            authenticator_cache: HashSet::new(),
+            peer_certificate: None,
+            peer_certificate_trusted: false,
             dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1806,14 +2036,11 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut client_certificate = server_certificate.clone();
         client_certificate.tbs_certificate.issuer = client_certificate.tbs_certificate.subject.clone();
 
-        let mut client = Pku2u::new_client_from_config(Pku2uConfig::new(
-            client_certificate.clone(),
-            private_key.clone(),
-            "client-host".into(),
-        ))
-        .unwrap();
-        let server_config = Pku2uConfig::new(server_certificate, private_key, "server-host".into())
-            .with_trusted_client_certificate(client_certificate);
+        let client_config = Pku2uConfig::new(client_certificate.clone(), private_key.clone(), "client-host".into())
+            .with_trusted_server_certificate(server_certificate.clone());
+        let mut client = Pku2u::new_client_from_config(client_config).unwrap();
+        let server_config = Pku2uConfig::new(server_certificate.clone(), private_key, "server-host".into())
+            .with_trusted_client_certificate(client_certificate.clone());
         let mut server = Pku2u::new_server_from_config(server_config).unwrap();
 
         // Leg 1 (initiator -> acceptor): InitiatorNego + InitiatorMetaData.
@@ -1843,6 +2070,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let (status, msg) = client_step(&mut client, Some(msg)).unwrap();
         assert_eq!(status, SecurityStatus::ContinueNeeded);
         assert!(matches!(client.state, Pku2uState::ApExchange));
+        let mut replay_server = server.clone();
+        let replay_msg = msg.clone();
 
         // Leg 6 (acceptor -> initiator): AP-REP + NEGOEX Verify (ACCEPTOR_SIGN). The acceptor's
         // context is fully established after validating the ticket, authenticator, channel bindings,
@@ -1850,6 +2079,10 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let (status, msg) = server_step(&mut server, msg).unwrap();
         assert_eq!(status, SecurityStatus::Ok);
         assert!(matches!(server.state, Pku2uState::PubKeyAuth));
+        assert_eq!(
+            server_step(&mut replay_server, replay_msg).unwrap_err().error_type,
+            ErrorKind::InvalidToken
+        );
 
         // Leg 7: the initiator validates the acceptor's AP-REP/Verify and completes too. No further
         // output token is produced.
@@ -1857,6 +2090,16 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         assert_eq!(status, SecurityStatus::Ok);
         assert!(matches!(client.state, Pku2uState::PubKeyAuth));
         assert!(msg.is_empty());
+        assert_eq!(
+            client.query_context_cert_trust_status().unwrap().error_status,
+            CertTrustErrorStatus::NO_ERROR
+        );
+        assert_eq!(
+            server.query_context_cert_trust_status().unwrap().error_status,
+            CertTrustErrorStatus::NO_ERROR
+        );
+        assert_eq!(client.query_context_remote_cert().unwrap().cert, server_certificate);
+        assert_eq!(server.query_context_remote_cert().unwrap().cert, client_certificate);
 
         // Both sides now agree on the same session key and sub-session key.
         assert_eq!(

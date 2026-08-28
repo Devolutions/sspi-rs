@@ -7,7 +7,9 @@
 //! self-issued Ticket. See [`Pku2u::initialize_security_context_impl`](super::Pku2u) for the mirrored
 //! initiator flow this acceptor must stay wire-compatible with.
 
+use std::collections::VecDeque;
 use std::io::Write as _;
+use std::sync::{LazyLock, Mutex};
 
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
@@ -43,6 +45,7 @@ use picky_krb::pkinit::{AuthPack, DhRepInfo, KdcDhKeyInfo, KrbFinished, PaPkAsRe
 use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng as _;
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
 use time::{Duration, OffsetDateTime};
 
 use super::extractors::extract_krb_rep;
@@ -51,7 +54,9 @@ use super::generators::{
     generate_neg_token_targ, generate_pku2u_nego_rep, get_default_parameters,
 };
 use super::validate::validate_signed_data;
-use super::{Pku2u, Pku2uState};
+use super::{
+    Pku2u, Pku2uState, decode_exchange_message, decode_nego_message, decode_verify_message, ensure_no_negoex_tail,
+};
 use crate::builders::FilledAcceptSecurityContext;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::generator::YieldPointLocal;
@@ -68,6 +73,11 @@ use crate::{
 /// single, generous-but-bounded constant is used for both the AS-REQ `PKAuthenticator` and the AP-REQ
 /// `Authenticator`/Ticket validity window.
 const MAX_TIME_SKEW: Duration = Duration::minutes(5);
+const MAX_AUTHENTICATOR_CACHE_ENTRIES: usize = 4096;
+
+type AuthenticatorCache = Mutex<VecDeque<([u8; 32], i64)>>;
+
+static AUTHENTICATOR_CACHE: LazyLock<AuthenticatorCache> = LazyLock::new(|| Mutex::new(VecDeque::new()));
 
 /// [Ticket Flags](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.8): `initial` (bit 9) — this
 /// ticket was issued directly from an AS exchange, not a TGS exchange.
@@ -109,7 +119,8 @@ pub(crate) async fn accept_security_context(
                 .0
                 .clone();
 
-            let initiator_nego = Nego::decode(&mech_token)?;
+            let (initiator_nego, initiator_metadata_data) =
+                decode_nego_message(&mech_token, MessageType::InitiatorNego)?;
             trace!(?initiator_nego, "NEGOEX INITIATOR NEGOTIATE");
 
             // These are, by protocol definition, always the first two messages of the conversation.
@@ -127,17 +138,9 @@ pub(crate) async fn accept_security_context(
                 ));
             }
 
-            let nego_message_len = initiator_nego.header.message_len.try_into().map_err(|_| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    "NEGOEX message length is too big to fit into usize",
-                )
-            })?;
-            if mech_token.len() < nego_message_len {
-                return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
-            }
-            let initiator_metadata_data = &mech_token[nego_message_len..];
-            let initiator_metadata = Exchange::decode(initiator_metadata_data)?;
+            let (initiator_metadata, tail) =
+                decode_exchange_message(initiator_metadata_data, MessageType::InitiatorMetaData)?;
+            ensure_no_negoex_tail(tail)?;
             trace!(?initiator_metadata, "NEGOEX INITIATOR META DATA");
 
             check_conversation_id!(initiator_metadata.header.conversation_id, server.conversation_id);
@@ -199,7 +202,8 @@ pub(crate) async fn accept_security_context(
                 .0
                 .clone();
 
-            let as_req_exchange = Exchange::decode(&mech_token)?;
+            let (as_req_exchange, tail) = decode_exchange_message(&mech_token, MessageType::ApRequest)?;
+            ensure_no_negoex_tail(tail)?;
             trace!(?as_req_exchange, "NEGOEX AS-REQ EXCHANGE");
 
             check_conversation_id!(as_req_exchange.header.conversation_id, server.conversation_id);
@@ -246,28 +250,21 @@ pub(crate) async fn accept_security_context(
                 .0
                 .clone();
 
-            let ap_req_exchange = Exchange::decode(&mech_token)?;
+            let (ap_req_exchange, initiator_verify_data) =
+                decode_exchange_message(&mech_token, MessageType::ApRequest)?;
             trace!(?ap_req_exchange, "NEGOEX AP-REQ EXCHANGE");
 
             check_conversation_id!(ap_req_exchange.header.conversation_id, server.conversation_id);
             check_sequence_number!(ap_req_exchange.header.sequence_num, server.next_seq_number());
             check_auth_scheme!(ap_req_exchange.auth_scheme, server.auth_scheme);
 
-            let exchange_message_len = ap_req_exchange.header.message_len.try_into().map_err(|_| {
-                Error::new(
-                    ErrorKind::InvalidToken,
-                    "NEGOEX message length is too big to fit into usize",
-                )
-            })?;
-            if mech_token.len() < exchange_message_len {
-                return Err(Error::new(ErrorKind::InvalidToken, "NEGOEX buffer is too short"));
-            }
+            let exchange_message_len = mech_token.len() - initiator_verify_data.len();
             server
                 .negoex_messages
                 .extend_from_slice(&mech_token[..exchange_message_len]);
 
-            let initiator_verify_data = &mech_token[exchange_message_len..];
-            let initiator_verify = Verify::decode(initiator_verify_data)?;
+            let (initiator_verify, tail) = decode_verify_message(initiator_verify_data)?;
+            ensure_no_negoex_tail(tail)?;
             trace!(?initiator_verify, "NEGOEX INITIATOR VERIFY");
 
             check_conversation_id!(initiator_verify.header.conversation_id, server.conversation_id);
@@ -457,6 +454,8 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
             "PKU2U initiator certificate is not trusted",
         ));
     }
+    server.peer_certificate = Some(client_certificate.clone());
+    server.peer_certificate_trusted = true;
     let expected_username = generate_as_req_username_from_certificate(&client_certificate)?;
     if cname.name_string.0.len() != 1 || cname.name_string.0[0].to_string() != expected_username {
         return Err(Error::new(
@@ -938,13 +937,7 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
 
     let remote_seq_number = parse_authenticator_seq_number(seq_number)
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "authenticator has no sequence number"))?;
-    let replay_key = [picky_asn1_der::to_vec(ctime)?, picky_asn1_der::to_vec(cusec)?].concat();
-    if !server.authenticator_cache.insert(replay_key) {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            "PKU2U authenticator replay detected",
-        ));
-    }
+    record_authenticator(ap_req, client_time)?;
 
     Ok(ValidatedApReq {
         ctime: ctime.0.clone(),
@@ -952,6 +945,43 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
         authenticator_subkey,
         remote_seq_number,
     })
+}
+
+fn record_authenticator(ap_req: &ApReq, client_time: OffsetDateTime) -> Result<()> {
+    let digest = Sha256::digest(picky_asn1_der::to_vec(ap_req)?);
+    let replay_key: [u8; 32] = digest.into();
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut cache = AUTHENTICATOR_CACHE
+        .lock()
+        .map_err(|_| Error::new(ErrorKind::InternalError, "PKU2U authenticator cache lock is poisoned"))?;
+    cache_authenticator(&mut cache, replay_key, client_time.unix_timestamp(), now)
+}
+
+fn cache_authenticator(
+    cache: &mut VecDeque<([u8; 32], i64)>,
+    replay_key: [u8; 32],
+    client_time: i64,
+    now: i64,
+) -> Result<()> {
+    cache.retain(|(_, expiry)| *expiry >= now);
+    if cache.iter().any(|(cached, _)| cached == &replay_key) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "PKU2U authenticator replay detected",
+        ));
+    }
+    if cache.len() >= MAX_AUTHENTICATOR_CACHE_ENTRIES {
+        return Err(Error::new(
+            ErrorKind::InsufficientMemory,
+            "PKU2U authenticator replay cache is full",
+        ));
+    }
+    let expires_at = client_time
+        .checked_add(MAX_TIME_SKEW.whole_seconds())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "PKU2U authenticator expiry overflows"))?;
+    cache.push_back((replay_key, expires_at));
+
+    Ok(())
 }
 
 /// Parses an `Authenticator`'s optional `seq-number` field (a big-endian `UInt32` per RFC 4120 §5.5.1,
@@ -980,4 +1010,39 @@ fn find_authenticator_extension(mut extensions: &[u8], extension_type: u32) -> O
         extensions = &extensions[value_end..];
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authenticator_cache_retains_future_dated_entries_for_the_full_acceptance_window() {
+        let mut cache = VecDeque::new();
+        let now = 1_000;
+        let client_time = now + MAX_TIME_SKEW.whole_seconds();
+
+        cache_authenticator(&mut cache, [1; 32], client_time, now).unwrap();
+
+        assert_eq!(cache.front().unwrap().1, now + 2 * MAX_TIME_SKEW.whole_seconds());
+    }
+
+    #[test]
+    fn authenticator_cache_does_not_evict_live_entries_at_capacity() {
+        let now = 1_000;
+        let mut cache = (0..MAX_AUTHENTICATOR_CACHE_ENTRIES)
+            .map(|index| {
+                let mut key = [0; 32];
+                key[..8].copy_from_slice(&u64::try_from(index).unwrap().to_le_bytes());
+                (key, now + 1)
+            })
+            .collect::<VecDeque<_>>();
+        let first = cache.front().copied().unwrap();
+
+        let error = cache_authenticator(&mut cache, [0xff; 32], now, now).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InsufficientMemory);
+        assert_eq!(cache.len(), MAX_AUTHENTICATOR_CACHE_ENTRIES);
+        assert_eq!(cache.front().copied(), Some(first));
+    }
 }

@@ -53,12 +53,14 @@ pub struct Pku2uCredential {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Pku2uConfig {
     pub p2p_certificate: Certificate,
     pub private_key: Pku2uPrivateKey,
     pub client_hostname: String,
     pub additional_credentials: Vec<Pku2uCredential>,
     pub trusted_client_certificates: Vec<Certificate>,
+    pub trusted_server_certificates: Vec<Certificate>,
 }
 
 impl Pku2uConfig {
@@ -70,6 +72,7 @@ impl Pku2uConfig {
             client_hostname,
             additional_credentials: Vec::new(),
             trusted_client_certificates,
+            trusted_server_certificates: Vec::new(),
         }
     }
 
@@ -88,6 +91,13 @@ impl Pku2uConfig {
         self
     }
 
+    pub fn with_trusted_server_certificate(mut self, certificate: Certificate) -> Self {
+        if !self.trusted_server_certificates.contains(&certificate) {
+            self.trusted_server_certificates.push(certificate);
+        }
+        self
+    }
+
     #[cfg(target_os = "windows")]
     pub fn default_client_config(client_hostname: String) -> Result<Self> {
         use super::cert_utils::extraction::extract_client_p2p_cert_and_key;
@@ -101,6 +111,7 @@ impl Pku2uConfig {
             client_hostname,
             additional_credentials: Vec::new(),
             trusted_client_certificates,
+            trusted_server_certificates: Vec::new(),
         })
     }
 }
