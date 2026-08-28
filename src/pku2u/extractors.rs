@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::mem::size_of;
 
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_der::application_tag::ApplicationTag;
@@ -70,6 +71,39 @@ pub fn extract_session_key_from_as_rep(
     key: &[u8],
     enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
+    Ok(decrypt_as_rep(as_rep, key, enc_params)?
+        .0
+        .key
+        .0
+        .key_value
+        .0
+        .to_vec()
+        .into())
+}
+
+pub(super) fn extract_session_key_and_nonce_from_as_rep(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+) -> Result<(Secret<Vec<u8>>, u32)> {
+    let enc_as_rep_part = decrypt_as_rep(as_rep, key, enc_params)?;
+    let nonce_bytes = enc_as_rep_part.0.nonce.0.as_unsigned_bytes_be();
+    if nonce_bytes.len() > size_of::<u32>() {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "AS-REP nonce does not fit into a u32",
+        ));
+    }
+    let mut nonce = [0; size_of::<u32>()];
+    nonce[size_of::<u32>() - nonce_bytes.len()..].copy_from_slice(nonce_bytes);
+
+    Ok((
+        enc_as_rep_part.0.key.0.key_value.0.to_vec().into(),
+        u32::from_be_bytes(nonce),
+    ))
+}
+
+fn decrypt_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &EncryptionParams) -> Result<EncAsRepPart> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -79,7 +113,5 @@ pub fn extract_session_key_from_as_rep(
     let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
     trace!(?enc_data, "Plain AsRep::EncData");
 
-    let enc_as_rep_part: EncAsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
-
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
+    Ok(picky_asn1_der::from_bytes(&enc_data)?)
 }

@@ -189,12 +189,16 @@ pub(super) fn generate_neg<T: Debug + PartialEq + Clone>(
     })
 }
 
-pub fn generate_authenticator_extension(key: &[u8], payload: &[u8]) -> Result<AuthenticatorChecksumExtension> {
-    let hasher = ChecksumSuite::HmacSha196Aes256.hasher();
+pub fn generate_authenticator_extension(
+    key: &[u8],
+    payload: &[u8],
+    checksum_suite: &ChecksumSuite,
+) -> Result<AuthenticatorChecksumExtension> {
+    let hasher = checksum_suite.hasher();
 
     let krb_finished = KrbFinished {
         gss_mic: ExplicitContextTag1::from(Checksum {
-            cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![ChecksumSuite::HmacSha196Aes256.into()])),
+            cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![checksum_suite.into()])),
             checksum: ExplicitContextTag1::from(OctetStringAsn1::from(hasher.checksum(
                 key,
                 KEY_USAGE_FINISHED,
@@ -355,4 +359,31 @@ pub(super) fn generate_as_req_username_from_certificate(certificate: &Certificat
     }
 
     Ok(username)
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::constants::key_usages::KEY_USAGE_FINISHED;
+    use picky_krb::crypto::ChecksumSuite;
+    use picky_krb::pkinit::KrbFinished;
+
+    use super::generate_authenticator_extension;
+
+    #[test]
+    fn authenticator_extension_uses_negotiated_checksum_suite() {
+        for (suite, key) in [
+            (ChecksumSuite::HmacSha196Aes128, vec![0x11; 16]),
+            (ChecksumSuite::HmacSha196Aes256, vec![0x22; 32]),
+        ] {
+            let payload = b"PKU2U GSS transcript";
+            let extension = generate_authenticator_extension(&key, payload, &suite).unwrap();
+            let finished: KrbFinished = picky_asn1_der::from_bytes(&extension.extension_value).unwrap();
+
+            assert_eq!(finished.gss_mic.0.cksumtype.0.0, vec![u8::from(&suite)]);
+            assert_eq!(
+                finished.gss_mic.0.checksum.0.0,
+                suite.hasher().checksum(&key, KEY_USAGE_FINISHED, payload).unwrap()
+            );
+        }
+    }
 }
