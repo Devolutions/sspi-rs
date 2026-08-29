@@ -51,7 +51,7 @@ use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, RRC};
 use crate::pk_init::{
     DhParameters, GenerateAsPaDataOptions, extract_server_dh_public_key, generate_pa_datas_for_as_req,
 };
-use crate::pku2u::cert_utils::validation::extract_signing_certificate;
+use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_peer_p2p_certificate};
 use crate::pku2u::extractors::{extract_krb_rep, extract_krb_result, extract_session_key_and_nonce_from_as_rep};
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
@@ -130,6 +130,8 @@ pub struct Pku2u {
     peer_certificate: Option<Certificate>,
     peer_certificate_trusted: bool,
     peer_name: Option<crate::Username>,
+    #[cfg(test)]
+    certificate_validation_time: Option<time::OffsetDateTime>,
     dh_parameters: DhParameters,
     // all sent and received NEGOEX messages concatenated in one vector
     // we need it for the further checksum calculation
@@ -171,6 +173,8 @@ impl Pku2u {
             peer_certificate: None,
             peer_certificate_trusted: false,
             peer_name: None,
+            #[cfg(test)]
+            certificate_validation_time: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -204,6 +208,8 @@ impl Pku2u {
             peer_certificate: None,
             peer_certificate_trusted: false,
             peer_name: None,
+            #[cfg(test)]
+            certificate_validation_time: None,
             // https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3
             // Contains the nonce in the pkAuthenticator field in the request if the DH keys are NOT reused,
             // 0 otherwise.
@@ -218,6 +224,15 @@ impl Pku2u {
 
     pub fn config(&self) -> &Pku2uConfig {
         &self.config
+    }
+
+    fn certificate_validation_time(&self) -> time::OffsetDateTime {
+        #[cfg(test)]
+        if let Some(validation_time) = self.certificate_validation_time {
+            return validation_time;
+        }
+
+        time::OffsetDateTime::now_utc()
     }
 
     pub fn next_seq_number(&mut self) -> u32 {
@@ -1234,6 +1249,7 @@ impl Pku2u {
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
                 let server_certificate = extract_signing_certificate(&signed_data)?;
+                validate_peer_p2p_certificate(&server_certificate, self.certificate_validation_time())?;
                 if !self.config.trusted_server_certificates.is_empty()
                     && !self.config.trusted_server_certificates.contains(&server_certificate)
                 {
@@ -1553,7 +1569,7 @@ mod tests {
     };
     use super::{
         PACKAGE_INFO, PKG_NAME, PKU2U_SECURITY_TRAILER, Pku2uMode, WRAP_SENT_BY_ACCEPTOR, decode_exchange_message,
-        decode_nego_message,
+        decode_nego_message, validate_peer_p2p_certificate,
     };
     use crate::kerberos::EncryptionParams;
     use crate::{
@@ -1699,6 +1715,26 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         (p2p_certificate, private_key)
     }
 
+    fn test_certificate_validation_time() -> time::OffsetDateTime {
+        time::Date::from_calendar_date(2023, time::Month::January, 29)
+            .unwrap()
+            .with_hms(16, 0, 0)
+            .unwrap()
+            .assume_utc()
+    }
+
+    #[test]
+    fn expired_peer_certificate_is_rejected() {
+        let (certificate, _) = test_p2p_identity();
+
+        assert_eq!(
+            validate_peer_p2p_certificate(&certificate, time::OffsetDateTime::now_utc())
+                .unwrap_err()
+                .error_type,
+            ErrorKind::Pku2uCertFailure
+        );
+    }
+
     #[test]
     fn stream_buffer_decryption() {
         let session_key = vec![
@@ -1747,6 +1783,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             peer_certificate: None,
             peer_certificate_trusted: false,
             peer_name: None,
+            certificate_validation_time: None,
             dh_parameters: generate_server_dh_parameters(&mut rng).unwrap(),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -1787,6 +1824,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             peer_certificate: None,
             peer_certificate_trusted: false,
             peer_name: None,
+            certificate_validation_time: None,
             dh_parameters: generate_client_dh_parameters(&mut rng),
             negoex_messages: Vec::new(),
             gss_api_messages: Vec::new(),
@@ -2055,6 +2093,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let server_config = Pku2uConfig::new(server_certificate.clone(), private_key, "server-host".into())
             .with_trusted_client_certificate(client_certificate.clone());
         let mut server = Pku2u::new_server_from_config(server_config).unwrap();
+        client.certificate_validation_time = Some(test_certificate_validation_time());
+        server.certificate_validation_time = Some(test_certificate_validation_time());
 
         // Leg 1 (initiator -> acceptor): InitiatorNego + InitiatorMetaData.
         let (status, msg) = client_step(&mut client, None).unwrap();
@@ -2199,6 +2239,8 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
                 "server-host".into(),
             ))
             .unwrap();
+            client.certificate_validation_time = Some(test_certificate_validation_time());
+            server.certificate_validation_time = Some(test_certificate_validation_time());
 
             let (status, msg) = client_step(&mut client, None).unwrap();
             assert_eq!(status, SecurityStatus::ContinueNeeded);

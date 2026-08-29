@@ -62,7 +62,9 @@ use crate::builders::FilledAcceptSecurityContext;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::generator::YieldPointLocal;
 use crate::pk_init::{DH_NONCE_LEN, Wrapper, generate_signer_info};
-use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_server_p2p_certificate};
+use crate::pku2u::cert_utils::validation::{
+    extract_signing_certificate, validate_peer_p2p_certificate, validate_server_p2p_certificate,
+};
 use crate::utils::generate_random_symmetric_key;
 use crate::{
     AcceptSecurityContextResult, BufferType, Error, ErrorKind, KERBEROS_VERSION, Result, Secret, SecurityBuffer,
@@ -451,6 +453,7 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
     validate_signed_data(&signed_data, &rsa_public_key)?;
     let client_certificate = extract_signing_certificate(&signed_data)?;
+    validate_peer_p2p_certificate(&client_certificate, server.certificate_validation_time())?;
     if !server.config.trusted_client_certificates.contains(&client_certificate) {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,

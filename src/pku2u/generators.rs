@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::str::FromStr;
+use std::sync::{LazyLock, Mutex};
 
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -26,8 +27,8 @@ use picky_krb::gss_api::{
 use picky_krb::messages::{ApRep, ApRepInner};
 use picky_krb::negoex::RANDOM_ARRAY_SIZE;
 use picky_krb::pkinit::{KrbFinished, Pku2uNegoBody, Pku2uNegoRep, Pku2uNegoReq, Pku2uNegoReqMetadata};
-use rand::rngs::StdRng;
-use rand_core::Rng as _;
+use rand::rngs::{StdRng, SysRng};
+use rand_core::{Rng as _, SeedableRng as _};
 use time::OffsetDateTime;
 
 use super::Pku2uConfig;
@@ -55,12 +56,21 @@ const LSAP_TOKEN_INFO_INTEGRITY_FLAG: u32 = 1;
 /// indicating the integrity level of the calling process
 /// 0x00002000 = Medium.
 const LSAP_TOKEN_INFO_INTEGRITY_TOKEN_IL: u32 = 0x00002000;
-/// [3.1.1.4 Machine ID](https://winprotocoldoc.blob.core.windows.net/productionwindowsarchives/MS-KILE/%5bMS-KILE%5d.pdf)
-/// KILE implements a 32-byte binary random string machine ID.
-const MACHINE_ID: [u8; 32] = [
-    92, 95, 64, 72, 191, 160, 228, 23, 98, 35, 78, 151, 207, 227, 96, 126, 97, 180, 15, 98, 127, 211, 90, 177, 119,
-    132, 45, 113, 206, 90, 169, 124,
-];
+static PER_BOOT_MACHINE_ID: LazyLock<Mutex<Option<[u8; 32]>>> = LazyLock::new(|| Mutex::new(None));
+
+fn per_boot_machine_id() -> Result<[u8; 32]> {
+    let mut stored = PER_BOOT_MACHINE_ID
+        .lock()
+        .map_err(|_| Error::new(ErrorKind::InternalError, "PKU2U machine identifier lock is poisoned"))?;
+    if let Some(machine_id) = *stored {
+        return Ok(machine_id);
+    }
+
+    let mut machine_id = [0; 32];
+    StdRng::try_from_rng(&mut SysRng)?.fill_bytes(&mut machine_id);
+    *stored = Some(machine_id);
+    Ok(machine_id)
+}
 
 // returns supported authentication types
 pub(super) fn get_mech_list() -> MechTypeList {
@@ -282,7 +292,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
     let lsap_token = LsapTokenInfoIntegrity {
         flags: LSAP_TOKEN_INFO_INTEGRITY_FLAG,
         token_il: LSAP_TOKEN_INFO_INTEGRITY_TOKEN_IL,
-        machine_id: MACHINE_ID,
+        machine_id: per_boot_machine_id()?,
     };
 
     let mut encoded_lsap_token = Vec::with_capacity(40);
@@ -458,7 +468,7 @@ mod tests {
     use picky_krb::crypto::ChecksumSuite;
     use picky_krb::pkinit::KrbFinished;
 
-    use super::{generate_authenticator_extension, generate_initial_neg_token_targ};
+    use super::{generate_authenticator_extension, generate_initial_neg_token_targ, per_boot_machine_id};
 
     #[test]
     fn authenticator_extension_uses_negotiated_checksum_suite() {
@@ -486,5 +496,10 @@ mod tests {
             token.0.supported_mech.0.unwrap().0,
             picky_asn1::wrapper::ObjectIdentifierAsn1::from(picky_asn1_x509::oids::negoex())
         );
+    }
+
+    #[test]
+    fn machine_identifier_is_stable_for_the_process_lifetime() {
+        assert_eq!(per_boot_machine_id().unwrap(), per_boot_machine_id().unwrap());
     }
 }
