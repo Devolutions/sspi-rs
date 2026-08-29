@@ -553,6 +553,14 @@ impl From<ClientRequestFlags> for GssFlags {
             flags |= GssFlags::GSS_C_DCE_STYLE;
         }
 
+        if value.contains(ClientRequestFlags::EXTENDED_ERROR) {
+            flags |= GssFlags::GSS_C_EXTENDED_ERROR_FLAG;
+        }
+
+        if value.contains(ClientRequestFlags::IDENTIFY) {
+            flags |= GssFlags::GSS_C_IDENTIFY_FLAG;
+        }
+
         flags
     }
 }
@@ -871,6 +879,33 @@ mod tests {
         checksum_values.set_flags(flags);
         let expected_bytes = [0x3E, 0x00, 0x00, 0x00];
         assert_eq!(checksum_values.inner[20..24], expected_bytes);
+    }
+
+    #[test]
+    fn extended_error_client_request_flag_maps_to_gss_flag() {
+        assert_eq!(
+            GssFlags::from(ClientRequestFlags::EXTENDED_ERROR).bits(),
+            GssFlags::GSS_C_EXTENDED_ERROR_FLAG.bits()
+        );
+    }
+
+    #[test]
+    fn identify_client_request_flag_maps_to_gss_flag() {
+        assert_eq!(
+            GssFlags::from(ClientRequestFlags::IDENTIFY).bits(),
+            GssFlags::GSS_C_IDENTIFY_FLAG.bits()
+        );
+    }
+
+    #[test]
+    fn extended_error_and_identify_client_request_flags_map_with_existing_flags() {
+        let request_flags =
+            ClientRequestFlags::EXTENDED_ERROR | ClientRequestFlags::IDENTIFY | ClientRequestFlags::MUTUAL_AUTH;
+
+        assert_eq!(
+            GssFlags::from(request_flags).bits(),
+            (GssFlags::GSS_C_EXTENDED_ERROR_FLAG | GssFlags::GSS_C_IDENTIFY_FLAG | GssFlags::GSS_C_MUTUAL_FLAG).bits()
+        );
     }
 
     fn cname_components(username: &str) -> Vec<String> {
