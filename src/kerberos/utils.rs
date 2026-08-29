@@ -99,6 +99,7 @@ pub(super) fn generate_mic_token(
     seq_number: u64,
     mut payload: Vec<u8>,
     session_key: &Secret<Vec<u8>>,
+    aes_size: &AesSize,
 ) -> Result<Vec<u8>> {
     let (mic_token, key_usage) = if is_client {
         (MicToken::with_initiator_flags(), INITIATOR_SIGN)
@@ -110,12 +111,7 @@ pub(super) fn generate_mic_token(
 
     payload.extend_from_slice(&mic_token.header());
 
-    mic_token.set_checksum(checksum_sha_aes(
-        session_key.as_ref(),
-        key_usage,
-        &payload,
-        &AesSize::Aes256,
-    )?);
+    mic_token.set_checksum(checksum_sha_aes(session_key.as_ref(), key_usage, &payload, aes_size)?);
 
     let mut mic_token_raw = Vec::new();
     mic_token.encode(&mut mic_token_raw)?;
