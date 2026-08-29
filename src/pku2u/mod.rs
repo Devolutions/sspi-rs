@@ -1906,7 +1906,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             .verify_mic_token(&aes128_mic, b"AES-128 mech list", crate::private::Sealed)
             .unwrap();
 
-        let mut signature = [0; 64];
+        let mut signature = vec![0; usize::try_from(sizes.max_signature).unwrap()];
         let mut signed_data = b"signed Pku2u message".to_vec();
         let mut signed_message = [
             SecurityBufferRef::token_buf(&mut signature),
@@ -2071,6 +2071,15 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         Ok((result.status, output_buffer[0].buffer.clone()))
     }
 
+    fn set_test_channel_bindings(context: &mut Pku2u, application_data: &[u8]) {
+        let mut channel_bindings = vec![0; 32 + application_data.len()];
+        channel_bindings[24..28].copy_from_slice(&u32::try_from(application_data.len()).unwrap().to_le_bytes());
+        channel_bindings[28..32].copy_from_slice(&32_u32.to_le_bytes());
+        channel_bindings[32..].copy_from_slice(application_data);
+        let input = [SecurityBuffer::new(channel_bindings, BufferType::ChannelBindings)];
+        context.read_channel_bindings(Some(&input)).unwrap();
+    }
+
     /// End-to-end test: drives a real PKU2U client and a real PKU2U acceptor through every phase of
     /// the handshake — SPNEGO/NEGOEX `InitiatorNego`+`InitiatorMetaData`, the acceptor's
     /// `AcceptorNego`+`AcceptorMetaData`, the PKINIT AS-REQ/AS-REP (Diffie-Hellman key agreement,
@@ -2215,6 +2224,37 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         client
             .verify_mic_token(&mic, mic_payload, crate::private::Sealed)
             .unwrap();
+    }
+
+    #[test]
+    fn handshake_rejects_mismatched_channel_bindings() {
+        let (certificate, private_key) = test_p2p_identity();
+        let mut client = Pku2u::new_client_from_config(
+            Pku2uConfig::new(certificate.clone(), private_key.clone(), "client-host".into())
+                .with_trusted_server_certificate(certificate.clone()),
+        )
+        .unwrap();
+        let mut server = Pku2u::new_server_from_config(
+            Pku2uConfig::new(certificate.clone(), private_key, "server-host".into())
+                .with_trusted_client_certificate(certificate),
+        )
+        .unwrap();
+        client.certificate_validation_time = Some(test_certificate_validation_time());
+        server.certificate_validation_time = Some(test_certificate_validation_time());
+
+        let (_, message) = client_step(&mut client, None).unwrap();
+        let (_, message) = server_step(&mut server, message).unwrap();
+        let (_, message) = client_step(&mut client, Some(message)).unwrap();
+        let (_, message) = server_step(&mut server, message).unwrap();
+
+        set_test_channel_bindings(&mut client, b"initiator binding");
+        set_test_channel_bindings(&mut server, b"acceptor binding");
+        let (_, message) = client_step(&mut client, Some(message)).unwrap();
+
+        assert_eq!(
+            server_step(&mut server, message).unwrap_err().error_type,
+            ErrorKind::MessageAltered
+        );
     }
 
     /// The acceptor must reject a tampered message instead of panicking or silently accepting it,
