@@ -30,7 +30,9 @@ use crate::client_server::kerberos::kdc::{
     CLIENT_COMPUTER_NAME, KDC_URL, KdcMock, MAX_TIME_SKEW, PasswordCreds, SERVER_COMPUTER_NAME, UserName, Validators,
 };
 use crate::client_server::kerberos::network_client::{FailedNetworkClientMock, NetworkClientMock};
-use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
+use crate::client_server::{
+    test_encryption, test_integrity_only_encryption, test_rpc_request_encryption, test_stream_buffer_encryption,
+};
 
 /// Represents a Kerberos environment:
 /// * user and services keys;
@@ -236,6 +238,7 @@ fn run_kerberos(
             }
 
             test_encryption(client, server);
+            test_integrity_only_encryption(client, server);
             test_stream_buffer_encryption(client, server);
             test_rpc_request_encryption(client, server);
             return;
@@ -251,6 +254,15 @@ fn run_kerberos(
 
 #[test]
 fn kerberos_auth() {
+    kerberos_auth_with_kdc(false);
+}
+
+#[test]
+fn kerberos_auth_with_tgs_tagged_as_rep() {
+    kerberos_auth_with_kdc(true);
+}
+
+fn kerberos_auth_with_kdc(tgs_tagged_as_rep: bool) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -262,7 +274,7 @@ fn kerberos_auth() {
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
-    let kdc = KdcMock::new(
+    let mut kdc = KdcMock::new(
         realm,
         keys,
         users,
@@ -292,6 +304,9 @@ fn kerberos_auth() {
             }),
         },
     );
+    if tgs_tagged_as_rep {
+        kdc = kdc.with_tgs_tagged_as_rep();
+    }
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {

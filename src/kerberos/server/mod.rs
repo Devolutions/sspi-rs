@@ -11,6 +11,7 @@ use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
 use picky_krb::messages::{ApRep, ApReq, TgtReq};
@@ -264,6 +265,8 @@ pub async fn accept_security_context(
                 )?;
 
                 let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
+                server.encryption_params.encryption_type =
+                    Some(CipherSuite::try_from(ticket_enc_part.0.key.0.key_type.0.0.as_slice())?);
                 let session_key = Secret::new(ticket_enc_part.0.key.0.key_value.0.0.clone());
 
                 let AuthenticatorInner {

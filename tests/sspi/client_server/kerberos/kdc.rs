@@ -107,6 +107,8 @@ pub(crate) struct KdcMock {
     users: HashMap<UserName, PasswordCreds>,
     /// Incoming Kerberos messages validators.
     validators: Validators,
+    /// Encode an AS-REP enc-part with the RFC-compatible EncTGSRepPart tag.
+    tgs_tagged_as_rep: bool,
 }
 
 impl KdcMock {
@@ -130,7 +132,13 @@ impl KdcMock {
             keys,
             users,
             validators,
+            tgs_tagged_as_rep: false,
         }
+    }
+
+    pub(crate) fn with_tgs_tagged_as_rep(mut self) -> Self {
+        self.tgs_tagged_as_rep = true;
+        self
     }
 
     fn make_err<const ERROR_CODE: u32>(sname: PrincipalName, realm: Realm, salt: Option<String>) -> KrbError {
@@ -355,7 +363,7 @@ impl KdcMock {
 
         let nonce = rng.try_next_u32().unwrap();
 
-        let as_rep_enc_part = EncAsRepPart::from(EncKdcRepPart {
+        let as_rep_enc_part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key.to_vec())),
@@ -377,13 +385,14 @@ impl KdcMock {
             sname: ExplicitContextTag10::from(sname.clone()),
             caddr: Optional::from(None),
             encrypted_pa_data: Optional::from(None),
-        });
+        };
+        let encoded_as_rep_enc_part = if self.tgs_tagged_as_rep {
+            picky_asn1_der::to_vec(&EncTgsRepPart::from(as_rep_enc_part)).unwrap()
+        } else {
+            picky_asn1_der::to_vec(&EncAsRepPart::from(as_rep_enc_part)).unwrap()
+        };
         let as_rep_enc_data = cipher
-            .encrypt(
-                &initial_key,
-                AS_REP_ENC,
-                &picky_asn1_der::to_vec(&as_rep_enc_part).unwrap(),
-            )
+            .encrypt(&initial_key, AS_REP_ENC, &encoded_as_rep_enc_part)
             .unwrap();
 
         Ok(AsRep::from(KdcRep {

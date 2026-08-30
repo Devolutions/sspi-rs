@@ -28,6 +28,23 @@ fn test_encryption(client: &mut SspiContext, server: &mut SspiContext) {
     assert_eq!(plain_message, message[1].data());
 }
 
+fn test_integrity_only_encryption(client: &mut SspiContext, server: &mut SspiContext) {
+    let plain_message = b"Devolutions/sspi-rs";
+    let mut token = [0; 1024];
+    let mut data = plain_message.to_vec();
+    let mut message = [
+        SecurityBufferRef::token_buf(token.as_mut_slice()),
+        SecurityBufferRef::data_buf(data.as_mut_slice()),
+    ];
+
+    client
+        .encrypt_message(EncryptionFlags::WRAP_NO_ENCRYPT, &mut message)
+        .unwrap();
+    server.decrypt_message(&mut message).unwrap();
+
+    assert_eq!(plain_message, message[1].data());
+}
+
 fn test_stream_buffer_encryption(client: &mut SspiContext, server: &mut SspiContext) {
     // https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-kerberos-interoperability-with-gssapi
 
