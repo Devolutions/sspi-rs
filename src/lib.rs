@@ -125,7 +125,7 @@ pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
-pub use self::secret::{Secret, SecretPrivateKey};
+pub use self::secret::Secret;
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
