@@ -32,6 +32,13 @@ use crate::client_server::kerberos::kdc::{
 use crate::client_server::kerberos::network_client::{FailedNetworkClientMock, NetworkClientMock};
 use crate::client_server::{test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
 
+fn account_name(username: &Username) -> &str {
+    match username {
+        Username::UserPrincipalName(upn) => upn.account_name(),
+        Username::DownLevelLogonName(down_level) => down_level.account_name(),
+    }
+}
+
 /// Represents a Kerberos environment:
 /// * user and services keys;
 /// * user logon credentials;
@@ -123,7 +130,7 @@ pub(super) fn init_krb_environment() -> KrbEnvironment {
     .collect();
 
     let credentials = Credentials::AuthIdentity(AuthIdentity {
-        username: Username::new_down_level_logon_name(username, domain).unwrap(),
+        username: Username::new_down_level_logon_name(username, Some(domain)).unwrap(),
         password: user_password.to_owned().into(),
     });
 
@@ -360,7 +367,7 @@ fn spnego_kerberos_u2u() {
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
-    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+    identity_2.username = Username::new_upn(account_name(&identity_1.username), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(
         realm,
@@ -474,7 +481,7 @@ fn run_spnego(
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
-    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+    identity_2.username = Username::new_upn(account_name(&identity_1.username), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(
         realm,
@@ -706,7 +713,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
-    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+    identity_2.username = Username::new_upn(account_name(&identity_1.username), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(
         realm,

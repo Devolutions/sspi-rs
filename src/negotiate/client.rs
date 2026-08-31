@@ -52,12 +52,9 @@ pub(crate) async fn initialize_security_context<'a>(
     if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
         let auth_identity =
             AuthIdentity::try_from(&*identity).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
-        let account_name = auth_identity.username.account_name();
-        // `realm_domain` is the per-format "authority" (UPN suffix or NetBIOS domain) used purely
-        // as a best-effort realm/Azure-AD hint for protocol negotiation, not as an identity.
-        let domain_name = get_client_principal_name(&auth_identity.username).realm_domain;
-        negotiate.negotiate_protocol(account_name, domain_name)?;
-        negotiate.auth_identity = Some(CredentialsBuffers::AuthIdentity(auth_identity.into()));
+        let principal = get_client_principal_name(&auth_identity.username);
+        negotiate.negotiate_protocol(principal.name, principal.realm_domain)?;
+        negotiate.auth_identity = Some(CredentialsBuffers::AuthIdentity(identity.clone()));
     }
 
     #[cfg(feature = "scard")]

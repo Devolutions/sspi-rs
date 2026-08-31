@@ -25,8 +25,11 @@ use self::generators::{
     GenerateAuthenticatorOptions, GenerateKeytabPaDataOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep,
     generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_tgs_req,
 };
+#[cfg(feature = "scard")]
+use self::principal::get_client_principal_name_type;
 use self::principal::{
-    ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
+    ClientPrincipalName, get_client_principal_name, get_client_principal_name_from_auth_identity,
+    get_client_principal_realm,
 };
 use crate::channel_bindings::ChannelBindings;
 use crate::generator::YieldPointLocal;
@@ -145,14 +148,11 @@ pub async fn initialize_security_context<'a>(
 
             let (username, password, realm, cname_type) = match credentials {
                 CredentialsBuffers::AuthIdentity(auth_identity) => {
-                    let username = auth_identity.user.to_string();
-                    let domain = auth_identity.domain.to_string();
+                    let principal = get_client_principal_name_from_auth_identity(auth_identity)?;
+                    let realm = get_client_principal_realm(&principal.name, &principal.realm_domain);
                     let password = auth_identity.password.as_ref().as_ref().to_string();
 
-                    let realm = get_client_principal_realm(&username, &domain);
-                    let cname_type = get_client_principal_name_type(&username, &domain);
-
-                    (username, password, realm, cname_type)
+                    (principal.name, password, realm, principal.name_type)
                 }
                 #[cfg(feature = "scard")]
                 CredentialsBuffers::SmartCard(smart_card) => {

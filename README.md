@@ -26,7 +26,7 @@ fn main() {
     let account_name = "example_user";
     let computer_name = "example_computer";
     let mut ntlm = Ntlm::new();
-    let username = Username::new(&account_name, Some(&computer_name)).unwrap();
+    let username = Username::new_down_level_logon_name(&account_name, Some(&computer_name)).unwrap();
     let identity = sspi::AuthIdentity {
         username,
         password: String::from("example_password").into(),

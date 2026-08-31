@@ -21,6 +21,13 @@ use crate::client_server::TARGET_NAME;
 use crate::client_server::kerberos::kdc::SERVER_COMPUTER_NAME;
 use crate::common::CredentialsProxyImpl;
 
+fn account_name(username: &Username) -> &str {
+    match username {
+        Username::UserPrincipalName(upn) => upn.account_name(),
+        Username::DownLevelLogonName(down_level) => down_level.account_name(),
+    }
+}
+
 const PUBLIC_KEY: &[u8] = &[
     48, 130, 2, 34, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 130, 2, 15, 0, 48, 130, 2, 10, 2, 130,
     2, 1, 0, 153, 85, 210, 206, 231, 176, 16, 84, 146, 20, 255, 201, 74, 62, 122, 183, 157, 210, 202, 111, 17, 50, 30,
@@ -124,7 +131,7 @@ fn credssp_kerberos() {
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
-    identity_2.username = Username::new_upn(identity_1.username.account_name(), &realm.to_ascii_lowercase()).unwrap();
+    identity_2.username = Username::new_upn(account_name(&identity_1.username), &realm.to_ascii_lowercase()).unwrap();
 
     let kdc = KdcMock::new(realm, keys, users, Validators::default());
     let mut network_client = NetworkClientMock { kdc };

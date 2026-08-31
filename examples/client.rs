@@ -24,7 +24,8 @@ fn main() -> Result<(), io::Error> {
 
     let account_name = whoami::username().unwrap();
     let computer_name = whoami::hostname().unwrap();
-    let username = Username::new(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
+    let username =
+        Username::new_down_level_logon_name(&account_name, Some(&computer_name)).map_err(io::Error::other)?;
 
     let identity = AuthIdentity {
         username,

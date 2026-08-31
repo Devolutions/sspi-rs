@@ -202,40 +202,44 @@ static AUTH_IDENTITY_ONE_SYMBOL_USER_AND_PASSWORD: LazyLock<CredentialsBuffers> 
             username: Username::parse("a").unwrap(),
             password: String::from("1").into(),
         }
-        .into(),
+        .try_into()
+        .unwrap(),
     )
 });
 
 static AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
-            username: Username::new("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890", None).unwrap(),
+            username: Username::parse("QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890").unwrap(),
             password: String::from(
                 "@#$%^&*()_+1234567890-=QWERTYUIOP{}qwertyuiop[]asdfghjkl;ASDFGHJKL:\\\"|zxcvbnm,.ZXCVBNM<>?",
             )
             .into(),
         }
-        .into(),
+        .try_into()
+        .unwrap(),
     )
 });
 
 static AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
-            username: Username::new("Username", Some("Domain")).unwrap(),
+            username: Username::new_down_level_logon_name("Username", Some("Domain")).unwrap(),
             password: String::from("Password").into(),
         }
-        .into(),
+        .try_into()
+        .unwrap(),
     )
 });
 
 static AUTH_IDENTITY_WITH_RESTRICTED_ADMIN_MODE_REQUIRED: LazyLock<CredentialsBuffers> = LazyLock::new(|| {
     CredentialsBuffers::AuthIdentity(
         AuthIdentity {
-            username: Username::new("", Some("")).unwrap(),
+            username: Username::new_down_level_logon_name("", None).unwrap(),
             password: String::from("").into(),
         }
-        .into(),
+        .try_into()
+        .unwrap(),
     )
 });
 

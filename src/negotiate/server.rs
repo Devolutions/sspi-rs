@@ -163,7 +163,7 @@ pub(crate) async fn accept_security_context(
                     // We should skip `mechListMIC` exchange when the client tries guest logon.
                     let ContextNames { username } = negotiate.protocol.query_context_names()?;
 
-                    if !username.inner().eq_ignore_ascii_case(GUEST_USERNAME) {
+                    if !username.as_str().eq_ignore_ascii_case(GUEST_USERNAME) {
                         return Err(Error::new(
                             ErrorKind::InvalidToken,
                             "the client skipped `mechListMIC` exchange, but it is required for non-guest logon",
