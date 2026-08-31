@@ -84,7 +84,10 @@ pub(super) fn validate_mic_token(
         key.as_ref(),
         key_usage,
         &payload,
-        &params.aes_size().unwrap_or(AesSize::Aes256),
+        &params
+            .active_key_aes_size()
+            .or_else(|| params.aes_size())
+            .unwrap_or(AesSize::Aes256),
     )?;
 
     if checksum != token.checksum {

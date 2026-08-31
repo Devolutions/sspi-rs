@@ -315,3 +315,12 @@ fn aes256_mic_preserves_aes256_checksum() {
 
     assert_mic_uses_aes_size(CipherSuite::Aes256CtsHmacSha196, AesSize::Aes256, &key);
 }
+
+#[test]
+fn aes128_subkey_mic_uses_subkey_size_with_aes256_ticket_enctype() {
+    let key = [
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+    ];
+
+    assert_mic_uses_aes_size(CipherSuite::Aes256CtsHmacSha196, AesSize::Aes128, &key);
+}
