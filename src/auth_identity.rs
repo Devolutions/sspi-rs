@@ -206,6 +206,14 @@ impl Username {
         })
     }
 
+    pub(crate) fn new_qualified_down_level_logon_name(account_name: &str, netbios_domain_name: &str) -> Self {
+        Self {
+            value: format!("{netbios_domain_name}\\{account_name}"),
+            format: UserNameFormat::DownLevelLogonName,
+            sep_idx: Some(netbios_domain_name.len()),
+        }
+    }
+
     /// Attempts to guess the right name format for the account name/domain combo
     ///
     /// If no netbios domain name is provided, or if it is an empty string, the username will

@@ -7,7 +7,7 @@ mod pa_datas;
 pub mod server;
 #[cfg(test)]
 mod tests;
-mod utils;
+pub(crate) mod utils;
 
 use std::fmt::Debug;
 use std::sync::LazyLock;
