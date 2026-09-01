@@ -202,7 +202,7 @@ pub(super) fn generate_server_dh_parameters(rng: &mut StdRng) -> Result<DhParame
         base: Vec::new(),
         modulus: Vec::new(),
         q: Vec::new(),
-        private_key: Vec::new(),
+        private_key: Secret::new(Vec::new()),
         other_public_key: None,
         server_nonce: Some(server_nonce),
         client_nonce: None,
@@ -212,7 +212,7 @@ pub(super) fn generate_server_dh_parameters(rng: &mut StdRng) -> Result<DhParame
 pub fn generate_client_dh_parameters(rng: &mut StdRng) -> DhParameters {
     let (p, g, q) = get_default_parameters();
 
-    let private_key = generate_private_key(&q, rng).expect("infallible");
+    let private_key = Secret::new(generate_private_key(&q, rng).expect("infallible"));
 
     let mut client_nonce = [0; RANDOM_ARRAY_SIZE];
     rng.fill_bytes(&mut client_nonce);

@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         .with(EnvFilter::from_env("SSPI_LOG_LEVEL"))
         .init();
 
-    let kerberos_config = KerberosConfig::new(&kdc_url, hostname.clone());
+    let kerberos_config = KerberosConfig::new_with_kdc_url(&kdc_url, hostname.clone());
     let mut kerberos = Kerberos::new_client_from_config(kerberos_config).unwrap();
 
     let mut acq_creds_handle_result = get_cred_handle(&mut kerberos, username, password);
