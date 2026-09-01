@@ -9,22 +9,21 @@ pub mod server;
 mod tests;
 pub(crate) mod utils;
 
-use std::fmt::Debug;
-use std::sync::LazyLock;
-
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::crypto::{CipherSuite, DecryptWithoutChecksum, EncryptWithoutChecksum};
 use picky_krb::data_types::KerberosStringAsn1;
 use picky_krb::gss_api::WrapToken;
-use picky_krb::messages::KdcProxyMessage;
+use picky_krb::messages::{IAKerbCookie, KdcProxyMessage};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
+use std::fmt::Debug;
+use std::sync::LazyLock;
 use url::Url;
 
 pub use self::client::initialize_security_context;
-use self::config::KerberosConfig;
+use self::config::{KdcResolution, KerberosConfig};
 pub use self::encryption_params::EncryptionParams;
 pub use self::server::{ServerProperties, accept_security_context};
 use super::channel_bindings::ChannelBindings;
@@ -33,6 +32,8 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, NetworkRequest,
     YieldPointLocal,
 };
+use crate::kerberos::client::KerberosClientState;
+use crate::kerberos::server::KerberosServerState;
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
 use crate::pk_init::DhParameters;
@@ -77,11 +78,10 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("Kerberos Security Package"),
 });
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum KerberosState {
-    TgtExchange,
-    Preauthentication,
-    ApExchange,
+    Client(Box<KerberosClientState>),
+    Server(KerberosServerState),
     Final,
 }
 
@@ -93,60 +93,67 @@ pub struct Kerberos {
     pub(crate) encryption_params: EncryptionParams,
     pub(crate) seq_number: u32,
     pub(crate) realm: Option<String>,
-    pub(crate) kdc_url: Option<Url>,
     pub(crate) channel_bindings: Option<ChannelBindings>,
     #[cfg(feature = "scard")]
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
     pub(crate) remote_seq_number: u32,
+    /// Opaque data, if sent by the server, must be copied verbatim into the next [`IAKrbProxyMessage`](picky_krb::gss_api::IAKrbProxyMessage).
+    pub(crate) iakerb_cookie: IAKerbCookie,
+    /// Transcript of the `IAKerb` `GSS-API` tokens exchanged between the client and the server.
+    pub(crate) iakerb_gss_transcript: Vec<u8>,
 }
 
 impl Kerberos {
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
-        let kdc_url = config.kdc_url.clone();
         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
-            state: KerberosState::TgtExchange,
+            state: KerberosState::Client(Box::default()),
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_client(),
             seq_number: rand.next_u32(),
             realm: None,
-            kdc_url,
             channel_bindings: None,
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
+            iakerb_cookie: None,
+            iakerb_gss_transcript: Vec::new(),
         })
     }
 
     pub fn new_server_from_config(config: KerberosConfig, server_properties: ServerProperties) -> Result<Self> {
-        let kdc_url = config.kdc_url.clone();
         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
         Ok(Self {
-            state: KerberosState::TgtExchange,
+            state: KerberosState::Server(KerberosServerState::TgtExchange),
             config,
             auth_identity: None,
             encryption_params: EncryptionParams::default_for_server(),
             seq_number: rand.next_u32(),
             realm: None,
-            kdc_url,
             channel_bindings: None,
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
             remote_seq_number: 0,
+            iakerb_cookie: None,
+            iakerb_gss_transcript: Vec::new(),
         })
     }
 
     pub fn is_client(&self) -> bool {
         self.server.is_none()
+    }
+
+    pub fn is_iakerb(&self) -> bool {
+        matches!(self.config.kdc_resolution, KdcResolution::IAKerb)
     }
 
     pub fn config(&self) -> &KerberosConfig {
@@ -160,12 +167,17 @@ impl Kerberos {
 
     #[instrument(level = "debug", ret, skip(self))]
     pub fn get_kdc(&self) -> Option<(String, Url)> {
-        let realm = self.realm.to_owned()?;
-        if let Some(kdc_url) = &self.kdc_url {
-            Some((realm, kdc_url.to_owned()))
-        } else {
-            let kdc_url = detect_kdc_url(&realm)?;
-            Some((realm, kdc_url))
+        match &self.config.kdc_resolution {
+            KdcResolution::IAKerb => None,
+            KdcResolution::KdcUrl(kdc_url) => {
+                let realm = self.realm.to_owned()?;
+                if let Some(kdc_url) = kdc_url {
+                    Some((realm, kdc_url.to_owned()))
+                } else {
+                    let kdc_url = detect_kdc_url(&realm)?;
+                    Some((realm, kdc_url))
+                }
+            }
         }
     }
 
@@ -185,7 +197,10 @@ impl Kerberos {
     /// chase a referral into a child/trusted realm without changing the pinned home-realm KDC.
     async fn send_for_realm(&self, yield_point: &mut YieldPointLocal, realm: &str, data: &[u8]) -> Result<Vec<u8>> {
         let kdc_url = if self.realm.as_deref() == Some(realm) {
-            self.kdc_url.clone().or_else(|| detect_kdc_url(realm))
+            match &self.config.kdc_resolution {
+                KdcResolution::KdcUrl(kdc_url) => kdc_url.clone().or_else(|| detect_kdc_url(realm)),
+                KdcResolution::IAKerb => None,
+            }
         } else {
             detect_kdc_url(realm)
         }
@@ -727,7 +742,7 @@ impl<'a> Kerberos {
     }
 
     pub(crate) async fn accept_security_context_impl(
-        &'a mut self,
+        &mut self,
         yield_point: &mut YieldPointLocal,
         builder: crate::builders::FilledAcceptSecurityContext<'a, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<AcceptSecurityContextResult> {
@@ -807,6 +822,7 @@ pub mod test_data {
 
     use super::{EncryptionParams, KerberosConfig, KerberosState};
     use crate::kerberos::ServerProperties;
+    use crate::kerberos::config::KdcResolution;
     use crate::{AuthIdentityBuffers, CredentialsBuffers, Kerberos, Secret, Utf16String, ZeroizedUtf16String};
 
     const SESSION_KEY: &[u8] = &[
@@ -822,7 +838,7 @@ pub mod test_data {
         Kerberos {
             state: KerberosState::Final,
             config: KerberosConfig {
-                kdc_url: None,
+                kdc_resolution: KdcResolution::KdcUrl(None),
                 client_computer_name: "hostname".into(),
             },
             auth_identity: Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
@@ -840,13 +856,14 @@ pub mod test_data {
             },
             seq_number: 1234,
             realm: None,
-            kdc_url: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
+            iakerb_cookie: None,
+            iakerb_gss_transcript: Vec::new(),
         }
     }
 
@@ -873,7 +890,7 @@ pub mod test_data {
         Kerberos {
             state: KerberosState::Final,
             config: KerberosConfig {
-                kdc_url: None,
+                kdc_resolution: KdcResolution::KdcUrl(None),
                 client_computer_name: "hostname".into(),
             },
             auth_identity: None,
@@ -887,13 +904,14 @@ pub mod test_data {
             },
             seq_number: 0,
             realm: None,
-            kdc_url: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
             server: Some(Box::new(fake_server_properties())),
             remote_seq_number: 0,
+            iakerb_cookie: None,
+            iakerb_gss_transcript: Vec::new(),
         }
     }
 }

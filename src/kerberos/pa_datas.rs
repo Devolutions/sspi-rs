@@ -128,7 +128,7 @@ impl AsRepSessionKeyExtractor<'_> {
 
                 let key = generate_key(
                     check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
-                    &dh_parameters.private_key,
+                    dh_parameters.private_key.as_ref(),
                     &dh_parameters.modulus,
                     Some(DhNonce {
                         client_nonce: check_if_empty!(dh_parameters.client_nonce.as_ref(), "dh client none is not set"),

@@ -219,6 +219,10 @@ pub(crate) async fn accept_security_context(
                 if mech_list_mic.is_some() {
                     negotiate.set_auth_identity()?;
                     negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+
+                    // The server has already sent the `mechListMIC`, so we don't need to generate it again.
+                    negotiate.mic_needed = false;
+                    prepare_neg_token(ACCEPT_COMPLETE.to_vec(), negotiate, &mut builder)?;
                 } else {
                     return Err(Error::new(
                         ErrorKind::InvalidToken,

@@ -117,7 +117,7 @@ use self::builders::{
     ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
-pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
+pub use self::kerberos::config::{KdcResolution, KerberosConfig, KerberosServerConfig};
 pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
 #[cfg(feature = "__test-data")]
 pub use self::negotiate::client::FALLBACK_ERROR_KINDS;
@@ -2365,6 +2365,7 @@ impl From<GssApiMessageError> for Error {
         match err {
             GssApiMessageError::IoError(err) => Self::from(err),
             GssApiMessageError::InvalidId(_, _) => Self::new(ErrorKind::InvalidToken, err.to_string()),
+            GssApiMessageError::InvalidMechanismOid(_, _) => Self::new(ErrorKind::InvalidToken, err.to_string()),
             GssApiMessageError::InvalidMicFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
             GssApiMessageError::InvalidWrapFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
             GssApiMessageError::Asn1Error(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),

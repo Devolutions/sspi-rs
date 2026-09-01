@@ -1,15 +1,18 @@
 use picky_krb::crypto::CipherSuite;
-use picky_krb::data_types::Ticket;
-use picky_krb::messages::TgtReq;
+use picky_krb::data_types::{KrbResult, ResultExt, Ticket};
+use picky_krb::messages::{AsRep, KdcReqBody, TgtReq};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
 
 use crate::generator::YieldPointLocal;
-use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
-use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body};
+use crate::kerberos::TGT_SERVICE_NAME;
+use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep, extract_salt_from_krb_error};
+use crate::kerberos::client::generators::{
+    GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req, generate_as_req_kdc_body,
+};
 use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
-use crate::kerberos::{TGT_SERVICE_NAME, client};
+use crate::kerberos::utils::serialize_message;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
 
 /// Requests the TGT ticket from KDC.
@@ -109,7 +112,7 @@ pub(crate) async fn request_tgt(
         }
     };
 
-    let as_rep = client::as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
+    let as_rep = as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 
@@ -135,4 +138,65 @@ pub(crate) async fn request_tgt(
     server_props.ticket_decryption_key = Some(session_key_extractor.session_key(&as_rep)?);
 
     Ok(as_rep.0.ticket.0)
+}
+
+/// Performs AS exchange as specified in [RFC 4210: The Authentication Service Exchange](https://www.rfc-editor.org/rfc/rfc4120#section-3.1).
+pub(crate) async fn as_exchange(
+    client: &mut Kerberos,
+    yield_point: &mut YieldPointLocal,
+    kdc_req_body: &KdcReqBody,
+    mut pa_data_options: AsReqPaDataOptions<'_>,
+) -> Result<AsRep> {
+    pa_data_options.with_pre_auth(false);
+    let pa_datas = pa_data_options.generate()?;
+    let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
+
+    let response = client.send(yield_point, &serialize_message(&as_req)?).await?;
+
+    // first 4 bytes are message len. skipping them
+    {
+        if response.len() < 4 {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "the KDC reply message is too small: expected at least 4 bytes",
+            ));
+        }
+
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
+
+        if as_rep.is_ok() {
+            error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
+
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "KDC server should not process AS_REQ without the pa-pac data",
+            ));
+        }
+
+        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+            debug!("salt extracted successfully from the KRB_ERROR");
+
+            pa_data_options.with_salt(correct_salt.into_bytes());
+        }
+    }
+
+    pa_data_options.with_pre_auth(true);
+    let pa_datas = pa_data_options.generate()?;
+
+    let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
+
+    let response = client.send(yield_point, &serialize_message(&as_req)?).await?;
+
+    if response.len() < 4 {
+        return Err(Error::new(
+            ErrorKind::InternalError,
+            "the KDC reply message is too small: expected at least 4 bytes",
+        ));
+    }
+
+    // first 4 bytes are message len. skipping them
+    let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+
+    Ok(KrbResult::<AsRep>::deserialize(&mut d)?.inspect_err(|err| error!(?err, "AS exchange error"))?)
 }

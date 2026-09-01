@@ -606,7 +606,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
         sub_key,
         checksum,
         channel_bindings,
-        ..
+        extensions,
     } = options;
 
     let current_date = OffsetDateTime::now_utc();
@@ -644,6 +644,13 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
             // 4..19 - Channel binding information (19 inclusive).
             checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
         }
+
+        for extension in extensions {
+            checksum_value.extend_from_slice(&extension.extension_type.to_le_bytes());
+            checksum_value.extend_from_slice(&u32::try_from(extension.extension_value.len())?.to_le_bytes());
+            checksum_value.extend_from_slice(&extension.extension_value);
+        }
+
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
             checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),
