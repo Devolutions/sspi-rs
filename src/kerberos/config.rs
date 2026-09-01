@@ -8,9 +8,11 @@ use crate::kerberos::ServerProperties;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::{Kerberos, Result};
 
-/// Kerberos client configuration.
+/// Strategy for resolving the KDC to use for Kerberos authentication.
 #[derive(Clone, Debug)]
-pub struct KerberosConfig {
+pub enum KdcResolution {
+    /// Use IAKerb extension to proxy KDC communication through the server to the LocalKDC.
+    IAKerb,
     /// KDC URL
     ///
     /// Depending on the scheme it is expected to be either:
@@ -23,7 +25,14 @@ pub struct KerberosConfig {
     /// in order to communicate with the KDC server directly.
     ///
     /// [KKDCP]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/5bcebb8d-b747-4ee5-9453-428aec1c5c38
-    pub kdc_url: Option<Url>,
+    KdcUrl(Option<Url>),
+}
+
+/// Kerberos client configuration.
+#[derive(Clone, Debug)]
+pub struct KerberosConfig {
+    /// Strategy for resolving the KDC to use for Kerberos authentication.
+    pub kdc_resolution: KdcResolution,
     /// Computer name, or "workstation name", of the client machine performing the authentication attempt
     ///
     /// This is also referred to as the "Source Workstation", i.e.: the name of the computer attempting to logon.
@@ -51,20 +60,32 @@ pub fn parse_kdc_url(kdc_url: &str) -> Option<Url> {
 }
 
 impl KerberosConfig {
-    pub fn new(kdc_url: &str, client_computer_name: String) -> Self {
+    pub fn new_with_kdc_url(kdc_url: &str, client_computer_name: String) -> Self {
         let kdc_url = parse_kdc_url(kdc_url);
 
         Self {
-            kdc_url,
+            kdc_resolution: KdcResolution::KdcUrl(kdc_url),
+            client_computer_name,
+        }
+    }
+
+    pub fn new_with_iakerb(client_computer_name: String) -> Self {
+        Self {
+            kdc_resolution: KdcResolution::IAKerb,
             client_computer_name,
         }
     }
 
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
-        if let Some(kdc_url) = self.kdc_url {
-            Some(kdc_url)
-        } else {
-            detect_kdc_url(domain)
+        match self.kdc_resolution {
+            KdcResolution::IAKerb => None,
+            KdcResolution::KdcUrl(kdc_url) => {
+                if let Some(kdc_url) = kdc_url {
+                    Some(kdc_url)
+                } else {
+                    detect_kdc_url(domain)
+                }
+            }
         }
     }
 }
