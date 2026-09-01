@@ -38,7 +38,7 @@ tracing-web = "0.1"
 futures-util = { version = "0.3", features = ["io"] }
 
 # Logging
-tracing.workspace = true
+tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", features = ["time"] }
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
@@ -54,13 +54,13 @@ rustls-pki-types = { version = "1.14", features = ["web"] }
 anyhow = "1"
 url = "2.5"
 
-uuid = { workspace = true, default-features = false }
+uuid = { version = "1.23", default-features = false }
 
 # Enable WebAssembly support for a few crates
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom02 = { package = "getrandom", version = "0.2", default-features = false, features = ["js"] }
 getrandom03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
-time = { workspace = true, features = ["wasm-bindgen"] }
+time = { version = "0.3", default-features = false, features = ["wasm-bindgen"] }
 
 [lints]
 workspace = true

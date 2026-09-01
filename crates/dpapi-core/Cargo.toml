@@ -9,7 +9,7 @@ std = []
 alloc = []
 
 [dependencies]
-uuid.workspace = true
+uuid = { version = "1.23", default-features = false }
 ironrdp-core = { version = "0.1", features = ["alloc"] }
 
 [lints]

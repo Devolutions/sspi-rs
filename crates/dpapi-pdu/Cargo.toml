@@ -10,11 +10,11 @@ arbitrary = ["uuid/arbitrary", "bitflags/arbitrary", "dep:arbitrary", "std"]
 
 [dependencies]
 dpapi-core = { workspace = true, features = ["alloc"] }
-uuid.workspace = true
-crypto-bigint.workspace = true
-bitflags.workspace = true
-num-derive.workspace = true
-num-traits = { workspace = true, default-features = true }
+uuid = { version = "1.23", default-features = false }
+crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
+bitflags = "2.11"
+num-derive = "0.5"
+num-traits = { version = "0.2", default-features = true }
 
 thiserror = { version = "2.0", default-features = false }
 arbitrary = {  version = "1", optional = true, features = ["derive"] }

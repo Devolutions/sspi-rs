@@ -13,7 +13,7 @@ publish = false # not ready yet
 [dependencies]
 url = "2.5"
 thiserror = "2.0"
-uuid.workspace = true
+uuid = { version = "1.23", default-features = false }
 
 [lints]
 workspace = true

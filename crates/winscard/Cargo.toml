@@ -16,24 +16,24 @@ std = ["tracing/std", "base64", "picky-asn1-der"]
 name = "winscard"
 
 [dependencies]
-bitflags.workspace = true
+bitflags = "2.11"
 iso7816 = "0.1"
 iso7816-tlv = "0.4"
-picky = { workspace = true, features = ["x509"] }
-picky-asn1-x509.workspace = true
-tracing = { workspace = true, features = ["attributes"] }
-time = { workspace = true, features = [
+picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"] }
+picky-asn1-x509 = "0.15"
+tracing = { version = "0.1", default-features = false, features = ["attributes"] }
+time = { version = "0.3", default-features = false, features = [
     "formatting",
 ] }
-uuid = { workspace = true, features = ["v4"] }
+uuid = { version = "1.23", default-features = false, features = ["v4"] }
 flate2 = { version = "1.1", default-features = false }
-rsa = { workspace = true, features = ["hazmat"] }
-sha1.workspace = true
-base64 = { workspace = true , optional = true }
-picky-asn1-der = { workspace = true, optional = true }
-num-derive.workspace = true
-num-traits.workspace = true
-crypto-bigint.workspace = true
+rsa = { version = "=0.10.0-rc.18", default-features = false, features = ["hazmat"] }
+sha1 = { version = "0.11", default-features = false }
+base64 = { version = "0.23", optional = true }
+picky-asn1-der = { version = "0.5", optional = true }
+num-derive = "0.5"
+num-traits = { version = "0.2", default-features = false }
+crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
 widestring = "1.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -44,8 +44,8 @@ flate2 = { version = "1.1", default-features = false, features = ["zlib"] }
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
-proptest.workspace = true
-rand.workspace = true
+proptest = "1.6"
+rand = "0.10"
 
 [lints]
 workspace = true
