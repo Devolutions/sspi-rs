@@ -120,7 +120,7 @@ fn credssp_kerberos() {
         users,
         target_name,
         target_service_name,
-    } = init_krb_environment();
+    } = init_krb_environment(None);
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
