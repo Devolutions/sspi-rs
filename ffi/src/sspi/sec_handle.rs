@@ -2852,4 +2852,163 @@ mod tests {
         let context_ptr: *mut SspiHandle = ptr::with_exposed_provenance_mut(sec_handle.dw_upper.try_into().unwrap());
         let _ = unsafe { Box::from_raw(context_ptr) };
     }
+
+    fn acquire_ntlm_credentials_handle(user: &str, domain: &str) -> SecHandle {
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+
+        let user = user.encode_utf16().collect::<Vec<_>>();
+        let domain = domain.encode_utf16().collect::<Vec<_>>();
+        let password = "password".encode_utf16().collect::<Vec<_>>();
+
+        let credentials = SecWinntAuthIdentityW {
+            user: user.as_ptr(),
+            user_length: user.len().try_into().expect("user length is a valid u32"),
+            domain: domain.as_ptr(),
+            domain_length: domain.len().try_into().expect("domain length is a valid u32"),
+            password: password.as_ptr(),
+            password_length: password.len().try_into().expect("password length is a valid u32"),
+            flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
+        };
+
+        let mut cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let status = unsafe {
+            AcquireCredentialsHandleW(
+                null_mut(),
+                pkg_name.as_ptr(),
+                2, /* SECPKG_CRED_OUTBOUND */
+                null::<c_void>(),
+                ptr::from_ref(&credentials).cast(),
+                dummy,
+                null::<c_void>(),
+                &mut cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        cred_handle
+    }
+
+    fn free_credentials_handle(cred_handle: &mut SecHandle) {
+        let status = unsafe { FreeCredentialsHandle(cred_handle) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn acquire_credentials_handle_is_stable_for_the_same_credentials() {
+        let mut first = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
+        let mut second = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
+        let mut third = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
+
+        assert_eq!(first.dw_lower, second.dw_lower);
+        assert_eq!(second.dw_lower, third.dw_lower);
+
+        free_credentials_handle(&mut first);
+        free_credentials_handle(&mut second);
+        free_credentials_handle(&mut third);
+    }
+
+    #[test]
+    fn acquire_credentials_handle_is_stable_after_free() {
+        let mut cred_handle = acquire_ntlm_credentials_handle("freed_user", "freed_domain");
+        let expected_handle = cred_handle.dw_lower;
+        free_credentials_handle(&mut cred_handle);
+
+        for _ in 0..3 {
+            let mut cred_handle = acquire_ntlm_credentials_handle("freed_user", "freed_domain");
+            assert_eq!(cred_handle.dw_lower, expected_handle);
+            free_credentials_handle(&mut cred_handle);
+        }
+    }
+
+    #[test]
+    fn acquire_credentials_handle_differs_for_different_credentials() {
+        let mut handles = ["user1", "user2", "user3"]
+            .into_iter()
+            .map(|user| acquire_ntlm_credentials_handle(user, "different_domain"))
+            .collect::<Vec<_>>();
+
+        let raw_handles = handles.iter().map(|handle| handle.dw_lower).collect::<Vec<_>>();
+        for (index, handle) in raw_handles.iter().enumerate() {
+            assert!(
+                !raw_handles[index + 1..].contains(handle),
+                "credentials handles must be different for different credentials: {raw_handles:?}"
+            );
+        }
+
+        handles.iter_mut().for_each(free_credentials_handle);
+    }
+
+    #[test]
+    fn initialize_security_context_dw_lower_is_stable() {
+        const OUT_BUFFER_LEN: usize = 4096;
+
+        let mut cred_handle = acquire_ntlm_credentials_handle("context_user", "context_domain");
+
+        let mut dw_lowers = Vec::new();
+
+        for _ in 0..3 {
+            let mut sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+            let mut new_sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+            let mut target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
+            let mut attrs = 0;
+
+            let mut out_buffer = vec![0_u8; OUT_BUFFER_LEN];
+            let mut out_sec_buffer = SecBuffer {
+                cb_buffer: OUT_BUFFER_LEN.try_into().expect("out buffer length is a valid u32"),
+                buffer_type: 2, /* SECBUFFER_TOKEN */
+                pv_buffer: out_buffer.as_mut_ptr().cast(),
+            };
+            let mut out_buffer_desc = SecBufferDesc {
+                ul_version: 0,
+                c_buffers: 1,
+                p_buffers: &mut out_sec_buffer,
+            };
+            let mut in_buffer_desc = SecBufferDesc {
+                ul_version: 0,
+                c_buffers: 0,
+                p_buffers: null_mut::<SecBuffer>(),
+            };
+
+            let status = unsafe {
+                InitializeSecurityContextW(
+                    &mut cred_handle,
+                    &mut sec_context,
+                    target_name.as_mut_ptr(),
+                    0,
+                    0,
+                    0x10, /* SECURITY_NATIVE_DREP */
+                    &mut in_buffer_desc,
+                    0,
+                    &mut new_sec_context,
+                    &mut out_buffer_desc,
+                    &mut attrs,
+                    null_mut(),
+                )
+            };
+            assert_eq!(status, ContinueNeeded.to_u32().unwrap());
+
+            dw_lowers.push(new_sec_context.dw_lower);
+
+            let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
+            assert_eq!(status, 0);
+        }
+
+        assert!(
+            dw_lowers.windows(2).all(|pair| pair[0] == pair[1]),
+            "security context dw_lower must be the same for every context of the same package: {dw_lowers:?}"
+        );
+
+        free_credentials_handle(&mut cred_handle);
+    }
 }
