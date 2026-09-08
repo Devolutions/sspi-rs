@@ -2,10 +2,11 @@ use std::mem::size_of;
 use std::ptr::NonNull;
 use std::slice::from_raw_parts;
 
+use ffi_types::sspi::SecWChar;
+pub use ffi_types::sspi::{SecPkgCredentialsKdcProxySettingsW, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW};
 use libc::c_void;
 use sspi::{Error, ErrorKind, Result};
 
-use super::sspi_data_types::{SecChar, SecWChar};
 use super::utils::hostname;
 
 #[derive(Debug)]
@@ -52,16 +53,6 @@ impl CredentialsAttributes {
             hostname()
         }
     }
-}
-
-#[repr(C)]
-pub struct SecPkgCredentialsKdcProxySettingsW {
-    pub version: u32,
-    pub flags: u32,
-    pub proxy_server_offset: u16,
-    pub proxy_server_length: u16,
-    pub client_tls_cred_offset: u16,
-    pub client_tls_cred_length: u16,
 }
 
 /// Extracts [KdcProxySettings].
@@ -144,14 +135,4 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
         proxy_server,
         client_tls_cred,
     })
-}
-
-#[repr(C)]
-pub struct SecPkgCredentialsKdcUrlA {
-    pub kdc_url: *mut SecChar,
-}
-
-#[repr(C)]
-pub struct SecPkgCredentialsKdcUrlW {
-    pub kdc_url: *mut SecWChar,
 }

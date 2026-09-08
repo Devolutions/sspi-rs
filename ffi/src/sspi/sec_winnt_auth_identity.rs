@@ -1,7 +1,15 @@
 use std::ptr::copy_nonoverlapping;
 use std::slice::from_raw_parts;
 
-use libc::{c_char, c_void};
+#[cfg(feature = "tsssp")]
+pub use ffi_types::sspi::{CredSspCred, CredSspSubmitType};
+pub use ffi_types::sspi::{
+    SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SEC_WINNT_AUTH_IDENTITY_VERSION,
+    SEC_WINNT_AUTH_IDENTITY_VERSION_2, SecWinntAuthIdentityA, SecWinntAuthIdentityEx2, SecWinntAuthIdentityExA,
+    SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
+};
+use ffi_types::sspi::{SecWChar, SecurityStatus};
+use libc::c_void;
 use sspi::utf16string::ZeroizedUtf16String;
 use sspi::{
     AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, NonEmpty, Result, Secret, Utf16String, Utf16StringExt,
@@ -15,146 +23,10 @@ use windows::Win32::Security::Credentials::CredIsMarshaledCredentialW;
 #[cfg(feature = "tsssp")]
 use windows::Win32::Security::Credentials::{CREDUI_INFOW, CredUIPromptForWindowsCredentialsW};
 
-use super::sspi_data_types::{SecWChar, SecurityStatus};
 use crate::utils::{credentials_str_into_bytes, into_raw_ptr};
-
-pub const SEC_WINNT_AUTH_IDENTITY_ANSI: u32 = 0x1;
-pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
 
 /// Environment variable name for specifying PKCS11 module path.
 pub const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
-
-#[repr(C)]
-pub struct SecWinntAuthIdentityW {
-    pub user: *const u16,
-    pub user_length: u32,
-    pub domain: *const u16,
-    pub domain_length: u32,
-    pub password: *const u16,
-    pub password_length: u32,
-    pub flags: u32,
-}
-
-#[repr(C)]
-pub struct SecWinntAuthIdentityA {
-    pub user: *const c_char,
-    pub user_length: u32,
-    pub domain: *const c_char,
-    pub domain_length: u32,
-    pub password: *const c_char,
-    pub password_length: u32,
-    pub flags: u32,
-}
-
-pub const SEC_WINNT_AUTH_IDENTITY_VERSION: u32 = 0x200;
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct SecWinntAuthIdentityExW {
-    pub version: u32,
-    pub length: u32,
-    pub user: *const u16,
-    pub user_length: u32,
-    pub domain: *const u16,
-    pub domain_length: u32,
-    pub password: *const u16,
-    pub password_length: u32,
-    pub flags: u32,
-    pub package_list: *const u16,
-    pub package_list_length: u32,
-}
-
-#[repr(C)]
-pub struct SecWinntAuthIdentityExA {
-    pub version: u32,
-    pub length: u32,
-    pub user: *const c_char,
-    pub user_length: u32,
-    pub domain: *const c_char,
-    pub domain_length: u32,
-    pub password: *const c_char,
-    pub password_length: u32,
-    pub flags: u32,
-    pub package_list: *const c_char,
-    pub package_list_length: u32,
-}
-
-pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
-
-/// [SEC_WINNT_AUTH_IDENTITY_EX2](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_ex2)
-///
-/// ```not_rust
-/// typedef struct _SEC_WINNT_AUTH_IDENTITY_EX2 {
-///   unsigned long  Version;
-///   unsigned short cbHeaderLength;
-///   unsigned long  cbStructureLength;
-///   unsigned long  UserOffset;
-///   unsigned short UserLength;
-///   unsigned long  DomainOffset;
-///   unsigned short DomainLength;
-///   unsigned long  PackedCredentialsOffset;
-///   unsigned short PackedCredentialsLength;
-///   unsigned long  Flags;
-///   unsigned long  PackageListOffset;
-///   unsigned short PackageListLength;
-/// } SEC_WINNT_AUTH_IDENTITY_EX2, *PSEC_WINNT_AUTH_IDENTITY_EX2;
-/// ```
-#[derive(Debug)]
-#[repr(C)]
-pub struct SecWinntAuthIdentityEx2 {
-    pub version: u32,
-    pub cb_header_length: u16,
-    pub cb_structure_length: u32,
-    pub user_offset: u32,
-    pub user_length: u16,
-    pub domain_offset: u32,
-    pub domain_length: u16,
-    pub packed_credentials_offset: u32,
-    pub packed_credentials_length: u16,
-    pub flags: u32,
-    pub package_list_offset: u32,
-    pub package_list_length: u16,
-}
-
-/// [CREDSPP_SUBMIT_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/credssp/ne-credssp-credspp_submit_type)
-///
-/// ```not_rust
-/// typedef enum _CREDSSP_SUBMIT_TYPE {
-///   CredsspPasswordCreds = 2,
-///   CredsspSchannelCreds = 4,
-///   CredsspCertificateCreds = 13,
-///   CredsspSubmitBufferBoth = 50,
-///   CredsspSubmitBufferBothOld = 51,
-///   CredsspCredEx = 100
-/// } CREDSPP_SUBMIT_TYPE;
-/// ```
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[repr(C)]
-pub enum CredSspSubmitType {
-    CredsspPasswordCreds = 2,
-    CredsspSchannelCreds = 4,
-    CredsspCertificateCreds = 13,
-    CredsspSubmitBufferBoth = 50,
-    CredsspSubmitBufferBothOld = 51,
-    CredsspCredEx = 100,
-}
-
-/// [CREDSSP_CRED](https://learn.microsoft.com/en-us/windows/win32/api/credssp/ns-credssp-credssp_cred)
-///
-/// ```not_rust
-/// typedef struct _CREDSSP_CRED {
-///   CREDSPP_SUBMIT_TYPE Type;
-///   PVOID               pSchannelCred;
-///   PVOID               pSpnegoCred;
-/// } CREDSSP_CRED, *PCREDSSP_CRED;
-/// ```
-#[derive(Debug)]
-#[repr(C)]
-pub struct CredSspCred {
-    pub submit_type: CredSspSubmitType,
-    pub p_schannel_cred: *const c_void,
-    pub p_spnego_cred: *const c_void,
-}
 
 /// Returns auth identity version and flags.
 ///

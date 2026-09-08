@@ -22,10 +22,7 @@ use windows::core::PWSTR;
 
 const CSP_NAME: &str = "Microsoft Base Smart Card Crypto Provider";
 
-// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptprov
-pub type HCRYPTPROV = usize; // ULONG_PTR
-// https://learn.microsoft.com/en-us/windows/win32/seccrypto/hcryptkey
-pub type HCRYPTKEY = usize; // ULONG_PTR
+pub use ffi_types::sspi::{HCRYPTKEY, HCRYPTPROV};
 
 /// Finds a certificate in the given certificate store by thumbprint.
 ///

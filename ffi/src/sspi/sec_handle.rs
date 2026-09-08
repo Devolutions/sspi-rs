@@ -4,7 +4,7 @@ use std::ptr::{self, NonNull, copy_nonoverlapping};
 use std::slice::from_raw_parts;
 use std::sync::Mutex;
 
-use libc::{c_ulonglong, c_void};
+use libc::c_void;
 use num_traits::{FromPrimitive, ToPrimitive};
 use sspi::builders::ChangePasswordBuilder;
 use sspi::credssp::SspiContext;
@@ -32,6 +32,24 @@ cfg_if::cfg_if! {
     }
 }
 
+pub use ffi_types::sspi::{
+    AcquireCredentialsHandleFnA, AcquireCredentialsHandleFnW, AddCredentialsFnA, AddCredentialsFnW,
+    ChangeAccountPasswordFnA, ChangeAccountPasswordFnW, ImportSecurityContextFnA, ImportSecurityContextFnW,
+    InitializeSecurityContextFnA, InitializeSecurityContextFnW, PCredHandle, PCtxtHandle, QueryContextAttributesExFnA,
+    QueryContextAttributesExFnW, QueryContextAttributesFnA, QueryContextAttributesFnW, QueryCredentialsAttributesExFnA,
+    QueryCredentialsAttributesExFnW, QueryCredentialsAttributesFnA, QueryCredentialsAttributesFnW,
+    SECPKG_ATTR_CERT_TRUST_STATUS, SECPKG_ATTR_CONNECTION_INFO, SECPKG_ATTR_NAMES, SECPKG_ATTR_NEGOTIATION_INFO,
+    SECPKG_ATTR_NEGOTIATION_PACKAGE, SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_REMOTE_CERT_CONTEXT,
+    SECPKG_ATTR_SERVER_AUTH_FLAGS, SECPKG_ATTR_SESSION_KEY, SECPKG_ATTR_SIZES, SECPKG_ATTR_STREAM_SIZES,
+    SECPKG_NEGOTIATION_COMPLETE, SECPKG_NEGOTIATION_IN_PROGRESS, SECPKG_NEGOTIATION_OPTIMISTIC, SecHandle,
+    SetContextAttributesFnA, SetContextAttributesFnW, SetCredentialsAttributesFnA, SetCredentialsAttributesFnW,
+};
+use ffi_types::sspi::{
+    CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
+    SecPkgContextFlags, SecPkgContextNamesA, SecPkgContextNamesW, SecPkgContextSessionKey, SecPkgContextSizes,
+    SecPkgContextStreamSizes, SecWChar, SecurityStatus,
+};
+
 use super::credentials_attributes::{
     CredentialsAttributes, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW, extract_kdc_proxy_settings,
 };
@@ -41,40 +59,8 @@ use super::sec_buffer::{
 };
 use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
 use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
-use super::sspi_data_types::{
-    CertTrustStatus, LpStr, LpcWStr, PSecurityString, PTimeStamp, SecChar, SecGetKeyFn, SecPkgContextConnectionInfo,
-    SecPkgContextFlags, SecPkgContextNamesA, SecPkgContextNamesW, SecPkgContextSessionKey, SecPkgContextSizes,
-    SecPkgContextStreamSizes, SecWChar, SecurityStatus,
-};
 use super::utils::{hostname, transform_credentials_handle};
 use crate::utils::into_raw_ptr;
-
-pub const SECPKG_NEGOTIATION_COMPLETE: u32 = 0;
-pub const SECPKG_NEGOTIATION_OPTIMISTIC: u32 = 1;
-pub const SECPKG_NEGOTIATION_IN_PROGRESS: u32 = 2;
-
-// the sizes of the structures used in the per-message functions and authentication exchanges
-pub const SECPKG_ATTR_SIZES: u32 = 0;
-// the name associated with the context
-pub const SECPKG_ATTR_NAMES: u32 = 1;
-// information about the security package to be used with the negotiation process and the current state of the negotiation for the use of that package
-pub const SECPKG_ATTR_NEGOTIATION_INFO: u32 = 12;
-// the sizes of the various parts of a stream used in the per-message functions
-pub const SECPKG_ATTR_STREAM_SIZES: u32 = 4;
-// certificate context that contains the end certificate supplied by the server
-pub const SECPKG_ATTR_REMOTE_CERT_CONTEXT: u32 = 0x53;
-// the name of the authentication package negotiated by the Microsoft Negotiate provider
-pub const SECPKG_ATTR_NEGOTIATION_PACKAGE: u32 = 0x80000081;
-// information on the SSP in use
-pub const SECPKG_ATTR_PACKAGE_INFO: u32 = 10;
-// information about the flags in the current security context
-pub const SECPKG_ATTR_SERVER_AUTH_FLAGS: u32 = 0x80000083;
-// trust information about the certificate
-pub const SECPKG_ATTR_CERT_TRUST_STATUS: u32 = 0x80000084;
-// detailed information on the established connection
-pub const SECPKG_ATTR_CONNECTION_INFO: u32 = 0x5a;
-// information about the session keys
-pub const SECPKG_ATTR_SESSION_KEY: u32 = 9;
 
 // Sets the name of a credential
 // In our library, we use this attribute to set the workstation for auth identity
@@ -83,16 +69,6 @@ const SECPKG_CRED_ATTR_NAMES: u32 = 1;
 const SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS: u32 = 3;
 
 const SECPKG_CRED_ATTR_KDC_URL: u32 = 501;
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct SecHandle {
-    pub dw_lower: c_ulonglong,
-    pub dw_upper: c_ulonglong,
-}
-
-pub type PCredHandle = *mut SecHandle;
-pub type PCtxtHandle = *mut SecHandle;
 
 /// Synchronized version of the [SspiContext].
 ///
@@ -422,18 +398,6 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
     }
 }
 
-pub type AcquireCredentialsHandleFnA = unsafe extern "system" fn(
-    LpStr,
-    LpStr,
-    u32,
-    *const c_void,
-    *const c_void,
-    SecGetKeyFn,
-    *const c_void,
-    PCredHandle,
-    PTimeStamp,
-) -> SecurityStatus;
-
 /// The `AcquireCredentialsHandleW` function acquires a handle to preexisting credentials of a security principal.
 ///
 /// NOTE: Although in the original Windows SSPI, `p_auth_data` parameter can be NULL, in our implementation it must be non-NULL.
@@ -500,18 +464,6 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
     }
 }
 
-pub type AcquireCredentialsHandleFnW = unsafe extern "system" fn(
-    LpcWStr,
-    LpcWStr,
-    u32,
-    *const c_void,
-    *const c_void,
-    SecGetKeyFn,
-    *const c_void,
-    PCredHandle,
-    PTimeStamp,
-) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesA"))]
 #[unsafe(no_mangle)]
@@ -523,8 +475,6 @@ pub extern "system" fn QueryCredentialsAttributesA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesFnA = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesW"))]
 #[unsafe(no_mangle)]
@@ -535,8 +485,6 @@ pub extern "system" fn QueryCredentialsAttributesW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type QueryCredentialsAttributesFnW = extern "system" fn(PCredHandle, u32, *mut c_void) -> SecurityStatus;
 
 /// The `InitializeSecurityContextA` function initiates the client side, outbound `security context` from
 /// a credential handle. The function is used to build a security context between the client application
@@ -682,21 +630,6 @@ pub unsafe extern "system" fn InitializeSecurityContextA(
         result.status.to_u32().unwrap()
     }
 }
-
-pub type InitializeSecurityContextFnA = unsafe extern "system" fn(
-    PCredHandle,
-    PCtxtHandle,
-    *const SecChar,
-    u32,
-    u32,
-    u32,
-    PSecBufferDesc,
-    u32,
-    PCtxtHandle,
-    PSecBufferDesc,
-    *mut u32,
-    PTimeStamp,
-) -> SecurityStatus;
 
 /// The `InitializeSecurityContextW` function initiates the client side, outbound `security context` from
 /// a credential handle. The function is used to build a security context between the client application
@@ -848,21 +781,6 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
         result.status.to_u32().unwrap()
     }
 }
-
-pub type InitializeSecurityContextFnW = unsafe extern "system" fn(
-    PCredHandle,
-    PCtxtHandle,
-    *const SecWChar,
-    u32,
-    u32,
-    u32,
-    PSecBufferDesc,
-    u32,
-    PCtxtHandle,
-    PSecBufferDesc,
-    *mut u32,
-    PTimeStamp,
-) -> SecurityStatus;
 
 /// # Safety
 ///
@@ -1210,8 +1128,6 @@ pub unsafe extern "system" fn QueryContextAttributesA(
     unsafe { query_context_attributes_common(ph_context, ul_attribute, p_buffer, false) }
 }
 
-pub type QueryContextAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void) -> SecurityStatus;
-
 /// The `QueryContextAttributesW` function lets a transport application query the Credential Security
 /// Support Provider (CredSSP) `security package` for certain attributes of a `security context`.
 ///
@@ -1239,8 +1155,6 @@ pub unsafe extern "system" fn QueryContextAttributesW(
     unsafe { query_context_attributes_common(ph_context, ul_attribute, p_buffer, true) }
 }
 
-pub type QueryContextAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextA"))]
 #[unsafe(no_mangle)]
@@ -1253,9 +1167,6 @@ pub extern "system" fn ImportSecurityContextA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type ImportSecurityContextFnA =
-    extern "system" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImportSecurityContextW"))]
 #[unsafe(no_mangle)]
@@ -1267,9 +1178,6 @@ pub extern "system" fn ImportSecurityContextW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type ImportSecurityContextFnW =
-    extern "system" fn(PSecurityString, PSecBuffer, *mut c_void, PCtxtHandle) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsA"))]
@@ -1287,17 +1195,6 @@ pub extern "system" fn AddCredentialsA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type AddCredentialsFnA = extern "system" fn(
-    PCredHandle,
-    *mut SecChar,
-    *mut SecChar,
-    u32,
-    *mut c_void,
-    SecGetKeyFn,
-    *mut c_void,
-    PTimeStamp,
-) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_AddCredentialsW"))]
 #[unsafe(no_mangle)]
@@ -1314,17 +1211,6 @@ pub extern "system" fn AddCredentialsW(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type AddCredentialsFnW = extern "system" fn(
-    PCredHandle,
-    *mut SecWChar,
-    *mut SecWChar,
-    u32,
-    *mut c_void,
-    SecGetKeyFn,
-    *mut c_void,
-    PTimeStamp,
-) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesA"))]
 #[unsafe(no_mangle)]
@@ -1337,8 +1223,6 @@ pub extern "system" fn SetContextAttributesA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type SetContextAttributesFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
-
 #[cfg_attr(windows, rename_symbol(to = "Rust_SetContextAttributesW"))]
 #[unsafe(no_mangle)]
 pub extern "system" fn SetContextAttributesW(
@@ -1349,8 +1233,6 @@ pub extern "system" fn SetContextAttributesW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type SetContextAttributesFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 /// Sets the `attributes` of a `credential`, such as the name associated with the credential. The information
 /// is valid for any `security context` created with the specified credential.
@@ -1446,8 +1328,6 @@ pub unsafe extern "system" fn SetCredentialsAttributesA(
     }
 }
 
-pub type SetCredentialsAttributesFnA = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
-
 /// Sets the `attributes` of a `credential`, such as the name associated with the credential. The information
 /// is valid for any `security context` created with the specified credential.
 ///
@@ -1540,8 +1420,6 @@ pub unsafe extern "system" fn SetCredentialsAttributesW(
         }
     }
 }
-
-pub type SetCredentialsAttributesFnW = unsafe extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 /// The `ChangeAccountPasswordA` function changes the password for a Windows domain account by using
 /// the specified `Security Support Provider`.
@@ -1674,17 +1552,6 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
     }
 }
 
-pub type ChangeAccountPasswordFnA = unsafe extern "system" fn(
-    *mut SecChar,
-    *mut SecChar,
-    *mut SecChar,
-    *mut SecChar,
-    *mut SecChar,
-    bool,
-    u32,
-    PSecBufferDesc,
-) -> SecurityStatus;
-
 /// The `ChangeAccountPasswordW` function changes the password for a Windows domain account by using
 /// the specified `Security Support Provider`.
 ///
@@ -1789,17 +1656,6 @@ pub unsafe extern "system" fn ChangeAccountPasswordW(
     }
 }
 
-pub type ChangeAccountPasswordFnW = unsafe extern "system" fn(
-    *mut SecWChar,
-    *mut SecWChar,
-    *mut SecWChar,
-    *mut SecWChar,
-    *mut SecWChar,
-    bool,
-    u32,
-    PSecBufferDesc,
-) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExA"))]
 #[unsafe(no_mangle)]
@@ -1811,8 +1667,6 @@ pub extern "system" fn QueryContextAttributesExA(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type QueryContextAttributesExFnA = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryContextAttributesExW"))]
@@ -1826,8 +1680,6 @@ pub extern "system" fn QueryContextAttributesExW(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryContextAttributesExFnW = extern "system" fn(PCtxtHandle, u32, *mut c_void, u32) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExA"))]
 #[unsafe(no_mangle)]
@@ -1840,8 +1692,6 @@ pub extern "system" fn QueryCredentialsAttributesExA(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type QueryCredentialsAttributesExFnA = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QueryCredentialsAttributesExW"))]
 #[unsafe(no_mangle)]
@@ -1853,8 +1703,6 @@ pub extern "system" fn QueryCredentialsAttributesExW(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type QueryCredentialsAttributesExFnW = extern "system" fn(PCredHandle, u32, *mut c_void, u32) -> SecurityStatus;
 
 #[cfg(test)]
 #[expect(
@@ -2545,10 +2393,10 @@ mod tests {
     fn query_context_session_key() {
         use std::slice::from_raw_parts;
 
+        use ffi_types::sspi::SecPkgContextSessionKey;
         use sspi::credssp::SspiContext;
 
         use crate::sspi::sec_handle::{QueryContextAttributesW, SECPKG_ATTR_SESSION_KEY, SspiHandle};
-        use crate::sspi::sspi_data_types::SecPkgContextSessionKey;
         use crate::utils::into_raw_ptr;
 
         let kerberos_client = sspi::kerberos::test_data::fake_client();
@@ -2605,12 +2453,12 @@ mod tests {
 
     #[test]
     fn query_context_names() {
+        use ffi_types::sspi::{SecPkgContextNamesA, SecPkgContextNamesW};
         use sspi::credssp::SspiContext;
 
         use crate::sspi::sec_handle::{
             QueryContextAttributesA, QueryContextAttributesW, SECPKG_ATTR_NAMES, SspiHandle,
         };
-        use crate::sspi::sspi_data_types::{SecPkgContextNamesA, SecPkgContextNamesW};
         use crate::utils::into_raw_ptr;
 
         let kerberos_client = sspi::kerberos::test_data::fake_client();

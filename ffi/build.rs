@@ -138,8 +138,8 @@ fn main() {
             .input_extern_file("src/sspi/sec_winnt_auth_identity.rs")
             .input_extern_file("src/sspi/security_tables.rs")
             .input_extern_file("src/sspi/sec_buffer.rs")
-            .input_extern_file("src/sspi/sspi_data_types.rs");
-
+            .input_extern_file("../crates/ffi-types/src/sspi/functions.rs")
+            .input_extern_file("../crates/ffi-types/src/sspi/mod.rs");
         #[cfg(feature = "dpapi")]
         {
             csbindgen_builder = csbindgen_builder

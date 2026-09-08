@@ -1,27 +1,8 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
+pub use ffi_types::sspi::{PSecBuffer, PSecBufferDesc, SecBuffer, SecBufferDesc};
 use libc::c_char;
 use sspi::{Error, ErrorKind, Result, SecurityBuffer, SecurityBufferType};
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct SecBuffer {
-    pub cb_buffer: u32,
-    pub buffer_type: u32,
-    pub pv_buffer: *mut c_char,
-}
-
-pub type PSecBuffer = *mut SecBuffer;
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct SecBufferDesc {
-    pub ul_version: u32,
-    pub c_buffers: u32,
-    pub p_buffers: PSecBuffer,
-}
-
-pub type PSecBufferDesc = *mut SecBufferDesc;
 
 /// # Safety
 ///

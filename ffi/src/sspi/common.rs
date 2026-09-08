@@ -1,6 +1,7 @@
 use std::ptr;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
+use ffi_types::sspi::{PTimeStamp, SecurityStatus};
 use libc::c_void;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 use sspi::{
@@ -15,7 +16,6 @@ use super::sec_buffer::{
     PSecBuffer, PSecBufferDesc, SecBuffer, copy_to_c_sec_buffer, p_sec_buffers_to_security_buffers,
 };
 use super::sec_handle::{CredentialsHandle, PCredHandle, PCtxtHandle, p_ctxt_handle_to_sspi_context};
-use super::sspi_data_types::{PTimeStamp, SecurityStatus};
 use super::utils::transform_credentials_handle;
 use crate::sspi::sec_handle::SspiHandle;
 use crate::utils::into_raw_ptr;
@@ -49,8 +49,6 @@ pub unsafe extern "system" fn FreeCredentialsHandle(ph_credential: PCredHandle) 
 
     0
 }
-
-pub type FreeCredentialsHandleFn = unsafe extern "system" fn(PCredHandle) -> SecurityStatus;
 
 /// The `AcceptSecurityContext` function lets the server component of a transport application
 /// establish a security context between the server and a remote client.
@@ -193,18 +191,6 @@ pub unsafe extern "system" fn AcceptSecurityContext(
     }
 }
 
-pub type AcceptSecurityContextFn = unsafe extern "system" fn(
-    PCredHandle,
-    PCtxtHandle,
-    PSecBufferDesc,
-    u32,
-    u32,
-    PCtxtHandle,
-    PSecBufferDesc,
-    *mut u32,
-    PTimeStamp,
-) -> SecurityStatus;
-
 /// The `CompleteAuthToken` function completes an authentication token.
 ///
 /// [MSDN Reference](https://learn.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-completeauthtoken)
@@ -270,8 +256,6 @@ pub unsafe extern "system" fn CompleteAuthToken(
     }
 }
 
-pub type CompleteAuthTokenFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
-
 /// The `DeleteSecurityContext` function deletes the local data structures associated with the specified
 /// `security context` initiated by a previous call to the `InitializeSecurityContext` function or the
 /// `AcceptSecurityContext` function.
@@ -324,16 +308,12 @@ pub unsafe extern "system" fn DeleteSecurityContext(mut ph_context: PCtxtHandle)
     )
 }
 
-pub type DeleteSecurityContextFn = unsafe extern "system" fn(PCtxtHandle) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ApplyControlToken"))]
 #[unsafe(no_mangle)]
 pub extern "system" fn ApplyControlToken(_ph_context: PCtxtHandle, _p_input: PSecBufferDesc) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type ApplyControlTokenFn = extern "system" fn(PCtxtHandle, PSecBufferDesc) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ImpersonateSecurityContext"))]
@@ -342,16 +322,12 @@ pub extern "system" fn ImpersonateSecurityContext(_ph_context: PCtxtHandle) -> S
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type ImpersonateSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_RevertSecurityContext"))]
 #[unsafe(no_mangle)]
 pub extern "system" fn RevertSecurityContext(_ph_context: PCtxtHandle) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type RevertSecurityContextFn = extern "system" fn(PCtxtHandle) -> SecurityStatus;
 
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_MakeSignature"))]
@@ -365,8 +341,6 @@ pub extern "system" fn MakeSignature(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type MakeSignatureFn = extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_VerifySignature"))]
 #[unsafe(no_mangle)]
@@ -378,8 +352,6 @@ pub extern "system" fn VerifySignature(
 ) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type VerifySignatureFn = extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
 /// The `FreeContextBuffer` function enables callers of `security package` functions to free memory buffers
 /// allocated by the security package.
@@ -404,8 +376,6 @@ pub unsafe extern "system" fn FreeContextBuffer(pv_context_buffer: *mut c_void) 
     0
 }
 
-pub type FreeContextBufferFn = unsafe extern "system" fn(*mut c_void) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_ExportSecurityContext"))]
 #[unsafe(no_mangle)]
@@ -418,16 +388,12 @@ pub extern "system" fn ExportSecurityContext(
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
 
-pub type ExportSecurityContextFn = extern "system" fn(PCtxtHandle, u32, PSecBuffer, *mut *mut c_void) -> SecurityStatus;
-
 #[instrument(skip_all)]
 #[cfg_attr(windows, rename_symbol(to = "Rust_QuerySecurityContextToken"))]
 #[unsafe(no_mangle)]
 pub extern "system" fn QuerySecurityContextToken(_ph_context: PCtxtHandle, _token: *mut *mut c_void) -> SecurityStatus {
     ErrorKind::UnsupportedFunction.to_u32().unwrap()
 }
-
-pub type QuerySecurityContextTokenFn = extern "system" fn(PCtxtHandle, *mut *mut c_void) -> SecurityStatus;
 
 /// The `EncryptMessage` function encrypts a message to provide privacy.
 ///
@@ -511,8 +477,6 @@ pub unsafe extern "system" fn EncryptMessage(
         result.to_u32().unwrap()
     }
 }
-
-pub type EncryptMessageFn = unsafe extern "system" fn(PCtxtHandle, u32, PSecBufferDesc, u32) -> SecurityStatus;
 
 /// The `DecryptMessage` function decrypts a message.
 ///
@@ -606,8 +570,6 @@ pub unsafe extern "system" fn DecryptMessage(
         0
     }
 }
-
-pub type DecryptMessageFn = unsafe extern "system" fn(PCtxtHandle, PSecBufferDesc, u32, *mut u32) -> SecurityStatus;
 
 /// Creates a vector of [SecurityBufferRef]s from the input C buffers.
 ///

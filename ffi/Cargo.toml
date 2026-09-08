@@ -15,10 +15,10 @@ crate-type = ["cdylib"]
 [features]
 default = ["aws-lc-rs", "scard", "dpapi"]
 tsssp = ["sspi/tsssp", "dpapi/tsssp"]
-scard = ["sspi/scard", "dep:ffi-types", "dep:winscard", "dep:bitflags", "dep:picky-asn1-x509", "dep:picky-asn1", "dep:picky", "dep:cryptoki"]
+scard = ["sspi/scard", "dep:winscard", "dep:bitflags", "dep:picky-asn1-x509", "dep:picky-asn1", "dep:picky", "dep:cryptoki", "ffi-types/winscard"]
 aws-lc-rs = ["sspi/aws-lc-rs"]
 ring = ["sspi/ring"]
-dpapi = ["dep:dpapi", "dep:dpapi-transport", "dep:dpapi-native-transport", "dep:tokio", "dep:url", "dep:ffi-types"]
+dpapi = ["dep:dpapi", "dep:dpapi-transport", "dep:dpapi-native-transport", "dep:tokio", "dep:url"]
 
 [dependencies]
 cfg-if = "1"
@@ -26,7 +26,7 @@ num-traits = { version = "0.2", default-features = true }
 whoami = "2.1"
 sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
-ffi-types = { workspace = true, features = ["winscard"], optional = true }
+ffi-types = { workspace = true, features = ["sspi"] }
 
 picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"], optional = true }
 picky-asn1-der = "0.5"
