@@ -2085,7 +2085,7 @@ mod tests {
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
 
-    fn initialize_negotiate_security_context_with_package_list(pkg_list: &str) -> u32 {
+    fn initialize_negotiate_security_context_with_package_list(user: &str, pkg_list: &str) -> u32 {
         let mut pkg_name = "Negotiate\0".encode_utf16().collect::<Vec<_>>();
         let mut pkg_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
@@ -2104,7 +2104,7 @@ mod tests {
         let status = unsafe { FreeContextBuffer(pkg_info.cast()) };
         assert_eq!(status, 0);
 
-        let user = "user".encode_utf16().collect::<Vec<_>>();
+        let user = user.encode_utf16().collect::<Vec<_>>();
         let domain = "domain".encode_utf16().collect::<Vec<_>>();
         let password = "password".encode_utf16().collect::<Vec<_>>();
 
@@ -2205,13 +2205,13 @@ mod tests {
 
     #[test]
     fn initialize_negotiate_security_context_fail() {
-        let status = initialize_negotiate_security_context_with_package_list("N");
+        let status = initialize_negotiate_security_context_with_package_list("user_fail", "N");
         assert_eq!(status, ErrorKind::NoCredentials.to_u32().unwrap());
     }
 
     #[test]
     fn initialize_negotiate_security_context_success() {
-        let status = initialize_negotiate_security_context_with_package_list("NTLM,N");
+        let status = initialize_negotiate_security_context_with_package_list("user_success", "NTLM,N");
         assert_eq!(status, ContinueNeeded.to_u32().unwrap());
     }
 
