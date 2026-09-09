@@ -870,7 +870,6 @@ pub unsafe extern "system" fn InitializeSecurityContextW(
             )
         };
         debug!(?service_principal, "Target name (SPN)");
-        debug!("Credentials handle: {:?}", &*ph_credential as &SecHandle);
 
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         let dw_lower = unsafe { (*ph_credential).dw_lower };
