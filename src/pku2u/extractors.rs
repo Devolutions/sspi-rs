@@ -106,7 +106,10 @@ pub(super) fn extract_session_key_and_nonce_from_as_rep(
         ));
     }
     let mut nonce = [0; size_of::<u32>()];
-    nonce[size_of::<u32>() - nonce_bytes.len()..].copy_from_slice(nonce_bytes);
+    nonce
+        .get_mut(size_of::<u32>() - nonce_bytes.len()..)
+        .expect("nonce_bytes.len() <= size_of::<u32>() due to prior check")
+        .copy_from_slice(nonce_bytes);
 
     Ok((
         enc_as_rep_part.0.key.0.key_value.0.to_vec().into(),

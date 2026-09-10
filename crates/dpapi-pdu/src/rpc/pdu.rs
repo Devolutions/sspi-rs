@@ -775,8 +775,12 @@ impl FindLength for Pdu {
             return Ok(None);
         }
 
-        let pdu_header = PduHeader::decode_owned(&mut ReadCursor::new(&bytes[0..Self::FIXED_PART_SIZE]))?;
+        if let Some(bytes) = bytes.get(0..Self::FIXED_PART_SIZE) {
+            let pdu_header = PduHeader::decode_owned(&mut ReadCursor::new(bytes))?;
 
-        Ok(Some(usize::from(pdu_header.frag_len)))
+            Ok(Some(usize::from(pdu_header.frag_len)))
+        } else {
+            Ok(None)
+        }
     }
 }

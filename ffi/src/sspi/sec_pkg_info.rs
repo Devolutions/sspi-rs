@@ -339,7 +339,7 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
         let mut package_ptr = raw_packages.cast::<SecPkgInfoW>();
         // SAFETY: It is safe to cast a pointer because we allocated enough memory to place package name and comment alongside SecPkgInfoA.
         let mut data_ptr = unsafe { raw_packages.add(size_of::<SecPkgInfoW>() * packages.len()).cast::<SecWChar>() };
-        for (i, pkg_info) in packages.iter().enumerate() {
+        for (pkg_info, (name, comment)) in packages.iter().zip(names.iter().zip(comments.iter())) {
             // FIXME(safety): it is illegal to construct a reference to uninitialized data
             // Useful references:
             // - https://doc.rust-lang.org/nomicon/unchecked-uninit.html
@@ -354,26 +354,26 @@ pub unsafe extern "system" fn EnumerateSecurityPackagesW(
             pkg_info_w.cb_max_token = pkg_info.max_token_len;
 
             // SAFETY:
-            // - `names[i]` is valid C string.
+            // - `name` is a valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(names[i].as_ptr(), data_ptr.cast(), names[i].len()); }
+            unsafe { copy_nonoverlapping(name.as_ptr(), data_ptr.cast(), name.len()); }
             pkg_info_w.name = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            data_ptr = unsafe { data_ptr.add(names[i].len()) };
+            data_ptr = unsafe { data_ptr.add(name.len()) };
 
             // SAFETY:
-            // - `name` is valid C string.
+            // - `comment` is a valid C string.
             // - `data_ptr` is a local pointer to allocated memory.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            unsafe { copy_nonoverlapping(comments[i].as_ptr(), data_ptr.cast(), comments[i].len()); }
+            unsafe { copy_nonoverlapping(comment.as_ptr(), data_ptr.cast(), comment.len()); }
             pkg_info_w.comment = data_ptr.cast();
             // SAFETY:
             // - Our allocated buffer is big enough to contain package name and comment.
             // - We precalculated and allocated enough memory to accommodate all security packages + their names and comments.
-            data_ptr = unsafe { data_ptr.add(comments[i].len()) };
+            data_ptr = unsafe { data_ptr.add(comment.len()) };
 
             // SAFETY:
             // - Next structure (if any) is placed right after this structure.

@@ -1101,10 +1101,21 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
             .windows(2)
             .position(|b| b == BACK_SLASH_UTF16)
         {
-            auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[0..index])?;
-            auth_identity_buffers.user =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[(index + 2)..])?;
+            // `index` and `index + 2` are within bounds because `.position()` found them via `.windows(2)`.
+            auth_identity_buffers.domain = Utf16String::from_bytes_le(
+                auth_identity_buffers
+                    .user
+                    .as_bytes_le()
+                    .get(0..index)
+                    .expect("index is within bounds, found via .windows(2).position()"),
+            )?;
+            auth_identity_buffers.user = Utf16String::from_bytes_le(
+                auth_identity_buffers
+                    .user
+                    .as_bytes_le()
+                    .get((index + 2)..)
+                    .expect("index + 2 is within bounds, found via .windows(2).position()"),
+            )?;
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.

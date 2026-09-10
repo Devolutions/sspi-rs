@@ -388,7 +388,9 @@ impl<'data> SecurityBufferRef<'data> {
         }
 
         let mut buf = self.take_data();
-        buf = &mut buf[0..data_len];
+        buf = buf
+            .get_mut(0..data_len)
+            .expect("data_len <= buf.len() due to prior check");
         buf.copy_from_slice(data);
 
         self.set_data(buf)

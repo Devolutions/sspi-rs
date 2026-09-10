@@ -95,16 +95,15 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
     // - `to_buffers` is guaranteed to be non-null due to the prior check.
     // - The memory region `to_buffers` points to is valid for writes of `from_buffers.len()` elements.
     let to_buffers = unsafe { from_raw_parts_mut(to_buffers, from_buffers.len()) };
-    for i in 0..from_buffers.len() {
-        let buffer = &from_buffers[i];
+    for (buffer, to_buffer) in from_buffers.iter().zip(to_buffers.iter_mut()) {
         let buffer_size = buffer.buffer.len();
-        to_buffers[i].cb_buffer = buffer_size.try_into().unwrap();
-        to_buffers[i].buffer_type = buffer.buffer_type.into();
-        if allocate || to_buffers[i].pv_buffer.is_null() {
+        to_buffer.cb_buffer = buffer_size.try_into().unwrap();
+        to_buffer.buffer_type = buffer.buffer_type.into();
+        if allocate || to_buffer.pv_buffer.is_null() {
             // SAFETY: Memory allocation is safe.
-            to_buffers[i].pv_buffer = unsafe { libc::malloc(buffer_size) }.cast::<c_char>();
+            to_buffer.pv_buffer = unsafe { libc::malloc(buffer_size) }.cast::<c_char>();
 
-            if to_buffers[i].pv_buffer.is_null() {
+            if to_buffer.pv_buffer.is_null() {
                 return Err(Error::new(
                     ErrorKind::InsufficientMemory,
                     format!("coudln't allocate {buffer_size} bytes"),
@@ -116,7 +115,7 @@ pub(crate) unsafe fn copy_to_c_sec_buffer(
         // SAFETY:
         // - `pv_buffer` is guaranteed to be non-null dues to prior check.
         // - The memory region `pv_buffer` points to is valid for writes of `buffer_size` elements.
-        unsafe { p_buffer.copy_to(to_buffers[i].pv_buffer, buffer_size) }
+        unsafe { p_buffer.copy_to(to_buffer.pv_buffer, buffer_size) }
     }
 
     Ok(())

@@ -290,10 +290,19 @@ fn kdf_concat(
 fn compute_kdf_context(key_guid: Uuid, l0: i32, l1: i32, l2: i32) -> Vec<u8> {
     let mut buf = vec![0; 28];
 
-    buf[0..16].copy_from_slice(&key_guid.to_bytes_le());
-    buf[16..20].copy_from_slice(&l0.to_le_bytes());
-    buf[20..24].copy_from_slice(&l1.to_le_bytes());
-    buf[24..28].copy_from_slice(&l2.to_le_bytes());
+    // `buf` is always 28 bytes long, so all ranges below are within bounds.
+    buf.get_mut(0..16)
+        .expect("buf is 28 bytes long")
+        .copy_from_slice(&key_guid.to_bytes_le());
+    buf.get_mut(16..20)
+        .expect("buf is 28 bytes long")
+        .copy_from_slice(&l0.to_le_bytes());
+    buf.get_mut(20..24)
+        .expect("buf is 28 bytes long")
+        .copy_from_slice(&l1.to_le_bytes());
+    buf.get_mut(24..28)
+        .expect("buf is 28 bytes long")
+        .copy_from_slice(&l2.to_le_bytes());
 
     buf
 }
