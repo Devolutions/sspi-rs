@@ -34,6 +34,8 @@ pub fn bind_time_feature_negotiation(flags: BindTimeFeatureNegotiationBitmask) -
 pub enum RpcClientError {
     #[error("invalid encryption offset: {0}")]
     InvalidEncryptionOffset(&'static str),
+    #[error("PDU fragment length ({0}) is smaller than the PDU header size")]
+    InvalidFragLength(u16),
 }
 
 /// Represents structural offsets in RPC PDU.
@@ -279,8 +281,11 @@ impl<'a, T: Transport> RpcClient<'a, T> {
     async fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
         let mut pdu_encoded = pdu.encode_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
-        // Set `frag_len` in the PDU header.
-        pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
+        // Set `frag_len` in the PDU header. The encoded PDU always contains at least a 10-byte header.
+        pdu_encoded
+            .get_mut(8..10)
+            .expect("encoded PDU always contains at least a 10-byte header")
+            .copy_from_slice(&frag_len.to_le_bytes());
 
         if let Some(encrypt_offsets) = encrypt_offsets {
             self.encrypt_pdu(&mut pdu_encoded, encrypt_offsets)?;
@@ -292,9 +297,17 @@ impl<'a, T: Transport> RpcClient<'a, T> {
         let mut pdu_buf = self.stream.read_vec(PduHeader::FIXED_PART_SIZE).await?;
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
+        if usize::from(pdu_header.frag_len) < PduHeader::FIXED_PART_SIZE {
+            Err(RpcClientError::InvalidFragLength(pdu_header.frag_len))?;
+        }
+
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
         self.stream
-            .read_exact(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..])
+            .read_exact(
+                pdu_buf
+                    .get_mut(PduHeader::FIXED_PART_SIZE..)
+                    .expect("frag_len >= PduHeader::FIXED_PART_SIZE due to prior check"),
+            )
             .await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {

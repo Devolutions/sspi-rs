@@ -19,7 +19,12 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
         let written_before = usize::try_from(compressor.total_out())?;
 
         let status = compressor
-            .compress(data_to_compress, &mut buff[total_written..], FlushCompress::Finish)
+            .compress(
+                data_to_compress,
+                buff.get_mut(total_written..)
+                    .expect("total_written is never greater than buff.len()"),
+                FlushCompress::Finish,
+            )
             .map_err(|err| {
                 Error::new(
                     ErrorKind::InternalError,
@@ -34,7 +39,10 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
         let written_len = written_after - written_before;
 
         total_written += written_len;
-        data_to_compress = &data_to_compress[read_len..];
+        // `read_len` is never greater than `data_to_compress.len()`, since `compress()` reads at most its input length.
+        data_to_compress = data_to_compress
+            .get(read_len..)
+            .expect("read_len <= data_to_compress.len()");
 
         match status {
             Status::BufError => {
@@ -48,5 +56,7 @@ pub(crate) fn compress_cert<'c>(cert: &'_ [u8], buff: &'c mut Vec<u8>) -> WinSca
         }
     }
 
-    Ok(&buff[0..total_written])
+    Ok(buff
+        .get(0..total_written)
+        .expect("total_written is never greater than buff.len()"))
 }

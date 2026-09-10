@@ -127,7 +127,10 @@ fn process_get_key_result(response: &Response, security_trailer: Option<Security
             .unwrap_or_default();
     trace!(pad_length);
 
-    let data = &response.stub_data[..pad_length];
+    let data = response
+        .stub_data
+        .get(..pad_length)
+        .expect("pad_length is never greater than stub_data.len()");
 
     unpack_response(data)
 }
@@ -227,7 +230,10 @@ async fn get_key<T: Transport>(
     debug!("RPC connection has been established");
 
     let epm_contexts = get_epm_contexts();
-    let context_id = epm_contexts[0].context_id;
+    let context_id = epm_contexts
+        .first()
+        .expect("get_epm_contexts always returns at least one context")
+        .context_id;
     let bind_ack = rpc.bind(&epm_contexts).await?;
 
     debug!("RPC bind/bind_ack finished successfully");
@@ -257,7 +263,10 @@ async fn get_key<T: Transport>(
     debug!("RPC connection has been established");
 
     let isd_key_contexts = get_isd_key_key_contexts();
-    let context_id = isd_key_contexts[0].context_id;
+    let context_id = isd_key_contexts
+        .first()
+        .expect("get_isd_key_key_contexts always returns at least one context")
+        .context_id;
     let bind_ack = rpc.bind_authenticate(&isd_key_contexts).await?;
 
     debug!("RPC bind/bind_ack finished successfully");

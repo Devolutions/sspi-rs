@@ -53,7 +53,13 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
                 )));
             }
 
-            str::from_utf8(&token_buf[..usize::try_from(token_len).unwrap()])
+            let token_len = usize::try_from(token_len)
+                .map_err(|err| Error::new(ErrorKind::InvalidData, format!("invalid token length: {err:?}")))?;
+            let token_bytes = token_buf
+                .get(..token_len)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidData, "token length exceeds the buffer size"))?;
+
+            str::from_utf8(token_bytes)
                 .map(|token| token.to_owned())
                 .map_err(|err| {
                     Error::new(

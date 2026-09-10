@@ -28,93 +28,115 @@ impl ChannelBindings {
             ));
         }
 
-        let initiator_addr_type = u32::from_le_bytes(data[0..4].try_into().unwrap());
+        let initiator_addr_type = u32::from_le_bytes(
+            data.get(0..4)
+                .expect("data[0..4] is in bounds because of prior check")
+                .try_into()
+                .unwrap(),
+        );
 
-        let initiator_len: usize = u32::from_le_bytes(data[4..8].try_into().unwrap()).try_into()?;
+        let initiator_len: usize = u32::from_le_bytes(
+            data.get(4..8)
+                .expect("data[4..8] is in bounds because of prior check")
+                .try_into()
+                .unwrap(),
+        )
+        .try_into()?;
 
-        let initiator_offset: usize = u32::from_le_bytes(data[8..12].try_into().unwrap()).try_into()?;
-
-        if initiator_offset + initiator_len > data.len() {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!(
-                    "Invalid SEC_CHANNEL_BINDINGS buffer: initiator offset + len ({}) goes outside the buffer ({})",
-                    initiator_offset + initiator_len,
-                    data.len()
-                ),
-            ));
-        }
+        let initiator_offset: usize = u32::from_le_bytes(
+            data.get(8..12)
+                .expect("data[8..12] is in bounds because of prior check")
+                .try_into()
+                .unwrap(),
+        )
+        .try_into()?;
 
         let initiator = if initiator_len > 0 {
-            data[initiator_offset..(initiator_offset + initiator_len)].to_vec()
+            let Some(initiator_data) = data.get(initiator_offset..(initiator_offset + initiator_len)) else {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!(
+                        "Invalid SEC_CHANNEL_BINDINGS buffer: initiator offset + len ({}) goes outside the buffer ({})",
+                        initiator_offset + initiator_len,
+                        data.len()
+                    ),
+                ));
+            };
+
+            initiator_data.to_vec()
         } else {
             Vec::new()
         };
 
         let acceptor_addr_type = u32::from_le_bytes(
-            data[12..16]
+            data.get(12..16)
+                .expect("data[12..16] is in bounds because of prior check")
                 .try_into()
                 .expect("data[12..16] is castable to [u8; 4] because of prior check"),
         );
 
         let acceptor_len: usize = u32::from_le_bytes(
-            data[16..20]
+            data.get(16..20)
+                .expect("data[16..20] is in bounds because of prior check")
                 .try_into()
                 .expect("data[16..20] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
         let acceptor_offset: usize = u32::from_le_bytes(
-            data[20..24]
+            data.get(20..24)
+                .expect("data[20..24] is in bounds because of prior check")
                 .try_into()
                 .expect("data[20..24] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
-        if acceptor_offset + acceptor_len > data.len() {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!(
-                    "Invalid SEC_CHANNEL_BINDINGS buffer: acceptor offset + len ({}) goes outside the buffer ({})",
-                    acceptor_offset + acceptor_len,
-                    data.len()
-                ),
-            ));
-        }
-
         let acceptor = if acceptor_len > 0 {
-            data[acceptor_offset..(acceptor_offset + acceptor_len)].to_vec()
+            let Some(acceptor) = data.get(acceptor_offset..(acceptor_offset + acceptor_len)) else {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!(
+                        "Invalid SEC_CHANNEL_BINDINGS buffer: acceptor offset + len ({}) goes outside the buffer ({})",
+                        acceptor_offset + acceptor_len,
+                        data.len()
+                    ),
+                ));
+            };
+
+            acceptor.to_vec()
         } else {
             Vec::new()
         };
 
         let application_len: usize = u32::from_le_bytes(
-            data[24..28]
+            data.get(24..28)
+                .expect("data[24..28] is in bounds because of prior check")
                 .try_into()
                 .expect("data[24..28] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
         let application_offset: usize = u32::from_le_bytes(
-            data[28..32]
+            data.get(28..32)
+                .expect("data[28..32] is in bounds because of prior check")
                 .try_into()
                 .expect("data[28..32] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
-        if application_offset + application_len > data.len() {
-            return Err(Error::new(
-                ErrorKind::InvalidParameter,
-                format!(
-                    "Invalid SEC_CHANNEL_BINDINGS buffer: application offset + len ({}) goes outside the buffer ({})",
-                    application_offset + application_len,
-                    data.len()
-                ),
-            ));
-        }
-
         let application_data = if application_len > 0 {
-            data[application_offset..(application_offset + application_len)].to_vec()
+            let Some(application_data) = data.get(application_offset..(application_offset + application_len)) else {
+                return Err(Error::new(
+                    ErrorKind::InvalidParameter,
+                    format!(
+                        "Invalid SEC_CHANNEL_BINDINGS buffer: application offset + len ({}) goes outside the buffer ({})",
+                        application_offset + application_len,
+                        data.len()
+                    ),
+                ));
+            };
+
+            application_data.to_vec()
         } else {
             Vec::new()
         };

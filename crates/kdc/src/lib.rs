@@ -190,8 +190,10 @@ pub fn handle_kdc_proxy_message(
 
     let len = reply_message.len();
     let mut kerb_message = vec![0; len + 4];
-    kerb_message[0..4].copy_from_slice(&u32::try_from(len).expect("usize-to-u32").to_be_bytes());
-    kerb_message[4..].copy_from_slice(&reply_message);
+    let (len_buf, message) = kerb_message.split_at_mut(4);
+    // `kerb_message` is always `len + 4` bytes long, so both ranges below are within bounds.
+    len_buf.copy_from_slice(&u32::try_from(len).expect("usize-to-u32").to_be_bytes());
+    message.copy_from_slice(&reply_message);
 
     Ok(KdcProxyMessage {
         kerb_message: ExplicitContextTag0::from(OctetStringAsn1::from(kerb_message)),

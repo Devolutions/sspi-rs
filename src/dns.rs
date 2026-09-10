@@ -204,12 +204,34 @@ cfg_if::cfg_if! {
                     return Err(SrvRecordParseError::RdataTooShort);
                 }
 
-                let priority = u16::from_be_bytes(rdata[0..2].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
-                let weight = u16::from_be_bytes(rdata[2..4].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
-                let port = u16::from_be_bytes(rdata[4..6].try_into().map_err(|_| SrvRecordParseError::RdataTooShort)?);
+                let priority = u16::from_be_bytes(
+                    rdata
+                        .get(0..2)
+                        .expect("SRV priority bytes should be present")
+                        .try_into()
+                        .map_err(|_| SrvRecordParseError::RdataTooShort)?,
+                );
+                let weight = u16::from_be_bytes(
+                    rdata
+                        .get(2..4)
+                        .expect("SRV weight bytes should be present")
+                        .try_into()
+                        .map_err(|_| SrvRecordParseError::RdataTooShort)?,
+                );
+                let port = u16::from_be_bytes(
+                    rdata
+                        .get(4..6)
+                        .expect("SRV port bytes should be present")
+                        .try_into()
+                        .map_err(|_| SrvRecordParseError::RdataTooShort)?,
+                );
                 // A malformed name (truncated label, oversized label, missing root terminator)
                 // is rejected here rather than silently accepted as a partial hostname.
-                let target = dns_decode_target_data_to_string(&rdata[6..])?;
+                let target = dns_decode_target_data_to_string(
+                    rdata
+                        .get(6..)
+                        .expect("SRV target data should be present"),
+                )?;
                 // An empty (root, ".") target per RFC 2782 explicitly means the service is not
                 // available, so there is no usable endpoint. Reject it rather than emit a
                 // "scheme://:port" URL with an empty host.
@@ -248,7 +270,7 @@ cfg_if::cfg_if! {
 
             let mut i = 0;
             while i < v.len() {
-                let size = usize::from(v[i]);
+                let size = usize::from(*v.get(i).expect("DNS label length byte should be present"));
                 if size == 0 {
                     // Root label: the name is complete and correctly terminated.
                     return Ok(names.join("."));
@@ -256,7 +278,10 @@ cfg_if::cfg_if! {
                 if size > MAX_LABEL_LEN || i + 1 + size > v.len() {
                     return Err(SrvRecordParseError::MalformedTarget);
                 }
-                names.push(String::from_utf8_lossy(&v[i+1..i+1+size]));
+                names.push(String::from_utf8_lossy(
+                    v.get(i + 1..i + 1 + size)
+                        .expect("DNS label data should be present"),
+                ));
                 i = i + 1 + size;
             }
 

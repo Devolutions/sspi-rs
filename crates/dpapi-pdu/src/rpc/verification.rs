@@ -179,7 +179,7 @@ impl CommandBitmask {
             )?;
         }
 
-        let bits: [u8; 4] = value.try_into().expect("length is checked above");
+        let bits: [u8; 4] = value.try_into().expect("length is due to prior check");
 
         Ok(Self {
             flags,

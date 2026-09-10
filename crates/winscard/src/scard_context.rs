@@ -494,7 +494,11 @@ impl WinScardContext for ScardContext<'_> {
                     | CurrentState::SCARD_STATE_INUSE
                     | CurrentState::SCARD_STATE_PRESENT
                     | CurrentState::SCARD_STATE_CHANGED;
-                reader_state.atr[0..ATR.len()].copy_from_slice(&ATR);
+                reader_state
+                    .atr
+                    .get_mut(0..ATR.len())
+                    .expect("ATR.len() <= reader_state.atr.len()")
+                    .copy_from_slice(&ATR);
                 reader_state.atr_len = ATR.len();
             } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
                 reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;

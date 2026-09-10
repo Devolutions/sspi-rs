@@ -260,7 +260,9 @@ pub(crate) fn save_decrypted_data<'a>(decrypted: &'a [u8], buffers: &'a mut [Sec
 
         let data_buffer = SecurityBufferRef::find_buffer_mut(buffers, BufferType::Data)?;
 
-        let data = &mut stream_buffer[stream_buffer_len - decrypted_len..];
+        let data = stream_buffer
+            .get_mut(stream_buffer_len - decrypted_len..)
+            .expect("decrypted_len <= stream_buffer_len due to prior check");
         data.copy_from_slice(decrypted);
 
         data_buffer.set_data(data)
