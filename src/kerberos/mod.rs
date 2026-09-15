@@ -222,7 +222,7 @@ impl Kerberos {
                 yield_point.suspend(request).await
             }
             NetworkProtocol::Udp => {
-                if data.len() < 4 {
+                let Some(data) = data.get(0..4) else {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!(
@@ -230,13 +230,13 @@ impl Kerberos {
                             data.len()
                         ),
                     ));
-                }
+                };
 
                 // First 4 bytes are message length and it’s not included when using UDP
                 let request = NetworkRequest {
                     protocol,
                     url: kdc_url,
-                    data: data[4..].to_vec(),
+                    data: data.to_vec(),
                 };
                 yield_point.suspend(request).await
             }
@@ -476,8 +476,12 @@ impl Sspi for Kerberos {
 
         let plaintext_len = decrypted.len() - usize::from(wrap_token.ec) - WrapToken::header_len();
 
-        let plaintext = &decrypted[0..plaintext_len];
-        let wrap_token_header = &decrypted[plaintext_len..];
+        let plaintext = decrypted
+            .get(0..plaintext_len)
+            .expect("plaintext_len <= decrypted.len()");
+        let wrap_token_header = decrypted
+            .get(plaintext_len..)
+            .expect("plaintext_len <= decrypted.len()");
 
         // Find `Data` buffers (including `Data` buffers with the `READONLY_WITH_CHECKSUM` flag).
         let mut data_to_sign =

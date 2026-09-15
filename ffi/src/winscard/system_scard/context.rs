@@ -566,7 +566,12 @@ fn init_scard_cache(scard_logon_params: &ScardLogonParams) -> WinScardResult<BTr
         // Discovered experimentally:
         // The `cert_fingerprint` field contains the first 20 bytes of SHA256 cert hash (instead of SHA1 cert hash).
         let cert_fingerprint = sha2::Sha256::digest(certificate_der);
-        value.extend_from_slice(&cert_fingerprint.as_slice()[0..20]);
+        value.extend_from_slice(
+            cert_fingerprint
+                .as_slice()
+                .get(..20)
+                .expect("SHA256 digest always contains at least 20 bytes"),
+        );
 
         // The value length must be the correct size. The YubiKey Smart Card Minidriver checks it.
         // The `0x6b` was extracted from the `ykmd.dll` and is also equal to the `ykpiv_container` size.

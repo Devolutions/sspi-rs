@@ -166,29 +166,35 @@ fn chuid_to_container_name(chuid: &[u8], tag: [u8; 3]) -> Result<String> {
     }
 
     // Check CHUID tag.
-    if chuid[0] != tlv_tags::DATA {
+    if *chuid.first().expect("chuid_len is due to prior check") != tlv_tags::DATA {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad CHUID tag"));
     }
 
     // Check FASC-N tag.
-    if chuid[BYTES_BEFORE_FASN_N] != tlv_tags::FASC_N {
+    if *chuid.get(BYTES_BEFORE_FASN_N).expect("chuid_len is due to prior check") != tlv_tags::FASC_N {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad FASN-N tag"));
     }
 
     // Check GUID tag.
-    if chuid[BYTES_BEFORE_GUID] != tlv_tags::GUID {
+    if *chuid.get(BYTES_BEFORE_GUID).expect("chuid_len is due to prior check") != tlv_tags::GUID {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad GUID tag"));
     }
 
     // Check the Error Detection Code.
-    if chuid[chuid_len - 2] != tlv_tags::ERROR_DETECTION_CODE || chuid[chuid_len - 1] != 0 {
+    if *chuid.get(chuid_len - 2).expect("chuid_len is due to prior check") != tlv_tags::ERROR_DETECTION_CODE
+        || *chuid.get(chuid_len - 1).expect("chuid_len is due to prior check") != 0
+    {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "invalid CHUID: bad error detection code",
         ));
     }
 
-    let guid = &chuid[BYTES_TO_SKIP..BYTES_TO_SKIP + 16 /* GUID length */];
+    let guid: [u8; 16] = chuid
+        .get(BYTES_TO_SKIP..BYTES_TO_SKIP + 16 /* GUID length */)
+        .expect("chuid_len is due to prior check to contain the GUID")
+        .try_into()
+        .expect("slice length is exactly 16");
 
     // Construct the value Windows would use for a PIV key's container name.
     let container_name = format!(
@@ -240,7 +246,11 @@ fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
     }
 
     // Check status word.
-    if output[output.len() - 2..] != WINSCARD_STATUS_OK {
+    if output
+        .get(output.len() - 2..)
+        .expect("output.len() >= 2 due to prior check")
+        != WINSCARD_STATUS_OK
+    {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -259,15 +269,16 @@ fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
         ));
     }
 
+    // SAFE: `output` length is checked above.
+    let (chuid, status) = output.split_at(output.len() - 2);
+
     // Check status word.
-    if output[output.len() - 2 /* status word */..] != WINSCARD_STATUS_OK {
+    if status != WINSCARD_STATUS_OK {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
         ));
     }
-
-    let chuid = &output[0..output.len() - 2 /* status word */];
 
     chuid_to_container_name(chuid, tag)
 }

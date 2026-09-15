@@ -470,7 +470,11 @@ impl ChecksumValues {
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
         let flag_bytes = flag_bits.to_le_bytes();
-        self.inner[20..24].copy_from_slice(&flag_bytes);
+        // `self.inner` is always 24 bytes long, constructed from `[u8; 24]`.
+        self.inner
+            .get_mut(20..24)
+            .expect("self.inner is 24 bytes long")
+            .copy_from_slice(&flag_bytes);
     }
 
     pub(crate) fn into_inner(self) -> Vec<u8> {
@@ -631,7 +635,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
         if checksum_type == AUTHENTICATOR_CHECKSUM_TYPE
             && let Some(channel_bindings) = channel_bindings
         {
-            if checksum_value.len() < 20 {
+            let Some(channel_binding_buf) = checksum_value.get_mut(4..20) else {
                 return Err(Error::new(
                     ErrorKind::InvalidParameter,
                     format!(
@@ -639,10 +643,10 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
                         checksum_value.len()
                     ),
                 ));
-            }
+            };
             // [Authenticator Checksum](https://datatracker.ietf.org/doc/html/rfc4121#section-4.1.1)
             // 4..19 - Channel binding information (19 inclusive).
-            checksum_value[4..20].copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
+            channel_binding_buf.copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
         }
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
