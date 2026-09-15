@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.3.4](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.3...winscard-v0.3.4)] - 2026-09-15
+
+### <!-- 7 -->Build
+
+- Update `picky` to 7.0.0-rc.26 for compatibility with `sspi` ([#712](https://github.com/Devolutions/sspi-rs/issues/712)) ([847304fe35](https://github.com/Devolutions/sspi-rs/commit/847304fe35859a8aec401a50033e39df4c7235f4))
+
+
+
 ## [[0.3.3](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.2...winscard-v0.3.3)] - 2026-06-26
 
 ### <!-- 7 -->Build

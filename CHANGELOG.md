@@ -6,17 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [[0.21.4](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.3...sspi-v0.21.4)] - 2026-08-07
+## [[0.22.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.3...sspi-v0.22.0)] - 2026-09-15
+
+### <!-- 1 -->Features
+
+- Add PKU2U acceptor support with configurable additional credentials and trusted client and server certificates ([#733](https://github.com/Devolutions/sspi-rs/issues/733)) ([03ee8d0128](https://github.com/Devolutions/sspi-rs/commit/03ee8d012835d9d46f69a181e3b199427c7b0856))
+
+- Expose `Pku2uCredential` and `Pku2uPrivateKey` for PKU2U authentication configuration ([#733](https://github.com/Devolutions/sspi-rs/issues/733)) ([03ee8d0128](https://github.com/Devolutions/sspi-rs/commit/03ee8d012835d9d46f69a181e3b199427c7b0856))
+
+### <!-- 2 -->Improvements
+
+- [**breaking**] Make `credssp::ts_request::TsRequest::buffer_len()` return `Result<u16>` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
+
+- [**breaking**] Change `kerberos::MAX_SIGNATURE` and `kerberos::SECURITY_TRAILER` to `u8` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
 
 ### <!-- 4 -->Bug Fixes
 
-- Remove unnecessary sequence number incrementation ([#717](https://github.com/Devolutions/sspi-rs/issues/717)) ([6d177082ed](https://github.com/Devolutions/sspi-rs/commit/6d177082edba57563f8be310ca4776673b247d82)) 
+- Preserve peer sequence numbers during Kerberos AP-REP and MIC validation ([#717](https://github.com/Devolutions/sspi-rs/issues/717)) ([6d177082ed](https://github.com/Devolutions/sspi-rs/commit/6d177082edba57563f8be310ca4776673b247d82))
 
-- Accept `@` in down-level account names ([#719](https://github.com/Devolutions/sspi-rs/issues/719)) ([4878c50503](https://github.com/Devolutions/sspi-rs/commit/4878c50503b204bba95def66ca7d45e6d396f898)) 
+- Accept `@` in down-level account names ([#719](https://github.com/Devolutions/sspi-rs/issues/719)) ([4878c50503](https://github.com/Devolutions/sspi-rs/commit/4878c50503b204bba95def66ca7d45e6d396f898))
+
+- Map `ClientRequestFlags::EXTENDED_ERROR` and `ClientRequestFlags::IDENTIFY` to Kerberos GSS request flags ([#736](https://github.com/Devolutions/sspi-rs/issues/736)) ([0fb18798dd](https://github.com/Devolutions/sspi-rs/commit/0fb18798ddc40c487e0503631b93879c975af398))
+
+- Generate and validate Kerberos MICs using the negotiated AES key size ([#737](https://github.com/Devolutions/sspi-rs/issues/737)) ([7a3de33074](https://github.com/Devolutions/sspi-rs/commit/7a3de330748fd9f8848507765ec2824be5c56f40))
 
 ### <!-- 7 -->Build
 
-- Move RustCrypto crates to stable and update picky ([#712](https://github.com/Devolutions/sspi-rs/issues/712)) ([847304fe35](https://github.com/Devolutions/sspi-rs/commit/847304fe35859a8aec401a50033e39df4c7235f4)) 
+- [**breaking**] Raise the minimum supported Rust version to 1.93 ([#715](https://github.com/Devolutions/sspi-rs/issues/715)) ([5f85f13a15](https://github.com/Devolutions/sspi-rs/commit/5f85f13a15255cab1185801b64b0437fd9605a3f))
 
 
 
