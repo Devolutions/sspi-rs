@@ -11,7 +11,7 @@ use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryp
 
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 
-fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mic_expected: bool) {
+fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mic_expected: bool) -> usize {
     let ntlm_config = NtlmConfig {
         client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
@@ -63,7 +63,7 @@ fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mi
     let mut input_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut output_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
 
-    for _ in 0..4 {
+    for client_message in 1..=4 {
         let mut builder = client
             .initialize_security_context()
             .with_credentials_handle(&mut client_credentials_handle)
@@ -112,7 +112,7 @@ fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mi
             test_stream_buffer_encryption(&mut client, &mut server);
             test_rpc_request_encryption(&mut client, &mut server);
 
-            return;
+            return client_message;
         }
     }
 
@@ -121,15 +121,31 @@ fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mi
 
 #[test]
 fn spnego_ntlm_client_server() {
-    run_spnego_ntlm(Some(TARGET_NAME), "test_user@example.com", "test_password", true);
+    assert_eq!(
+        run_spnego_ntlm(Some(TARGET_NAME), "test_user@example.com", "test_password", true),
+        3
+    );
 }
 
 #[test]
 fn spnego_ntlm_guest_logon() {
-    run_spnego_ntlm(Some(TARGET_NAME), "/GUEST", "", false);
+    assert_eq!(run_spnego_ntlm(Some(TARGET_NAME), "/GUEST", "", false), 2);
 }
 
 #[test]
 fn spnego_ntlm_without_target_name() {
-    run_spnego_ntlm(None, "test_user@example.com", "test_password", true);
+    assert_eq!(run_spnego_ntlm(None, "test_user@example.com", "test_password", true), 3);
+}
+
+#[test]
+fn spnego_ntlm_rd_gateway() {
+    let client_message = run_spnego_ntlm(
+        Some("HTTP/DESKTOP-8F33RFH.example.com"),
+        "test_user@example.com",
+        "test_password",
+        true,
+    );
+
+    // During RD Gateway auth, we do not wait for the confirmation. So, the resulting amount of messages is 2 instead of 3.
+    assert_eq!(client_message, 2);
 }

@@ -461,9 +461,19 @@ pub async fn initialize_security_context<'a>(
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_neg_ap_req;
 
-            client.state = KerberosState::ApExchange;
+            // "HTTP/" prefix of the target name means RD Gateway authorization.
+            // The RD Gateway server does not send an AP_REP message, so we skip the AP_REP processing and go directly to the final state.
+            if let Some(target_name) = &builder.target_name
+                && target_name.starts_with("HTTP/")
+            {
+                client.state = KerberosState::Final;
 
-            SecurityStatus::ContinueNeeded
+                SecurityStatus::Ok
+            } else {
+                client.state = KerberosState::ApExchange;
+
+                SecurityStatus::ContinueNeeded
+            }
         }
         KerberosState::ApExchange => {
             let input = builder
