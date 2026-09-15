@@ -78,7 +78,7 @@ unused_result_ok = "warn"
 
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }
-winscard = { version = "0.3.4", path = "crates/winscard" }
+winscard = { version = "0.3", path = "crates/winscard" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }

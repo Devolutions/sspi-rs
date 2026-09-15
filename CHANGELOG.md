@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Expose `Pku2uCredential` and `Pku2uPrivateKey` for PKU2U authentication configuration ([#733](https://github.com/Devolutions/sspi-rs/issues/733)) ([03ee8d0128](https://github.com/Devolutions/sspi-rs/commit/03ee8d012835d9d46f69a181e3b199427c7b0856))
 
+### <!-- 2 -->Improvements
+
+- [**breaking**] Make `credssp::ts_request::TsRequest::buffer_len()` return `Result<u16>` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
+
+- [**breaking**] Change `kerberos::MAX_SIGNATURE` and `kerberos::SECURITY_TRAILER` to `u8` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
+
 ### <!-- 4 -->Bug Fixes
 
 - Preserve peer sequence numbers during Kerberos AP-REP and MIC validation ([#717](https://github.com/Devolutions/sspi-rs/issues/717)) ([6d177082ed](https://github.com/Devolutions/sspi-rs/commit/6d177082edba57563f8be310ca4776673b247d82))
@@ -24,17 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Generate and validate Kerberos MICs using the negotiated AES key size ([#737](https://github.com/Devolutions/sspi-rs/issues/737)) ([7a3de33074](https://github.com/Devolutions/sspi-rs/commit/7a3de330748fd9f8848507765ec2824be5c56f40))
 
-### <!-- 5 -->Breaking Changes
-
-- [**breaking**] Raise the minimum supported Rust version to 1.93 ([#715](https://github.com/Devolutions/sspi-rs/issues/715)) ([5f85f13a15](https://github.com/Devolutions/sspi-rs/commit/5f85f13a15255cab1185801b64b0437fd9605a3f))
-
-- [**breaking**] Make `credssp::ts_request::TsRequest::buffer_len()` return `Result<u16>` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
-
-- [**breaking**] Change `kerberos::MAX_SIGNATURE` and `kerberos::SECURITY_TRAILER` to `u8` ([#721](https://github.com/Devolutions/sspi-rs/issues/721)) ([a9dfaec9b0](https://github.com/Devolutions/sspi-rs/commit/a9dfaec9b04ce06a487f6091890f9a1baf620005))
-
 ### <!-- 7 -->Build
 
-- Require `winscard` 0.3.4 for compatible smart-card builds
+- [**breaking**] Raise the minimum supported Rust version to 1.93 ([#715](https://github.com/Devolutions/sspi-rs/issues/715)) ([5f85f13a15](https://github.com/Devolutions/sspi-rs/commit/5f85f13a15255cab1185801b64b0437fd9605a3f))
 
 
 
