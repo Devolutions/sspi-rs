@@ -1207,35 +1207,6 @@ namespace Devolutions.Sspi
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct SecHandle
-    {
-        public ulong dw_lower;
-        public ulong dw_upper;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct SecPkgInfoW
-    {
-        public uint f_capabilities;
-        public ushort w_version;
-        public ushort w_rpc_id;
-        public uint cb_max_token;
-        public ushort* name;
-        public ushort* comment;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct SecPkgInfoA
-    {
-        public uint f_capabilities;
-        public ushort w_version;
-        public ushort w_rpc_id;
-        public uint cb_max_token;
-        public byte* name;
-        public byte* comment;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecurityFunctionTableA
     {
         public uint dwVersion;
@@ -1311,6 +1282,61 @@ namespace Devolutions.Sspi
         public delegate* unmanaged[Cdecl]<SecHandle*, uint, void*, uint, uint> QueryCredentialsAttributesExW;
     }
 
+    /// <summary>
+    ///  [SECURITY_INTEGER](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-security_integer)
+    ///
+    ///  ```c
+    ///  typedef struct _SECURITY_INTEGER {
+    ///    unsigned long LowPart;
+    ///    long          HighPart;
+    ///  } SECURITY_INTEGER, *PSECURITY_INTEGER;
+    ///  ```
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct SecurityInteger
+    {
+        public uint low_part;
+        public int high_part;
+    }
+
+    /// <summary>
+    ///  [SECURITY_STRING](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-security_string)
+    ///
+    ///  The SECURITY_STRING structure is used as the string interface for kernel operations and is a clone
+    ///  of the [UNICODE_STRING](https://learn.microsoft.com/en-us/windows/win32/api/subauth/ns-subauth-unicode_string)
+    ///  structure. This is used for 32-bit mode.
+    ///
+    ///  ```c
+    ///  typedef struct _SECURITY_STRING {
+    ///    unsigned short Length;
+    ///    unsigned short MaximumLength;
+    ///    unsigned short *Buffer;
+    ///  } SECURITY_STRING, *PSECURITY_STRING;
+    ///  ```
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct SecurityString
+    {
+        public ushort length;
+        public ushort maximum_length;
+        public ushort* buffer;
+    }
+
+    /// <summary>
+    ///  [SecBuffer](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer)
+    ///
+    ///  ```c
+    ///  typedef struct _SecBuffer {
+    ///    unsigned long cbBuffer;
+    ///    unsigned long BufferType;
+    /// #if ...
+    ///    char          *pvBuffer;
+    /// #else
+    ///    void SEC_FAR  *pvBuffer;
+    /// #endif
+    ///  } SecBuffer, *PSecBuffer;
+    ///  ```
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecBuffer
     {
@@ -1319,6 +1345,17 @@ namespace Devolutions.Sspi
         public byte* pv_buffer;
     }
 
+    /// <summary>
+    ///  [SecBufferDesc](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbufferdesc)
+    ///
+    ///  ```c
+    ///  typedef struct _SecBufferDesc {
+    ///    unsigned long ulVersion;
+    ///    unsigned long cBuffers;
+    ///    PSecBuffer    pBuffers;
+    ///  } SecBufferDesc, *PSecBufferDesc;
+    ///  ```
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecBufferDesc
     {
@@ -1327,19 +1364,71 @@ namespace Devolutions.Sspi
         public SecBuffer* p_buffers;
     }
 
+    /// <summary>
+    ///  [SecHandle](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sechandle)
+    ///
+    ///  ```c
+    ///  typedef struct _SecHandle {
+    ///    ULONG_PTR dwLower;
+    ///    ULONG_PTR dwUpper;
+    ///  } SecHandle, *PSecHandle;
+    ///  ```
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct SecurityInteger
+    public unsafe partial struct SecHandle
     {
-        public uint low_part;
-        public int high_part;
+        public ulong dw_lower;
+        public ulong dw_upper;
     }
 
+    /// <summary>
+    ///  [SecPkgInfoW](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkginfow)
+    ///
+    ///  ```c
+    ///  typedef struct _SecPkgInfoW {
+    ///    unsigned long  fCapabilities;
+    ///    unsigned short wVersion;
+    ///    unsigned short wRPCID;
+    ///    unsigned long  cbMaxToken;
+    ///    SEC_WCHAR      *Name;
+    ///    SEC_WCHAR      *Comment;
+    ///  } SecPkgInfoW, *PSecPkgInfoW;
+    ///  ```
+    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
-    public unsafe partial struct SecurityString
+    public unsafe partial struct SecPkgInfoW
     {
-        public ushort length;
-        public ushort maximum_length;
-        public ushort* buffer;
+        public uint f_capabilities;
+        public ushort w_version;
+        public ushort w_rpc_id;
+        public uint cb_max_token;
+        public ushort* name;
+        public ushort* comment;
+    }
+
+    /// <summary>
+    ///  [SecPkgInfoA](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkginfoa)
+    ///
+    ///  ```c
+    ///  typedef struct _SecPkgInfoA {
+    ///    unsigned long  fCapabilities;
+    ///    unsigned short wVersion;
+    ///    unsigned short wRPCID;
+    ///    unsigned long  cbMaxToken;
+    ///    SEC_CHAR       *Name;
+    ///    SEC_CHAR       *Comment;
+    ///  } SecPkgInfoA, *PSecPkgInfoA;
+    ///  ```
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public unsafe partial struct SecPkgInfoA
+    {
+        public uint f_capabilities;
+        public ushort w_version;
+        public ushort w_rpc_id;
+        public uint cb_max_token;
+        public byte* name;
+        public byte* comment;
     }
 
     /// <summary>
