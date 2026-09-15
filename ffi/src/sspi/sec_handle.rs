@@ -310,6 +310,10 @@ pub(crate) fn register_credentials(credentials: CredentialsHandle) -> Result<c_u
 
     match registry.entry(handle) {
         hash_map::Entry::Occupied(mut occupied) => {
+            // The password/PIN/other sensitive fields may be updated between calls,
+            // so we also update them internally too.
+            occupied.get_mut().credentials = credentials;
+
             occupied.get_mut().ref_count += 1;
         }
         hash_map::Entry::Vacant(vacant) => {
@@ -519,9 +523,6 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         check_null!(p_auth_data);
         check_null!(ph_credential);
 
-        // SAFETY: `ph_credential` is guaranteed to be non-null due to the prior check.
-        unsafe { log_sec_handle("AcquireCredentialsHandleA: incoming credentials handle", ph_credential) };
-
         let security_package_name =
             // SAFETY:
             // - `psz_package` is guaranteed to be non-null due to the prior check.
@@ -548,6 +549,11 @@ pub unsafe extern "system" fn AcquireCredentialsHandleA(
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
             (*ph_credential).dw_lower = handle;
+        }
+        // We do not use `dw_upper` for the credentials handle, so we reset the field.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
+        unsafe {
+            (*ph_credential).dw_upper = 0;
         }
 
         // SAFETY: `ph_credential` is guaranteed to be non-null due to the prior check.
@@ -589,9 +595,6 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         check_null!(p_auth_data);
         check_null!(ph_credential);
 
-        // SAFETY: `ph_credential` is guaranteed to be non-null due to the prior check.
-        unsafe { log_sec_handle("AcquireCredentialsHandleW: incoming credentials handle", ph_credential) };
-
         let security_package_name = try_execute!(
             // SAFETY:
             // - `psz_package` is guaranteed to be non-null due to the prior check.
@@ -619,6 +622,11 @@ pub unsafe extern "system" fn AcquireCredentialsHandleW(
         // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
         unsafe {
             (*ph_credential).dw_lower = handle;
+        }
+        // We do not use `dw_upper` for the credentials handle, so we reset the field.
+        // SAFETY: `ph_credentials` is guaranteed to be non-null due to the prior check.
+        unsafe {
+            (*ph_credential).dw_upper = 0;
         }
 
         // SAFETY: `ph_credential` is guaranteed to be non-null due to the prior check.
