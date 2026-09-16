@@ -20,6 +20,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::into_raw_ptr;
+use crate::winscard::cache::GlobalScardCache;
 use crate::winscard::scard_handle::{
     WinScardContextHandle, raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context,
 };
@@ -67,7 +68,10 @@ fn release_context(context: ScardContext) {
 }
 
 fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContext>> {
-    Ok(Box::new(PivCardContext::new(SmartCardInfo::try_from_env()?)?))
+    Ok(Box::new(PivCardContext::new(
+        SmartCardInfo::try_from_env()?,
+        Box::new(GlobalScardCache),
+    )?))
 }
 
 /// The `SCardEstablishContext` function establishes the `resource manager context` (the scope) within
@@ -94,10 +98,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
         if use_system_card == "true" {
             info!("Creating system-provided smart card context");
-            Box::new(try_execute!(SystemScardContext::establish(
-                try_execute!(dw_scope.try_into()),
-                true
-            )))
+            Box::new(try_execute!(SystemScardContext::establish(try_execute!(
+                dw_scope.try_into()
+            ))))
         } else {
             info!("Creating emulated smart card context");
             try_execute!(create_emulated_smart_card_context())
@@ -1345,6 +1348,10 @@ unsafe fn write_cache(
         // SAFETY: The `data` parameter is not null (checked above).
         unsafe { from_raw_parts(data, data_len.try_into()?) }.to_vec()
     };
+
+    debug!(
+        "Writing cache for card_id: {card_id:?}, freshness_counter: {freshness_counter}, lookup_name: {lookup_name:?}, data: {data:?}"
+    );
 
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }

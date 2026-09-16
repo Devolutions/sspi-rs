@@ -9,6 +9,7 @@ extern crate tracing;
 mod macros;
 
 mod ber_tlv;
+mod cache;
 mod card_capability_container;
 mod chuid;
 mod compression;
@@ -33,6 +34,7 @@ use core::fmt;
 use core::num::TryFromIntError;
 
 pub use ber_tlv::ber_tlv_length_encoding;
+pub use cache::Cache;
 use iso7816_tlv::TlvError;
 use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;

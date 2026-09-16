@@ -1,6 +1,5 @@
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -9,6 +8,7 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use uuid::Uuid;
 
+use crate::cache::Cache;
 use crate::scard::{SUPPORTED_CONNECTION_PROTOCOL, SmartCard};
 use crate::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
@@ -126,15 +126,21 @@ impl<'a> SmartCardInfo<'a> {
 /// Represents the resource manager context (the scope).
 ///
 /// Currently, we support only one smart card per smart card context.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
-    cache: BTreeMap<String, Vec<u8>>,
+    cache: Box<dyn Cache>,
 }
 
 impl<'a> ScardContext<'a> {
-    /// Creates a new smart card based on the list of smart card readers
-    pub fn new(smart_card_info: SmartCardInfo<'a>) -> WinScardResult<Self> {
+    /// Creates a new smart card based on the list of smart card readers.
+    ///
+    /// The provided [Cache] is seeded with the items that describe the emulated smart card.
+    pub fn new(smart_card_info: SmartCardInfo<'a>, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
+        // The cache items written below describe the card we emulate, so nothing the caller can
+        // learn from the card invalidates them. They are written with the maximal freshness
+        // counter value and thus never become stale.
+
         // Freshness values may vary at different points in time.
         // We do not need to change them in runtime, so we hardcode them here.
         // Those values do not mean anything special. They are just extracted from the real TPM smart card.
@@ -159,8 +165,7 @@ impl<'a> ScardContext<'a> {
             header
         };
 
-        let mut cache = BTreeMap::new();
-        cache.insert("Cached_CardProperty_Read Only Mode_0".into(), {
+        cache.write("Cached_CardProperty_Read Only Mode_0".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -171,7 +176,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Cache Mode_0".into(), {
+        cache.write("Cached_CardProperty_Cache Mode_0".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -182,18 +187,22 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(), {
-            let mut value = CACHE_ITEM_HEADER.to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // true
-            value.extend_from_slice(&1_u32.to_le_bytes());
+        cache.write(
+            "Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(),
+            u32::MAX,
+            {
+                let mut value = CACHE_ITEM_HEADER.to_vec();
+                // unkown flags
+                value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                // actual data len
+                value.extend_from_slice(&4_u32.to_le_bytes());
+                // true
+                value.extend_from_slice(&1_u32.to_le_bytes());
 
-            value
-        });
-        cache.insert("Cached_GeneralFile/mscp/cmapfile".into(), {
+                value
+            },
+        );
+        cache.write("Cached_GeneralFile/mscp/cmapfile".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -215,7 +224,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardmodFile\\Cached_CMAPFile".into(), {
+        cache.write("Cached_CardmodFile\\Cached_CMAPFile".into(), u32::MAX, {
             // CONTAINER_MAP_RECORD:
             let mut value = smart_card_info
                 .container_name
@@ -230,7 +239,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
+        cache.write("Cached_ContainerProperty_PIN Identifier_0".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -241,7 +250,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_ContainerInfo_00".into(), {
+        cache.write("Cached_ContainerInfo_00".into(), u32::MAX, {
             // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
             // RSA 4096 is not defined in the specification so we don't support it.
             // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
@@ -302,7 +311,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_GeneralFile/mscp/kxc00".into(), {
+        cache.write("Cached_GeneralFile/mscp/kxc00".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -324,7 +333,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Capabilities_0".into(), {
+        cache.write("Cached_CardProperty_Capabilities_0".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -338,7 +347,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert("Cached_CardProperty_Key Sizes_2".into(), {
+        cache.write("Cached_CardProperty_Key Sizes_2".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -357,7 +366,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert("Cached_CardProperty_Key Sizes_1".into(), {
+        cache.write("Cached_CardProperty_Key Sizes_1".into(), u32::MAX, {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -376,16 +385,19 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert(
+        cache.write(
             "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
+            u32::MAX,
             PIN_FRESHNESS.to_vec(),
         );
-        cache.insert(
+        cache.write(
             "Cached_CardmodFile\\Cached_File_Freshness".into(),
+            u32::MAX,
             FILE_FRESHNESS.to_vec(),
         );
-        cache.insert(
+        cache.write(
             "Cached_CardmodFile\\Cached_Container_Freshness".into(),
+            u32::MAX,
             CONTAINER_FRESHNESS.to_vec(),
         );
 
@@ -453,15 +465,12 @@ impl WinScardContext for ScardContext<'_> {
         true
     }
 
-    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
-        self.cache
-            .get(key)
-            .map(|item| Cow::Borrowed(item.as_slice()))
-            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
+    fn read_cache(&self, _: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
+        Ok(Cow::Owned(self.cache.read(key, freshness_counter)?))
     }
 
-    fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
-        self.cache.insert(key, value);
+    fn write_cache(&mut self, _: Uuid, freshness_counter: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
+        self.cache.write(key, freshness_counter, value);
 
         Ok(())
     }
