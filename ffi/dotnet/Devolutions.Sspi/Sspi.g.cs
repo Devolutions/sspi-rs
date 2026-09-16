@@ -1226,11 +1226,6 @@ namespace Devolutions.Sspi
 
     }
 
-    /// <summary>
-    ///  Credentials or context handle, as defined by the SSPI API.
-    ///
-    ///  MSDN: [SSPI Handles](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-handles).
-    /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecurityFunctionTableA
     {
@@ -1390,19 +1385,22 @@ namespace Devolutions.Sspi
     }
 
     /// <summary>
-    ///  [SecHandle](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sechandle)
+    ///  Credentials or context handle, as defined by the SSPI API.
     ///
-    ///  ```c
-    ///  typedef struct _SecHandle {
-    ///    ULONG_PTR dwLower;
-    ///    ULONG_PTR dwUpper;
-    ///  } SecHandle, *PSecHandle;
-    ///  ```
+    ///  MSDN: [SSPI Handles](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-handles).
     /// </summary>
     [StructLayout(LayoutKind.Sequential)]
     public unsafe partial struct SecHandle
     {
+        /// <summary>
+        ///  If [SecHandle] is used as a context handle, this field contains the security package ID of the security context.
+        ///  If [SecHandle] is used as a credentials handle, this field contains the credentials handle pointer address.
+        /// </summary>
         public ulong dw_lower;
+        /// <summary>
+        ///  If [SecHandle] is used as a context handle, this field contains the pointer to the security context.
+        ///  If [SecHandle] is used as a credentials handle, this field is unused.
+        /// </summary>
         public ulong dw_upper;
     }
 

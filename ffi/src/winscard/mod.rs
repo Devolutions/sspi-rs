@@ -9,6 +9,7 @@ use crate::utils::into_raw_ptr;
 #[macro_use]
 mod macros;
 mod buf_alloc;
+mod cache;
 pub mod pcsc_lite;
 pub mod piv;
 pub mod scard;
