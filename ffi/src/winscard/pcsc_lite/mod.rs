@@ -121,9 +121,31 @@ impl From<State> for winscard::winscard::State {
 /// The user can use this environment variable to customize the `pcsc-lite` library loading.
 const PCSC_LITE_LIB_PATH_ENV: &str = "PCSC_LITE_LIB_PATH";
 
+/// Windows device type for the smart card IOCTLs.
+///
+/// `#define FILE_DEVICE_SMARTCARD 0x00000031`
+const FILE_DEVICE_SMARTCARD: u32 = 0x0000_0031;
+
+/// Translates a Windows smart card control code into its `pcsc-lite` counterpart.
+///
+/// Windows encodes `SCARD_CTL_CODE(code)` as `0x00310000 | (code << 2)`, `pcsc-lite` as
+/// `0x42000000 + code`. RDP servers always send the Windows encoding.
+///
+/// Control codes that do not belong to the smart card device type are returned unchanged.
+pub fn win_scard_ctl_code_to_pcsc_lite(control_code: u32) -> u32 {
+    // `#define DEVICE_TYPE_FROM_CTL_CODE(ctrlCode) (((DWORD)(ctrlCode & 0xFFFF0000)) >> 16)`
+    if (control_code >> 16) != FILE_DEVICE_SMARTCARD {
+        return control_code;
+    }
+
+    // `#define FUNCTION_FROM_CTL_CODE(ctrlCode) ((DWORD)((ctrlCode >> 2) & 0xFFF))`
+    0x4200_0000 + ((control_code >> 2) & 0xFFF)
+}
+
 pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
-    let pcsc_lite_path = if let Ok(lib_path) = env::var(PCSC_LITE_LIB_PATH_ENV) {
-        Cow::Owned(lib_path)
+    let user_selected_lib = env::var(PCSC_LITE_LIB_PATH_ENV).ok();
+    let pcsc_lite_path = if let Some(lib_path) = user_selected_lib.as_deref() {
+        Cow::Borrowed(lib_path)
     } else {
         #[cfg(target_os = "macos")]
         {
@@ -147,16 +169,22 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         ));
     }
 
-    macro_rules! load_fn {
-        ($func_name:literal) => {{
-            let fn_name = CString::new($func_name).expect("CString creation should not fail");
+    macro_rules! load_sym {
+        ($sym_name:literal) => {{
+            let sym_name = CString::new($sym_name).expect("CString creation should not fail");
 
             // SAFETY:
             // - We've checked the `handle` above.
-            // - `fn_name` is correct and hardcoded in the code.
-            let fn_ptr = unsafe { dlsym(handle, fn_name.as_ptr()) };
-            debug!(?fn_ptr, $func_name);
+            // - `sym_name` is correct and hardcoded in the code.
+            let sym_ptr = unsafe { dlsym(handle, sym_name.as_ptr()) };
+            debug!(?sym_ptr, $sym_name);
 
+            sym_ptr
+        }};
+    }
+
+    macro_rules! transmute_fn {
+        ($fn_ptr:expr) => {{
             // SAFETY:
             // - `*mut c_void` and target transmute type are both C pointers. They have the same layout.
             //   Thus, we can safely transmute the C pointer to the C function pointer.
@@ -165,8 +193,15 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
             unsafe {
                 // Not great to silent, but mostly fine in this context.
                 #[expect(clippy::missing_transmute_annotations)]
-                std::mem::transmute::<*mut libc::c_void, _>(fn_ptr)
+                std::mem::transmute::<*mut libc::c_void, _>($fn_ptr)
             }
+        }};
+    }
+
+    macro_rules! load_fn {
+        ($func_name:literal) => {{
+            let fn_ptr = load_sym!($func_name);
+            transmute_fn!(fn_ptr)
         }};
     }
 
@@ -189,6 +224,34 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         }};
     }
 
+    // `PCSC.framework` exports both the legacy pcsc-lite 1.1.2 `SCardControl` (5 parameters) and
+    // `SCardControl132` (7 parameters); its header redirects the former to the latter. A real pcsc-lite
+    // build exports only `SCardControl`, with 7 parameters. Since both libraries can be loaded here, and
+    // the two `SCardControl` variants are indistinguishable by symbol name, only accept the legacy name
+    // from a library the user pointed us at explicitly.
+    #[cfg(target_os = "macos")]
+    let scard_control = {
+        let mut fn_ptr = load_sym!("SCardControl132");
+
+        if fn_ptr.is_null() && user_selected_lib.is_some() {
+            fn_ptr = load_sym!("SCardControl");
+        }
+
+        if fn_ptr.is_null() {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                format!(
+                    "pcsc-lite library does not export SCardControl132: {}",
+                    pcsc_lite_path.to_str().unwrap()
+                ),
+            ));
+        }
+
+        transmute_fn!(fn_ptr)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let scard_control = load_fn!("SCardControl");
+
     Ok(PcscLiteApiFunctionTable {
         SCardEstablishContext: load_fn!("SCardEstablishContext"),
         SCardReleaseContext: load_fn!("SCardReleaseContext"),
@@ -199,7 +262,7 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         SCardEndTransaction: load_fn!("SCardEndTransaction"),
         SCardStatus: load_fn!("SCardStatus"),
         SCardGetStatusChange: load_fn!("SCardGetStatusChange"),
-        SCardControl: load_fn!("SCardControl"),
+        SCardControl: scard_control,
         SCardGetAttrib: load_fn!("SCardGetAttrib"),
         SCardSetAttrib: load_fn!("SCardSetAttrib"),
         SCardTransmit: load_fn!("SCardTransmit"),
@@ -213,4 +276,37 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         g_rgSCardT1Pci: load_io_request!("g_rgSCardT1Pci"),
         g_rgSCardRawPci: load_io_request!("g_rgSCardRawPci"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::win_scard_ctl_code_to_pcsc_lite;
+
+    #[test]
+    fn get_feature_request_control_code_is_translated() {
+        // `#define CM_IOCTL_GET_FEATURE_REQUEST SCARD_CTL_CODE(3400)`
+        assert_eq!(0x4200_0D48, win_scard_ctl_code_to_pcsc_lite(0x0031_3520));
+    }
+
+    #[test]
+    fn smart_card_control_codes_are_translated() {
+        // `#define IOCTL_SMARTCARD_POWER SCARD_CTL_CODE(1)`
+        assert_eq!(0x4200_0001, win_scard_ctl_code_to_pcsc_lite(0x0031_0004));
+        // `#define IOCTL_SMARTCARD_GET_ATTRIBUTE SCARD_CTL_CODE(2)`
+        assert_eq!(0x4200_0002, win_scard_ctl_code_to_pcsc_lite(0x0031_0008));
+        // `#define IOCTL_SMARTCARD_GET_STATE SCARD_CTL_CODE(14)`
+        assert_eq!(0x4200_000E, win_scard_ctl_code_to_pcsc_lite(0x0031_0038));
+    }
+
+    #[test]
+    fn pcsc_lite_control_codes_are_passed_through() {
+        assert_eq!(0x4200_0D48, win_scard_ctl_code_to_pcsc_lite(0x4200_0D48));
+        assert_eq!(0x4200_0001, win_scard_ctl_code_to_pcsc_lite(0x4200_0001));
+    }
+
+    #[test]
+    fn non_smart_card_control_codes_are_passed_through() {
+        // `FILE_DEVICE_KEYBOARD`.
+        assert_eq!(0x000B_0004, win_scard_ctl_code_to_pcsc_lite(0x000B_0004));
+    }
 }
