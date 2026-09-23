@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
 #[cfg(target_os = "windows")]
 use ffi_types::winscard::functions::SCardApiFunctionTable;
@@ -25,6 +25,34 @@ enum HandleState {
     Disconnected,
     /// The card is connected and ready to use.
     Connected(ScardHandle),
+}
+
+/// Converts the [ControlCode] into the value expected by the underlying smart card API.
+#[cfg(target_os = "windows")]
+fn native_control_code(code: ControlCode) -> u32 {
+    code
+}
+
+/// Converts the [ControlCode] into the value expected by the underlying smart card API.
+///
+/// See [`crate::winscard::pcsc_lite::win_scard_ctl_code_to_pcsc_lite`].
+#[cfg(not(target_os = "windows"))]
+fn native_control_code(code: ControlCode) -> crate::winscard::pcsc_lite::Dword {
+    // `Dword` is `u32` on macOS and `c_ulong` elsewhere.
+    #[allow(clippy::useless_conversion)]
+    crate::winscard::pcsc_lite::win_scard_ctl_code_to_pcsc_lite(code).into()
+}
+
+/// Returns a pointer to the `SCardControl` input buffer.
+///
+/// An empty slice has a dangling pointer, so a null pointer is returned instead. Both `WinSCard`
+/// and `pcsc-lite` allow `pbSendBuffer` to be null when `cbSendLength` is 0.
+fn control_input_ptr(input: &[u8]) -> *const core::ffi::c_void {
+    if input.is_empty() {
+        null()
+    } else {
+        input.as_ptr().cast()
+    }
 }
 
 /// Represents a system-provided smart card.
@@ -217,22 +245,27 @@ impl WinScard for SystemScard {
     // What if the `code` will be corresponding to operation with output and
     // user will use this method instead of `control_with_output`? Then safety conditions will be violated.
     fn control(&mut self, code: ControlCode, input: &[u8]) -> WinScardResult<()> {
+        let control_code = native_control_code(code);
+        let input_ptr = control_input_ptr(input);
+        // pcsc-lite dereferences `lpBytesReturned` unconditionally.
+        let mut bytes_returned = 0;
+
         try_execute!(
             // SAFETY:
             // - `h_card` is set by a previous call to `SCardConnectA`.
-            // - `input.as_ptr()` is a valid, readable pointer to a
+            // - `input_ptr` is null or a valid, readable pointer to a slice of `input.len()` bytes.
             // - `lpOutBuffer` can be null.
             // - `cbOutBufferSize` is 0 because `lpOutBuffer` is null.
-            // - `lpBytesReturned` can be null if `lpOutBuffer` is null.
+            // - `&mut bytes_returned` is a properly-aligned, writable pointer to a local variable.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code.into(),
-                    input.as_ptr().cast(),
+                    control_code,
+                    input_ptr,
                     input.len().try_into()?,
                     null_mut(),
                     0,
-                    null_mut(),
+                    &mut bytes_returned,
                 )
             },
             "SCardControl failed"
@@ -242,21 +275,23 @@ impl WinScard for SystemScard {
     }
 
     fn control_with_output(&mut self, code: ControlCode, input: &[u8], output: &mut [u8]) -> WinScardResult<usize> {
+        let control_code = native_control_code(code);
+        let input_ptr = control_input_ptr(input);
         let mut receive_len = 0;
         let output_buf_len = output.len().try_into()?;
 
         try_execute!(
             // SAFETY:
             // - `h_card` is set by a previous call to `SCardConnectA`.
-            // - `input.as_ptr()` is a valid, readable pointer to a slice.
+            // - `input_ptr` is null or a valid, readable pointer to a slice of `input.len()` bytes.
             // - `output` is a properly-aligned, writable pointer to a valid slice with size of `output_buf_len`.
             // - `output_buf_len` is valid length for `output` buffer.
             // - `&mut receive_len` is a properly-aligned, writable pointer to a local variable.
             unsafe {
                 (self.api.SCardControl)(
                     self.h_card()?,
-                    code.into(),
-                    input.as_ptr().cast(),
+                    control_code,
+                    input_ptr,
                     input.len().try_into()?,
                     output.as_mut_ptr().cast(),
                     output_buf_len,
@@ -441,5 +476,24 @@ impl WinScard for SystemScard {
         self.h_card = HandleState::Disconnected;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::null;
+
+    use super::control_input_ptr;
+
+    #[test]
+    fn empty_control_input_is_a_null_pointer() {
+        let empty: &[u8] = &[];
+        assert_eq!(null(), control_input_ptr(empty));
+    }
+
+    #[test]
+    fn non_empty_control_input_points_to_the_data() {
+        let input = [1_u8, 2, 3];
+        assert_eq!(input.as_ptr().cast(), control_input_ptr(&input));
     }
 }
