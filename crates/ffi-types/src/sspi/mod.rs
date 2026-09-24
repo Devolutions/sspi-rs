@@ -4,7 +4,7 @@
 
 mod functions;
 
-use core::ffi::{c_char, c_void};
+use core::ffi::{c_char, c_ulonglong, c_void};
 
 pub use functions::*;
 
@@ -248,19 +248,18 @@ pub const SEC_WINNT_AUTH_IDENTITY_UNICODE: u32 = 0x2;
 pub const SEC_WINNT_AUTH_IDENTITY_VERSION: u32 = 0x200;
 pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
 
-/// [SecHandle](https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-sechandle)
+/// Credentials or context handle, as defined by the SSPI API.
 ///
-/// ```c
-/// typedef struct _SecHandle {
-///   ULONG_PTR dwLower;
-///   ULONG_PTR dwUpper;
-/// } SecHandle, *PSecHandle;
-/// ```
+/// MSDN: [SSPI Handles](https://learn.microsoft.com/en-us/windows/win32/secauthn/sspi-handles).
 #[derive(Debug)]
 #[repr(C)]
 pub struct SecHandle {
-    pub dw_lower: u64,
-    pub dw_upper: u64,
+    /// If [SecHandle] is used as a context handle, this field contains the security package ID of the security context.
+    /// If [SecHandle] is used as a credentials handle, this field contains the credentials handle pointer address.
+    pub dw_lower: c_ulonglong,
+    /// If [SecHandle] is used as a context handle, this field contains the pointer to the security context.
+    /// If [SecHandle] is used as a credentials handle, this field is unused.
+    pub dw_upper: c_ulonglong,
 }
 
 pub type PCredHandle = *mut SecHandle;
