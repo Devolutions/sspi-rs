@@ -499,10 +499,12 @@ impl DecodeOwned for EntryHandle {
 
         let entry_handle_buf = src.read_slice(Self::FIXED_PART_SIZE);
 
+        let (buf, uuid) = entry_handle_buf.split_at(4);
+
         Ok(if entry_handle_buf != Self::EMPTY_ENTRY_HANDLE {
             Self(Some((
-                u32::from_le_bytes(entry_handle_buf[0..4].try_into().unwrap()),
-                decode_uuid(&mut ReadCursor::new(&entry_handle_buf[4..]))?,
+                u32::from_le_bytes(buf.try_into().expect("4-byte buffer")),
+                decode_uuid(&mut ReadCursor::new(uuid))?,
             )))
         } else {
             Self(None)

@@ -340,15 +340,15 @@ pub async fn initialize_security_context<'a>(
                     .send_for_realm(yield_point, &realm, &serialize_message(&tgs_req)?)
                     .await?;
 
-                if response.len() < 4 {
+                let Some(response) = response.get(4..) else {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         "the KDC reply message is too small: expected at least 4 bytes",
                     ));
-                }
+                };
 
                 // first 4 bytes are message len. skipping them
-                let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+                let mut d = picky_asn1_der::Deserializer::new_from_bytes(response);
                 let tgs_rep: KrbResult<TgsRep> = KrbResult::deserialize(&mut d)?;
                 let tgs_rep = tgs_rep?;
 

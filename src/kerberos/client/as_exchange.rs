@@ -23,14 +23,14 @@ pub(crate) async fn as_exchange(
 
     // first 4 bytes are message len. skipping them
     {
-        if response.len() < 4 {
+        let Some(response) = response.get(4..) else {
             return Err(Error::new(
                 ErrorKind::InternalError,
                 "the KDC reply message is too small: expected at least 4 bytes",
             ));
-        }
+        };
 
-        let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+        let mut d = picky_asn1_der::Deserializer::new_from_bytes(response);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
         if as_rep.is_ok() {
@@ -56,15 +56,15 @@ pub(crate) async fn as_exchange(
 
     let response = client.send(yield_point, &serialize_message(&as_req)?).await?;
 
-    if response.len() < 4 {
+    let Some(response) = response.get(4..) else {
         return Err(Error::new(
             ErrorKind::InternalError,
             "the KDC reply message is too small: expected at least 4 bytes",
         ));
-    }
+    };
 
     // first 4 bytes are message len. skipping them
-    let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
+    let mut d = picky_asn1_der::Deserializer::new_from_bytes(response);
 
     Ok(KrbResult::<AsRep>::deserialize(&mut d)?.inspect_err(|err| error!(?err, "AS exchange error"))?)
 }

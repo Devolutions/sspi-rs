@@ -75,6 +75,7 @@ panic = "warn"
 rc_mutex = "warn"
 suspicious_xor_used_as_pow = "warn"
 unused_result_ok = "warn"
+indexing_slicing = "warn"
 
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }

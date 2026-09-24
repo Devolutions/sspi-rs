@@ -507,7 +507,14 @@ fn validate_negoex_message(
         return Err(Error::new(ErrorKind::InvalidToken, "invalid NEGOEX message length"));
     }
 
-    Ok((&buffer[..message_len], &buffer[message_len..]))
+    Ok((
+        buffer
+            .get(..message_len)
+            .expect("message_len <= buffer.len() due to prior check"),
+        buffer
+            .get(message_len..)
+            .expect("message_len <= buffer.len() due to prior check"),
+    ))
 }
 
 fn decode_nego_message(buffer: &[u8], expected_type: MessageType) -> Result<(Nego, &[u8])> {
@@ -599,8 +606,8 @@ fn decrypt_sealed_wrap(
                 data.extend_from_slice(buffer.data());
             } else {
                 let end = plaintext_offset + buffer.buf_len();
-                if end <= plaintext.len() {
-                    data.extend_from_slice(&plaintext[plaintext_offset..end]);
+                if let Some(plaintext) = plaintext.get(plaintext_offset..end) {
+                    data.extend_from_slice(plaintext);
                     plaintext_offset = end;
                 }
             }
@@ -671,8 +678,8 @@ fn decrypt_integrity_only_wrap(
                 data.extend_from_slice(buffer.data());
             } else {
                 let end = plaintext_offset + buffer.buf_len();
-                if end <= plaintext.len() {
-                    data.extend_from_slice(&plaintext[plaintext_offset..end]);
+                if let Some(plaintext) = plaintext.get(plaintext_offset..end) {
+                    data.extend_from_slice(plaintext);
                     plaintext_offset = end;
                 }
             }
@@ -1408,7 +1415,11 @@ impl Pku2u {
                 check_auth_scheme!(acceptor_exchange.auth_scheme, self.auth_scheme);
 
                 let exchange_message_len = buffer.len() - acceptor_verify_data.len();
-                self.negoex_messages.extend_from_slice(&buffer[0..exchange_message_len]);
+                self.negoex_messages.extend_from_slice(
+                    buffer
+                        .get(0..exchange_message_len)
+                        .expect("exchange_message_len <= buffer.len()"),
+                );
 
                 let (acceptor_verify, tail) = decode_verify_message(acceptor_verify_data)?;
                 ensure_no_negoex_tail(tail)?;

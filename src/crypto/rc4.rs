@@ -16,7 +16,10 @@ impl Rc4 {
         }
         let mut j = 0usize;
         for i in 0..256 {
-            j = (j + usize::from(state[i]) + usize::from(key[i % key.len()])) % 256;
+            j = (j
+                + usize::from(*state.get(i).expect("i < 256"))
+                + usize::from(*key.get(i % key.len()).expect("i % key.len() < key.len()")))
+                % 256;
             state.swap(i, j);
         }
 
@@ -28,12 +31,14 @@ impl Rc4 {
         let mut output = Vec::with_capacity(message.len());
         while output.capacity() > output.len() {
             self.i = (self.i + 1) % 256;
-            self.j = (self.j + usize::from(self.state[self.i])) % 256;
+            self.j = (self.j + usize::from(*self.state.get(self.i).expect("self.i < 256"))) % 256;
             self.state.swap(self.i, self.j);
-            let idx_k = (usize::from(self.state[self.i]) + usize::from(self.state[self.j])) % 256;
-            let k = self.state[idx_k];
+            let idx_k = (usize::from(*self.state.get(self.i).expect("self.i < 256"))
+                + usize::from(*self.state.get(self.j).expect("self.j < 256")))
+                % 256;
+            let k = *self.state.get(idx_k).expect("idx_k < 256");
             let idx_msg = output.len();
-            output.push(k ^ message[idx_msg]);
+            output.push(k ^ *message.get(idx_msg).expect("idx_msg < message.len()"));
         }
 
         output

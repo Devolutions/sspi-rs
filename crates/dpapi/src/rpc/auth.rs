@@ -181,7 +181,7 @@ impl<'a> AuthProvider<'a> {
 
         self.security_context.decrypt_message(&mut message)?;
 
-        Ok(message[1].data().to_vec())
+        Ok(message.get(1).expect("message always has 4 elements").data().to_vec())
     }
 
     /// Decrypts input buffers using inner SSPI security context.
@@ -202,7 +202,7 @@ impl<'a> AuthProvider<'a> {
 
         self.security_context.decrypt_message(&mut message)?;
 
-        Ok(message[1].data().to_vec())
+        Ok(message.get(1).expect("message always has 2 elements").data().to_vec())
     }
 
     /// Performs one step in authorization process.

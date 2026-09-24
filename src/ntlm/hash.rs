@@ -96,9 +96,9 @@ impl TryFrom<&str> for NtlmHash {
         }
 
         let mut hash = [0u8; 16];
-        for i in 0..16 {
-            let hex_byte = &value[(i * 2)..(i * 2 + 2)];
-            hash[i] = u8::from_str_radix(hex_byte, 16).map_err(|_| NtlmHashError::Hex)?;
+        for (index, hash_byte) in hash.iter_mut().enumerate() {
+            let hex_byte = &value[(index * 2)..(index * 2 + 2)];
+            *hash_byte = u8::from_str_radix(hex_byte, 16).map_err(|_| NtlmHashError::Hex)?;
         }
 
         Ok(NtlmHash(hash))

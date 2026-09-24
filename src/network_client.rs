@@ -108,11 +108,15 @@ pub mod reqwest_network_client {
             let frame_len = usize::try_from(len)?
                 .checked_add(4)
                 .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "KDC TCP response length overflow"))?;
+
             let mut buf = vec![0; frame_len];
-            buf[0..4].copy_from_slice(&(len.to_be_bytes()));
+            // `frame_len == len + 4`, so `buf` is always at least 4 bytes long.
+            let (len_buf, stream_buf) = buf.split_at_mut(4);
+
+            len_buf.copy_from_slice(&(len.to_be_bytes()));
 
             stream
-                .read_exact(&mut buf[4..])
+                .read_exact(stream_buf)
                 .map_err(|e| Error::new(ErrorKind::NoAuthenticatingAuthority, format!("{e:?}")))?;
 
             Ok(buf)
@@ -140,7 +144,8 @@ pub mod reqwest_network_client {
 
             let mut reply_buf = Vec::with_capacity(n + 4);
             reply_buf.extend_from_slice(&(u32::try_from(n)?).to_be_bytes());
-            reply_buf.extend_from_slice(&buf[0..n]);
+            // `recv()` never returns more bytes than the buffer size.
+            reply_buf.extend_from_slice(buf.get(0..n).expect("n <= buf.len()"));
 
             Ok(reply_buf)
         }

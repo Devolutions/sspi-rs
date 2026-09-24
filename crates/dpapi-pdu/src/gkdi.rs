@@ -325,7 +325,10 @@ fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
     let mut key = vec![0; key_length];
 
     let start = key_length - buf.len();
-    key[start..].copy_from_slice(buf);
+    // `start <= key_length` because `buf.len() <= key_length` is checked above.
+    key.get_mut(start..)
+        .expect("start <= key_length due to prior check")
+        .copy_from_slice(buf);
 
     mem::swap(&mut key, buf);
 
