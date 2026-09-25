@@ -2001,7 +2001,7 @@ mod tests {
     use crate::sspi::sec_handle::{
         AcquireCredentialsHandleA, AcquireCredentialsHandleW, CredentialsHandle, CredentialsRegistry,
         InitializeSecurityContextA, InitializeSecurityContextW, MAX_RELEASED_CREDENTIALS, QueryContextAttributesW,
-        SecHandle, SetCredentialsAttributesW, SspiHandle, credentials_by_handle,
+        SecHandle, SecurityPackageId, SetCredentialsAttributesW, SspiHandle, credentials_by_handle,
     };
     use crate::sspi::sec_pkg_info::{
         EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, PSecPkgInfoA, PSecPkgInfoW, QuerySecurityPackageInfoA,
@@ -2073,8 +2073,8 @@ mod tests {
     /// handle must be released using the `DeleteSecurityContext` function.
     fn ntlm_sec_handle() -> SecHandle {
         SecHandle {
-            dw_lower: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::Ntlm(Ntlm::new())))),
-            dw_upper: into_sec_handle_field(into_raw_ptr(sspi::ntlm::PACKAGE_INFO.name.to_string())),
+            dw_lower: SecurityPackageId::Ntlm.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::Ntlm(Ntlm::new())))),
         }
     }
 
@@ -2083,19 +2083,13 @@ mod tests {
     /// Simulates the handle created by the `p_ctxt_handle_to_sspi_context` function. The returned
     /// handle must be released using the `DeleteSecurityContext` function.
     fn kerberos_sec_handle() -> SecHandle {
+        // We use the Kerberos fake_client because some context attributes can be queried only
+        // on an established security context.
         let kerberos_client = sspi::kerberos::test_data::fake_client();
 
-        // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
-        // We use Kerberos fake_client because we need established security context to query the session key.
-        let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-        let sspi_context_ptr = into_raw_ptr(sspi_context).expose_provenance();
-
         SecHandle {
-            dw_lower: sspi_context_ptr.try_into().unwrap(),
-            dw_upper: into_raw_ptr(sspi::kerberos::PACKAGE_INFO.name.to_string())
-                .expose_provenance()
-                .try_into()
-                .unwrap(),
+            dw_lower: SecurityPackageId::Kerberos.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::Kerberos(kerberos_client)))),
         }
     }
 
@@ -2110,10 +2104,8 @@ mod tests {
         let credssp = SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new())).expect("CredSSP client creation");
 
         SecHandle {
-            dw_lower: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::CredSsp(credssp)))),
-            dw_upper: into_sec_handle_field(into_raw_ptr(
-                sspi::credssp::sspi_cred_ssp::PACKAGE_INFO.name.to_string(),
-            )),
+            dw_lower: SecurityPackageId::CredSsp.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::CredSsp(credssp)))),
         }
     }
 
