@@ -1093,11 +1093,14 @@ unsafe fn query_context_attributes_common(
                 }
             }
             SECPKG_ATTR_SERVER_AUTH_FLAGS => {
-                let flags = SecPkgContextFlags { flags: 0 };
+                // The caller owns the `SecPkgContextFlags` structure and passes a pointer to it,
+                // so the flags value is written in place.
+                // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secpkgcontext_flags
+                let sec_context_flags = p_buffer.cast::<SecPkgContextFlags>();
 
-                let sec_context_flags = p_buffer.cast::<*mut SecPkgContextFlags>();
-                // SAFETY: `sec_context_flags` is non-null because it was cast from a non-null `p_buffer`..
-                unsafe { *sec_context_flags = into_raw_ptr(flags); }
+                // SAFETY: `sec_context_flags` is non-null because it was cast from a non-null `p_buffer`.
+                let sec_context_flags = unsafe { sec_context_flags.as_mut() }.expect("sec_context_flags pointer should not be null");
+                sec_context_flags.flags = 0;
 
                 return 0;
             }
@@ -1910,16 +1913,21 @@ mod tests {
     use std::ffi::CStr;
     use std::ptr::{self, null, null_mut};
 
-    use libc::c_void;
+    use ffi_types::sspi::{
+        CertTrustStatus, SECPKG_ATTR_CERT_TRUST_STATUS, SECPKG_ATTR_PACKAGE_INFO, SECPKG_ATTR_SERVER_AUTH_FLAGS,
+        SECPKG_ATTR_SIZES, SecPkgContextFlags, SecPkgContextSizes,
+    };
+    use libc::{c_ulonglong, c_void};
     use num_traits::ToPrimitive;
     use sspi::SecurityStatus::ContinueNeeded;
-    use sspi::{ErrorKind, U16CString, Utf16String, Utf16StringExt};
+    use sspi::credssp::SspiContext;
+    use sspi::{ErrorKind, Ntlm, PackageCapabilities, SecurityStatus, U16CString, Utf16String, Utf16StringExt};
 
-    use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
+    use crate::sspi::common::{AcceptSecurityContext, DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{
         AcquireCredentialsHandleA, AcquireCredentialsHandleW, InitializeSecurityContextA, InitializeSecurityContextW,
-        SecHandle, SecurityPackageId,
+        QueryContextAttributesW, SecHandle, SecurityPackageId, SspiHandle,
     };
     use crate::sspi::sec_pkg_info::{
         EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, PSecPkgInfoA, PSecPkgInfoW, QuerySecurityPackageInfoA,
@@ -1929,8 +1937,103 @@ mod tests {
         SEC_WINNT_AUTH_IDENTITY_ANSI, SEC_WINNT_AUTH_IDENTITY_UNICODE, SEC_WINNT_AUTH_IDENTITY_VERSION,
         SecWinntAuthIdentityA, SecWinntAuthIdentityExW, SecWinntAuthIdentityW,
     };
+    use crate::utils::into_raw_ptr;
 
     extern "system" fn dummy(_: *mut c_void, _: *mut c_void, _: u32, _: *mut *mut c_void, _: *mut i32) {}
+
+    /// Checks whether the status is one of the security context establishment statuses.
+    fn is_handshake_status(status: u32) -> bool {
+        [
+            SecurityStatus::Ok,
+            ContinueNeeded,
+            SecurityStatus::CompleteNeeded,
+            SecurityStatus::CompleteAndContinue,
+        ]
+        .iter()
+        .any(|expected| status == expected.to_u32().expect("SecurityStatus is castable to u32"))
+    }
+
+    /// Asserts that the NTLM security context reports the expected sizes.
+    ///
+    /// Used to ensure the established security context is usable.
+    fn assert_ntlm_context_sizes(sec_context: &mut SecHandle) {
+        let mut sizes = SecPkgContextSizes {
+            cb_max_token: 0,
+            cb_max_signature: 0,
+            cb_block_size: 0,
+            cb_security_trailer: 0,
+        };
+
+        let status =
+            unsafe { QueryContextAttributesW(sec_context, SECPKG_ATTR_SIZES, ptr::from_mut(&mut sizes).cast()) };
+        assert_eq!(status, 0);
+
+        assert_eq!(sizes.cb_max_token, 2010);
+        assert_eq!(sizes.cb_max_signature, 16);
+        assert_eq!(sizes.cb_block_size, 0);
+        assert_eq!(sizes.cb_security_trailer, 16);
+    }
+
+    const PACKAGE_ID_NONE: u16 = 0xFFFF;
+
+    const SECURITY_NATIVE_DREP: u32 = 0x10;
+    const SECPKG_CRED_INBOUND: u32 = 1;
+    const SECPKG_CRED_OUTBOUND: u32 = 2;
+    const SECBUFFER_TOKEN: u32 = 2;
+
+    /// Maximum number of the security context initialization steps.
+    ///
+    /// Used to avoid infinite loops in tests in case the handshake never converges.
+    const MAX_AUTH_STEPS: usize = 10;
+
+    /// Turns the allocated object into a raw pointer address suitable for [SecHandle] fields.
+    fn into_sec_handle_field(ptr: *mut impl Sized) -> c_ulonglong {
+        ptr.expose_provenance()
+            .try_into()
+            .expect("ptr address must fit into c_ulonglong")
+    }
+
+    /// Creates a security context handle with the NTLM security context inside.
+    ///
+    /// Simulates the handle created by the `p_ctxt_handle_to_sspi_context` function. The returned
+    /// handle must be released using the `DeleteSecurityContext` function.
+    fn ntlm_sec_handle() -> SecHandle {
+        SecHandle {
+            dw_lower: SecurityPackageId::Ntlm.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::Ntlm(Ntlm::new())))),
+        }
+    }
+
+    /// Creates a security context handle with the established Kerberos security context inside.
+    ///
+    /// Simulates the handle created by the `p_ctxt_handle_to_sspi_context` function. The returned
+    /// handle must be released using the `DeleteSecurityContext` function.
+    fn kerberos_sec_handle() -> SecHandle {
+        // We use the Kerberos fake_client because some context attributes can be queried only
+        // on an established security context.
+        let kerberos_client = sspi::kerberos::test_data::fake_client();
+
+        SecHandle {
+            dw_lower: SecurityPackageId::Kerberos.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::Kerberos(kerberos_client)))),
+        }
+    }
+
+    /// Creates a security context handle with the CredSSP security context inside.
+    ///
+    /// Simulates the handle created by the `p_ctxt_handle_to_sspi_context` function. The returned
+    /// handle must be released using the `DeleteSecurityContext` function.
+    #[cfg(feature = "tsssp")]
+    fn credssp_sec_handle() -> SecHandle {
+        use sspi::credssp::sspi_cred_ssp::SspiCredSsp;
+
+        let credssp = SspiCredSsp::new_client(SspiContext::Ntlm(Ntlm::new())).expect("CredSSP client creation");
+
+        SecHandle {
+            dw_lower: SecurityPackageId::CredSsp.into(),
+            dw_upper: into_sec_handle_field(into_raw_ptr(SspiHandle::new(SspiContext::CredSsp(credssp)))),
+        }
+    }
 
     fn initialize_negotiate_security_context_with_package_list(user: &str, pkg_list: &str) -> u32 {
         let mut pkg_name = "Negotiate\0".encode_utf16().collect::<Vec<_>>();
@@ -2062,12 +2165,13 @@ mod tests {
         assert_eq!(status, ContinueNeeded.to_u32().unwrap());
     }
 
-    // This test simulates initialize security context function call. It's better to run it using Miri
-    // https://github.com/rust-lang/miri
-    // cargo +nightly miri test
+    /// Performs a full NTLM handshake using the wide FFI functions: the client
+    /// (`InitializeSecurityContextW`) and the server (`AcceptSecurityContext`) exchange security
+    /// tokens until both security contexts are established.
+    #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_w() {
-        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+        let mut pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
         let mut pkg_info_ptr: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
         let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info_ptr) };
@@ -2139,10 +2243,14 @@ mod tests {
             domain_length,
             password: password.as_ptr(),
             password_length,
-            flags: 0,
+            flags: SEC_WINNT_AUTH_IDENTITY_UNICODE,
         };
 
-        let mut cred_handle = SecHandle {
+        let mut client_cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut server_cred_handle = SecHandle {
             dw_lower: 0,
             dw_upper: 0,
         };
@@ -2150,75 +2258,165 @@ mod tests {
         let status = unsafe {
             AcquireCredentialsHandleW(
                 null_mut(),
-                pkg_name.as_ptr().cast(),
-                2, /* SECPKG_CRED_OUTBOUND */
+                pkg_name.as_mut_ptr(),
+                SECPKG_CRED_OUTBOUND,
                 null::<c_void>(),
                 ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
-                &mut cred_handle,
+                &mut client_cred_handle,
                 null_mut(),
             )
         };
         assert_eq!(status, 0);
 
-        let mut sec_context = SecHandle {
+        let status = unsafe {
+            AcquireCredentialsHandleW(
+                null_mut(),
+                pkg_name.as_mut_ptr(),
+                SECPKG_CRED_INBOUND,
+                null::<c_void>(),
+                ptr::from_ref(&credentials).cast(),
+                dummy,
+                null::<c_void>(),
+                &mut server_cred_handle,
+                null_mut(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let mut client_sec_context = SecHandle {
             dw_lower: 0,
             dw_upper: 0,
         };
-        let mut new_sec_context = SecHandle {
+        let mut server_sec_context = SecHandle {
             dw_lower: 0,
             dw_upper: 0,
         };
+
         let mut target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
         let mut attrs = 0;
 
-        let mut out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
-        let mut out_sec_buffer = SecBuffer {
+        let mut client_out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
+        let mut client_out_sec_buffer = SecBuffer {
             cb_buffer: cb_max_token,
-            buffer_type: 2,
-            pv_buffer: out_buffer.as_mut_ptr().cast(),
+            buffer_type: SECBUFFER_TOKEN,
+            pv_buffer: client_out_buffer.as_mut_ptr(),
         };
-        let mut out_buffer_desk = SecBufferDesc {
+        let mut client_out_buffer_desc = SecBufferDesc {
             ul_version: 0,
             c_buffers: 1,
-            p_buffers: &mut out_sec_buffer,
+            p_buffers: &mut client_out_sec_buffer,
         };
 
-        let mut in_buffer_desk = SecBufferDesc {
+        let mut server_out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
+        let mut server_out_sec_buffer = SecBuffer {
+            cb_buffer: cb_max_token,
+            buffer_type: SECBUFFER_TOKEN,
+            pv_buffer: server_out_buffer.as_mut_ptr(),
+        };
+        let mut server_out_buffer_desc = SecBufferDesc {
             ul_version: 0,
-            c_buffers: 0,
-            p_buffers: null_mut::<SecBuffer>(),
+            c_buffers: 1,
+            p_buffers: &mut server_out_sec_buffer,
         };
 
-        let status = unsafe {
-            InitializeSecurityContextW(
-                &mut cred_handle,
-                &mut sec_context,
-                target_name.as_mut_ptr().cast(),
-                0,
-                0,
-                0x10, /* SECURITY_NATIVE_DREP */
-                &mut in_buffer_desk,
-                0,
-                &mut new_sec_context,
-                &mut out_buffer_desk,
-                &mut attrs,
-                null_mut(),
-            )
-        };
-        assert_eq!(status, 0x0009_0312 /* CONTINUE_NEEDED */);
+        for iteration in 1..=MAX_AUTH_STEPS {
+            // Client side.
+            let mut client_new_sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
 
-        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
-        assert_eq!(status, 0);
+            let client_status = unsafe {
+                InitializeSecurityContextW(
+                    &mut client_cred_handle,
+                    &mut client_sec_context,
+                    target_name.as_mut_ptr(),
+                    0,
+                    0,
+                    SECURITY_NATIVE_DREP,
+                    &mut server_out_buffer_desc,
+                    0,
+                    &mut client_new_sec_context,
+                    &mut client_out_buffer_desc,
+                    &mut attrs,
+                    null_mut(),
+                )
+            };
 
-        let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
-        assert_eq!(status, 0);
+            if iteration == 1 {
+                // The NTLM client always needs at least one more token exchange after the negotiate message.
+                assert_eq!(client_status, ContinueNeeded.to_u32().unwrap());
+            }
+            assert!(
+                is_handshake_status(client_status),
+                "unexpected InitializeSecurityContextW status: {client_status:#x?}"
+            );
+            assert!(!client_out_buffer_desc.p_buffers.is_null());
+
+            if client_new_sec_context.dw_lower != 0 || client_new_sec_context.dw_upper != 0 {
+                client_sec_context = client_new_sec_context;
+            }
+
+            // Server side.
+            let mut server_new_sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+
+            let server_status = unsafe {
+                AcceptSecurityContext(
+                    &mut server_cred_handle,
+                    &mut server_sec_context,
+                    &mut client_out_buffer_desc,
+                    0,
+                    SECURITY_NATIVE_DREP,
+                    &mut server_new_sec_context,
+                    &mut server_out_buffer_desc,
+                    &mut attrs,
+                    null_mut(),
+                )
+            };
+
+            assert!(
+                is_handshake_status(server_status),
+                "unexpected AcceptSecurityContext status: {server_status:#x?}"
+            );
+            assert!(!server_out_buffer_desc.p_buffers.is_null());
+
+            if server_new_sec_context.dw_lower != 0 || server_new_sec_context.dw_upper != 0 {
+                server_sec_context = server_new_sec_context;
+            }
+
+            if client_status == SecurityStatus::Ok.to_u32().unwrap()
+                && server_status == SecurityStatus::CompleteNeeded.to_u32().unwrap()
+            {
+                // Both security contexts are established: they must be usable.
+                assert_ntlm_context_sizes(&mut client_sec_context);
+                assert_ntlm_context_sizes(&mut server_sec_context);
+
+                let status = unsafe { DeleteSecurityContext(&mut client_sec_context) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { DeleteSecurityContext(&mut server_sec_context) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { FreeCredentialsHandle(&mut client_cred_handle) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { FreeCredentialsHandle(&mut server_cred_handle) };
+                assert_eq!(status, 0);
+
+                return;
+            }
+        }
+
+        panic!("the security context has not been established in {MAX_AUTH_STEPS} iterations");
     }
 
-    /// This test simulates initialize security context function call. It's better to run it using Miri
-    /// https://github.com/rust-lang/miri
-    /// cargo +nightly miri test
+    /// The same as the [initialize_security_context_w] test but using the ANSI FFI functions.
+    #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_a() {
         let pkg_name = "NTLM\0";
@@ -2232,8 +2430,8 @@ mod tests {
         // We left all `println`s on purpose:
         // to simulate any memory access to the allocated memory.
         println!("{pkg_info:?}");
-        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
-        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
+        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) });
+        println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) });
 
         let cb_max_token = pkg_info.cb_max_token;
 
@@ -2252,8 +2450,8 @@ mod tests {
             let pkg_info = unsafe { pkg_info.as_ref() }.expect("pkg_info is not null");
 
             println!("{pkg_info:?}");
-            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) }.to_str().unwrap());
-            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) }.to_str().unwrap());
+            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.name) });
+            println!("{:?}", unsafe { CStr::from_ptr(pkg_info.comment) });
         }
 
         let status = unsafe { FreeContextBuffer(packages.cast()) };
@@ -2273,10 +2471,14 @@ mod tests {
             domain_length,
             password: password.as_ptr().cast(),
             password_length,
-            flags: 1,
+            flags: SEC_WINNT_AUTH_IDENTITY_ANSI,
         };
 
-        let mut cred_handle = SecHandle {
+        let mut client_cred_handle = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut server_cred_handle = SecHandle {
             dw_lower: 0,
             dw_upper: 0,
         };
@@ -2285,69 +2487,160 @@ mod tests {
             AcquireCredentialsHandleA(
                 null_mut(),
                 pkg_name.as_ptr().cast(),
-                2, /* SECPKG_CRED_OUTBOUND */
+                SECPKG_CRED_OUTBOUND,
                 null::<c_void>(),
                 ptr::from_ref(&credentials).cast(),
                 dummy,
                 null::<c_void>(),
-                &mut cred_handle,
+                &mut client_cred_handle,
                 null_mut(),
             )
         };
         assert_eq!(status, 0);
-
-        let mut sec_context = SecHandle {
-            dw_lower: 0,
-            dw_upper: 0,
-        };
-        let mut new_sec_context = SecHandle {
-            dw_lower: 0,
-            dw_upper: 0,
-        };
-        let mut target_name = String::from("TERMSRV/some@example.com\0");
-        let mut attrs = 0;
-
-        let mut out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
-        let mut out_sec_buffer = SecBuffer {
-            cb_buffer: cb_max_token,
-            buffer_type: 2,
-            pv_buffer: out_buffer.as_mut_ptr().cast(),
-        };
-        let mut out_buffer_desk = SecBufferDesc {
-            ul_version: 0,
-            c_buffers: 1,
-            p_buffers: &mut out_sec_buffer,
-        };
-
-        let mut in_buffer_desk = SecBufferDesc {
-            ul_version: 0,
-            c_buffers: 0,
-            p_buffers: null_mut::<SecBuffer>(),
-        };
 
         let status = unsafe {
-            InitializeSecurityContextA(
-                &mut cred_handle,
-                &mut sec_context,
-                target_name.as_mut_ptr().cast(),
-                0,
-                0,
-                0x10, /* SECURITY_NATIVE_DREP */
-                &mut in_buffer_desk,
-                0,
-                &mut new_sec_context,
-                &mut out_buffer_desk,
-                &mut attrs,
+            AcquireCredentialsHandleA(
+                null_mut(),
+                pkg_name.as_ptr().cast(),
+                SECPKG_CRED_INBOUND,
+                null::<c_void>(),
+                ptr::from_ref(&credentials).cast(),
+                dummy,
+                null::<c_void>(),
+                &mut server_cred_handle,
                 null_mut(),
             )
         };
-        assert_eq!(status, 0x0009_0312 /* CONTINUE_NEEDED */);
-
-        let status = unsafe { FreeCredentialsHandle(&mut cred_handle) };
         assert_eq!(status, 0);
 
-        let status = unsafe { DeleteSecurityContext(&mut new_sec_context) };
-        assert_eq!(status, 0);
+        let mut client_sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut server_sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let target_name = "TERMSRV/some@example.com\0";
+        let mut attrs = 0;
+
+        let mut client_out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
+        let mut client_out_sec_buffer = SecBuffer {
+            cb_buffer: cb_max_token,
+            buffer_type: SECBUFFER_TOKEN,
+            pv_buffer: client_out_buffer.as_mut_ptr(),
+        };
+        let mut client_out_buffer_desc = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut client_out_sec_buffer,
+        };
+
+        let mut server_out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
+        let mut server_out_sec_buffer = SecBuffer {
+            cb_buffer: cb_max_token,
+            buffer_type: SECBUFFER_TOKEN,
+            pv_buffer: server_out_buffer.as_mut_ptr(),
+        };
+        let mut server_out_buffer_desc = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut server_out_sec_buffer,
+        };
+
+        for iteration in 1..=MAX_AUTH_STEPS {
+            // Client side.
+            let mut client_new_sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+
+            let client_status = unsafe {
+                InitializeSecurityContextA(
+                    &mut client_cred_handle,
+                    &mut client_sec_context,
+                    target_name.as_ptr().cast(),
+                    0,
+                    0,
+                    SECURITY_NATIVE_DREP,
+                    &mut server_out_buffer_desc,
+                    0,
+                    &mut client_new_sec_context,
+                    &mut client_out_buffer_desc,
+                    &mut attrs,
+                    null_mut(),
+                )
+            };
+
+            if iteration == 1 {
+                // The NTLM client always needs at least one more token exchange after the negotiate message.
+                assert_eq!(client_status, ContinueNeeded.to_u32().unwrap());
+            }
+            assert!(
+                is_handshake_status(client_status),
+                "unexpected InitializeSecurityContextA status: {client_status:#x?}"
+            );
+            assert!(!client_out_buffer_desc.p_buffers.is_null());
+
+            if client_new_sec_context.dw_lower != 0 || client_new_sec_context.dw_upper != 0 {
+                client_sec_context = client_new_sec_context;
+            }
+
+            // Server side.
+            let mut server_new_sec_context = SecHandle {
+                dw_lower: 0,
+                dw_upper: 0,
+            };
+
+            let server_status = unsafe {
+                AcceptSecurityContext(
+                    &mut server_cred_handle,
+                    &mut server_sec_context,
+                    &mut client_out_buffer_desc,
+                    0,
+                    SECURITY_NATIVE_DREP,
+                    &mut server_new_sec_context,
+                    &mut server_out_buffer_desc,
+                    &mut attrs,
+                    null_mut(),
+                )
+            };
+
+            assert!(
+                is_handshake_status(server_status),
+                "unexpected AcceptSecurityContext status: {server_status:#x?}"
+            );
+            assert!(!server_out_buffer_desc.p_buffers.is_null());
+
+            if server_new_sec_context.dw_lower != 0 || server_new_sec_context.dw_upper != 0 {
+                server_sec_context = server_new_sec_context;
+            }
+
+            if client_status == SecurityStatus::Ok.to_u32().unwrap()
+                && server_status == SecurityStatus::CompleteNeeded.to_u32().unwrap()
+            {
+                // Both security contexts are established: they must be usable.
+                assert_ntlm_context_sizes(&mut client_sec_context);
+                assert_ntlm_context_sizes(&mut server_sec_context);
+
+                let status = unsafe { DeleteSecurityContext(&mut client_sec_context) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { DeleteSecurityContext(&mut server_sec_context) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { FreeCredentialsHandle(&mut client_cred_handle) };
+                assert_eq!(status, 0);
+
+                let status = unsafe { FreeCredentialsHandle(&mut server_cred_handle) };
+                assert_eq!(status, 0);
+
+                return;
+            }
+        }
+
+        panic!("the security context has not been established in {MAX_AUTH_STEPS} iterations");
     }
 
     /// This test simulates initialize security context function call. It's better to run it using Miri
@@ -2591,21 +2884,12 @@ mod tests {
         use std::slice::from_raw_parts;
 
         use ffi_types::sspi::SecPkgContextSessionKey;
-        use sspi::credssp::SspiContext;
 
-        use crate::sspi::sec_handle::{QueryContextAttributesW, SECPKG_ATTR_SESSION_KEY, SspiHandle};
-        use crate::utils::into_raw_ptr;
+        use crate::sspi::sec_handle::SECPKG_ATTR_SESSION_KEY;
 
-        let kerberos_client = sspi::kerberos::test_data::fake_client();
-
-        // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
-        // We use Kerberos fake_client because we need established security context to query the session key.
-        let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-        let sspi_context_ptr = into_raw_ptr(sspi_context).expose_provenance();
-        let mut sec_handle = SecHandle {
-            dw_lower: SecurityPackageId::Kerberos.into(),
-            dw_upper: sspi_context_ptr.try_into().unwrap(),
-        };
+        // We use the Kerberos fake_client because we need an established security context
+        // to query the session key.
+        let mut sec_handle = kerberos_sec_handle();
 
         let mut session_key = SecPkgContextSessionKey {
             session_key_len: 0,
@@ -2638,30 +2922,19 @@ mod tests {
         let status = unsafe { FreeContextBuffer(session_key.session_key.cast()) };
         assert_eq!(status, 0);
 
-        let context_ptr: *mut SspiHandle = ptr::with_exposed_provenance_mut(sec_handle.dw_upper.try_into().unwrap());
-        let _ = unsafe { Box::from_raw(context_ptr) };
+        let status = unsafe { DeleteSecurityContext(&mut sec_handle) };
+        assert_eq!(status, 0);
     }
 
     #[test]
     fn query_context_names() {
         use ffi_types::sspi::{SecPkgContextNamesA, SecPkgContextNamesW};
-        use sspi::credssp::SspiContext;
 
-        use crate::sspi::sec_handle::{
-            QueryContextAttributesA, QueryContextAttributesW, SECPKG_ATTR_NAMES, SecurityPackageId, SspiHandle,
-        };
-        use crate::utils::into_raw_ptr;
+        use crate::sspi::sec_handle::{QueryContextAttributesA, SECPKG_ATTR_NAMES};
 
-        let kerberos_client = sspi::kerberos::test_data::fake_client();
-
-        // Initialize the security handle: simulate the `p_ctxt_handle_to_sspi_context` function.
-        // We use Kerberos fake_client because we need established security context to query the names.
-        let sspi_context = SspiHandle::new(SspiContext::Kerberos(kerberos_client));
-        let sspi_context_ptr = into_raw_ptr(sspi_context).expose_provenance();
-        let mut sec_handle = SecHandle {
-            dw_lower: SecurityPackageId::Kerberos.into(),
-            dw_upper: sspi_context_ptr.try_into().unwrap(),
-        };
+        // We use the Kerberos fake_client because we need an established security context
+        // to query the names.
+        let mut sec_handle = kerberos_sec_handle();
 
         let mut names_w = SecPkgContextNamesW { user_name: null_mut() };
 
@@ -2693,8 +2966,8 @@ mod tests {
         let status = unsafe { FreeContextBuffer(names_a.user_name.cast()) };
         assert_eq!(status, 0);
 
-        let context_ptr: *mut SspiHandle = ptr::with_exposed_provenance_mut(sec_handle.dw_upper.try_into().unwrap());
-        let _ = unsafe { Box::from_raw(context_ptr) };
+        let status = unsafe { DeleteSecurityContext(&mut sec_handle) };
+        assert_eq!(status, 0);
     }
 
     fn acquire_ntlm_credentials_handle(user: &str, domain: &str) -> SecHandle {
@@ -2854,5 +3127,343 @@ mod tests {
         );
 
         free_credentials_handle(&mut cred_handle);
+    }
+
+    #[test]
+    fn query_context_attributes_sizes() {
+        let mut sizes = SecPkgContextSizes {
+            cb_max_token: 0,
+            cb_max_signature: 0,
+            cb_block_size: 0,
+            cb_security_trailer: 0,
+        };
+
+        let mut ntlm_client_context = ntlm_sec_handle();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut ntlm_client_context,
+                SECPKG_ATTR_SIZES,
+                ptr::from_mut(&mut sizes).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        assert_eq!(sizes.cb_max_token, 2010);
+        assert_eq!(sizes.cb_max_signature, 16);
+        assert_eq!(sizes.cb_block_size, 0);
+        assert_eq!(sizes.cb_security_trailer, 16);
+
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+
+        let mut kerberos_client_context = kerberos_sec_handle();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut kerberos_client_context,
+                SECPKG_ATTR_SIZES,
+                ptr::from_mut(&mut sizes).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        assert_eq!(sizes.cb_max_token, sspi::kerberos::PACKAGE_INFO.max_token_len);
+        assert_eq!(sizes.cb_max_signature, 16);
+        assert_eq!(sizes.cb_block_size, 0);
+        assert_eq!(sizes.cb_security_trailer, 60);
+
+        let status = unsafe { DeleteSecurityContext(&mut kerberos_client_context) };
+        assert_eq!(status, 0);
+
+        #[cfg(feature = "tsssp")]
+        {
+            let mut credssp_client_context = credssp_sec_handle();
+
+            let status = unsafe {
+                QueryContextAttributesW(
+                    &mut credssp_client_context,
+                    SECPKG_ATTR_SIZES,
+                    ptr::from_mut(&mut sizes).cast(),
+                )
+            };
+            assert_eq!(status, 0);
+
+            assert_eq!(sizes.cb_max_token, 2010);
+            assert_eq!(sizes.cb_max_signature, 16);
+            assert_eq!(sizes.cb_block_size, 0);
+            assert_eq!(sizes.cb_security_trailer, 16);
+
+            let status = unsafe { DeleteSecurityContext(&mut credssp_client_context) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    /// The `SECPKG_ATTR_SERVER_AUTH_FLAGS` attribute is used only by the CredSSP security package,
+    /// but our implementation does not depend on the security context type: the flags value is
+    /// always written into the caller-provided [SecPkgContextFlags] structure.
+    #[test]
+    fn query_context_attributes_server_auth_flags() {
+        let mut flags = SecPkgContextFlags { flags: 0xffff_ffff };
+
+        let mut ntlm_client_context = ntlm_sec_handle();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut ntlm_client_context,
+                SECPKG_ATTR_SERVER_AUTH_FLAGS,
+                ptr::from_mut(&mut flags).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+        assert_eq!(flags.flags, 0);
+
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+
+        #[cfg(feature = "tsssp")]
+        {
+            let mut flags = SecPkgContextFlags { flags: 0xffff_ffff };
+
+            let mut credssp_client_context = credssp_sec_handle();
+
+            let status = unsafe {
+                QueryContextAttributesW(
+                    &mut credssp_client_context,
+                    SECPKG_ATTR_SERVER_AUTH_FLAGS,
+                    ptr::from_mut(&mut flags).cast(),
+                )
+            };
+            assert_eq!(status, 0);
+            assert_eq!(flags.flags, 0);
+
+            let status = unsafe { DeleteSecurityContext(&mut credssp_client_context) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    #[test]
+    fn query_context_attributes_cert_trust_status() {
+        let mut cert_trust_status = CertTrustStatus {
+            dw_error_status: 0,
+            dw_info_status: 0,
+        };
+
+        // Neither NTLM nor Kerberos support the `SECPKG_ATTR_CERT_TRUST_STATUS` attribute.
+        let mut ntlm_client_context = ntlm_sec_handle();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut ntlm_client_context,
+                SECPKG_ATTR_CERT_TRUST_STATUS,
+                ptr::from_mut(&mut cert_trust_status).cast(),
+            )
+        };
+        assert_eq!(
+            status,
+            ErrorKind::UnsupportedFunction
+                .to_u32()
+                .expect("ErrorKind is castable to u32")
+        );
+
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+
+        #[cfg(feature = "tsssp")]
+        {
+            use sspi::{CertTrustErrorStatus, CertTrustInfoStatus};
+
+            let mut credssp_client_context = credssp_sec_handle();
+
+            let status = unsafe {
+                QueryContextAttributesW(
+                    &mut credssp_client_context,
+                    SECPKG_ATTR_CERT_TRUST_STATUS,
+                    ptr::from_mut(&mut cert_trust_status).cast(),
+                )
+            };
+            assert_eq!(status, 0);
+
+            assert_eq!(cert_trust_status.dw_error_status, CertTrustErrorStatus::NO_ERROR.bits());
+            assert_eq!(
+                cert_trust_status.dw_info_status,
+                CertTrustInfoStatus::IS_SELF_SIGNED.bits()
+            );
+
+            let status = unsafe { DeleteSecurityContext(&mut credssp_client_context) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    /// Queries the `SECPKG_ATTR_PACKAGE_INFO` attribute and asserts the returned package info.
+    ///
+    /// The caller owns the `SecPkgContext_PackageInfo` structure which contains only a pointer to
+    /// the package info allocated by the security package. So, the caller must free it using the
+    /// `FreeContextBuffer` function.
+    fn check_context_package_info(sec_context: &mut SecHandle, package_name: &str, comment: &str, max_token_len: u32) {
+        let mut package_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                sec_context,
+                SECPKG_ATTR_PACKAGE_INFO,
+                ptr::from_mut(&mut package_info).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let package_info_ref = unsafe { package_info.as_ref() }.expect("package_info is not null");
+
+        assert_eq!(package_info_ref.f_capabilities, PackageCapabilities::empty().bits());
+        assert_eq!(package_info_ref.w_rpc_id, PACKAGE_ID_NONE);
+        assert_eq!(package_info_ref.cb_max_token, max_token_len);
+        assert_eq!(
+            unsafe { U16CString::from_ptr_str(package_info_ref.name) }
+                .to_string()
+                .expect("package name must be valid UTF-16"),
+            package_name
+        );
+        assert_eq!(
+            unsafe { U16CString::from_ptr_str(package_info_ref.comment) }
+                .to_string()
+                .expect("package comment must be valid UTF-16"),
+            comment
+        );
+
+        let status = unsafe { FreeContextBuffer(package_info.cast()) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn query_context_attributes_package_info() {
+        let mut ntlm_client_context = ntlm_sec_handle();
+        check_context_package_info(&mut ntlm_client_context, "NTLM", "NTLM Security Package", 0xb48);
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+
+        let mut kerberos_client_context = kerberos_sec_handle();
+        check_context_package_info(
+            &mut kerberos_client_context,
+            "Kerberos",
+            "Kerberos Security Package",
+            0xbb80,
+        );
+        let status = unsafe { DeleteSecurityContext(&mut kerberos_client_context) };
+        assert_eq!(status, 0);
+
+        #[cfg(feature = "tsssp")]
+        {
+            let mut credssp_client_context = credssp_sec_handle();
+            check_context_package_info(
+                &mut credssp_client_context,
+                "CREDSSP",
+                "CredSsp security package",
+                0xbb81,
+            );
+            let status = unsafe { DeleteSecurityContext(&mut credssp_client_context) };
+            assert_eq!(status, 0);
+        }
+    }
+
+    #[test]
+    fn query_context_attributes_unsupported_attribute() {
+        // We don't care about the buffer type: the attribute is not supported anyway.
+        let mut buffer = 0_u32;
+
+        let mut ntlm_client_context = ntlm_sec_handle();
+
+        let status = unsafe {
+            QueryContextAttributesW(
+                &mut ntlm_client_context,
+                0x50, // Unsupported attribute.
+                ptr::from_mut(&mut buffer).cast(),
+            )
+        };
+        assert_eq!(
+            status,
+            ErrorKind::UnsupportedFunction
+                .to_u32()
+                .expect("ErrorKind is castable to u32")
+        );
+
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn query_context_attributes_null_buffer() {
+        let mut ntlm_client_context = ntlm_sec_handle();
+
+        let status = unsafe { QueryContextAttributesW(&mut ntlm_client_context, SECPKG_ATTR_PACKAGE_INFO, null_mut()) };
+        assert_eq!(
+            status,
+            ErrorKind::InvalidParameter
+                .to_u32()
+                .expect("ErrorKind is castable to u32")
+        );
+
+        let status = unsafe { DeleteSecurityContext(&mut ntlm_client_context) };
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn initialize_security_context_should_fail_with_invalid_parameter() {
+        let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
+        let mut pkg_info_ptr: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
+
+        let status = unsafe { QuerySecurityPackageInfoW(pkg_name.as_ptr(), &mut pkg_info_ptr) };
+        assert_eq!(status, 0);
+
+        let cb_max_token = unsafe { pkg_info_ptr.as_ref() }
+            .expect("pkg_info is not null")
+            .cb_max_token;
+
+        let status = unsafe { FreeContextBuffer(pkg_info_ptr.cast()) };
+        assert_eq!(status, 0);
+
+        let mut target_name = "TERMSRV/some@example.com\0".encode_utf16().collect::<Vec<_>>();
+        let mut attrs = 0;
+
+        let mut new_sec_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+
+        let mut out_buffer = vec![0; usize::try_from(cb_max_token).expect("cb_max_token is a valid usize")];
+        let mut out_sec_buffer = SecBuffer {
+            cb_buffer: cb_max_token,
+            buffer_type: SECBUFFER_TOKEN,
+            pv_buffer: out_buffer.as_mut_ptr(),
+        };
+        let mut out_buffer_desc = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut out_sec_buffer,
+        };
+
+        // The credentials handle and the security context handle are both null.
+        let status = unsafe {
+            InitializeSecurityContextW(
+                null_mut(),
+                null_mut(),
+                target_name.as_mut_ptr(),
+                0,
+                0,
+                SECURITY_NATIVE_DREP,
+                null_mut(),
+                0,
+                &mut new_sec_context,
+                &mut out_buffer_desc,
+                &mut attrs,
+                null_mut(),
+            )
+        };
+
+        assert_eq!(
+            status,
+            ErrorKind::InvalidParameter
+                .to_u32()
+                .expect("ErrorKind is castable to u32")
+        );
     }
 }
