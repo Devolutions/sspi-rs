@@ -2168,14 +2168,7 @@ mod tests {
     /// Performs a full NTLM handshake using the wide FFI functions: the client
     /// (`InitializeSecurityContextW`) and the server (`AcceptSecurityContext`) exchange security
     /// tokens until both security contexts are established.
-    ///
-    /// NOTE: Although in the original Windows SSPI the `p_auth_data` parameter of the
-    /// `AcquireCredentialsHandle` function can be NULL, in our implementation it must be non-NULL.
-    /// That's because we cannot get the default credentials handle for the security package.
-    ///
-    /// This test simulates initialize security context function call. It's better to run it using Miri
-    /// https://github.com/rust-lang/miri
-    /// cargo +nightly miri test
+    #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_w() {
         let mut pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
@@ -2423,10 +2416,7 @@ mod tests {
     }
 
     /// The same as the [initialize_security_context_w] test but using the ANSI FFI functions.
-    ///
-    /// This test simulates initialize security context function call. It's better to run it using Miri
-    /// https://github.com/rust-lang/miri
-    /// cargo +nightly miri test
+    #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_a() {
         let pkg_name = "NTLM\0";
