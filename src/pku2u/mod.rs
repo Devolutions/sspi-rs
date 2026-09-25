@@ -1269,7 +1269,7 @@ impl Pku2u {
 
                 let session_key = generate_key(
                     check_if_empty!(self.dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
-                    &self.dh_parameters.private_key,
+                    self.dh_parameters.private_key.as_ref(),
                     &self.dh_parameters.modulus,
                     Some(DhNonce {
                         client_nonce: check_if_empty!(

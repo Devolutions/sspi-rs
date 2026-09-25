@@ -3,6 +3,7 @@ use picky_krb::crypto::CipherSuite;
 use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::gss_api::MicToken;
 
+use crate::kerberos::config::KdcResolution;
 use crate::kerberos::{EncryptionParams, KerberosConfig, KerberosState, test_data};
 use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi, SspiEx};
 
@@ -57,7 +58,7 @@ fn secbuffer_readonly_with_checksum() {
     let mut kerberos_server = Kerberos {
         state: KerberosState::Final,
         config: KerberosConfig {
-            kdc_url: None,
+            kdc_resolution: KdcResolution::KdcUrl(None),
             client_computer_name: "hostname".into(),
         },
         auth_identity: None,
@@ -71,13 +72,14 @@ fn secbuffer_readonly_with_checksum() {
         },
         seq_number: 681238048,
         realm: None,
-        kdc_url: None,
         channel_bindings: None,
         #[cfg(feature = "scard")]
         dh_parameters: None,
         krb5_user_to_user: false,
         server: Some(Box::new(test_data::fake_server_properties())),
         remote_seq_number: 0,
+        iakerb_cookie: None,
+        iakerb_gss_transcript: Vec::new(),
     };
 
     // RPC header
@@ -238,7 +240,7 @@ fn integrity_only_wrap_decryption() {
     let mut kerberos_client = Kerberos {
         state: KerberosState::Final,
         config: KerberosConfig {
-            kdc_url: None,
+            kdc_resolution: KdcResolution::KdcUrl(None),
             client_computer_name: "hostname".into(),
         },
         auth_identity: None,
@@ -252,13 +254,14 @@ fn integrity_only_wrap_decryption() {
         },
         seq_number: 0,
         realm: None,
-        kdc_url: None,
         channel_bindings: None,
         #[cfg(feature = "scard")]
         dh_parameters: None,
         krb5_user_to_user: false,
         server: None,
         remote_seq_number: 0,
+        iakerb_cookie: None,
+        iakerb_gss_transcript: Vec::new(),
     };
 
     let mut buffer = token_bytes;

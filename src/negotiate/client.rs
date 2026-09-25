@@ -69,15 +69,14 @@ pub(crate) async fn initialize_security_context<'a>(
             // because NTLM does not support scard logon.
 
             use crate::kerberos::client::principal::get_client_principal_realm;
-            use crate::{Kerberos, KerberosConfig, detect_kdc_url};
+            use crate::{KdcResolution, Kerberos, KerberosConfig, detect_kdc_url};
 
             let username = identity.username.to_string();
-            let host = detect_kdc_url(&get_client_principal_realm(&username, ""))
-                .ok_or_else(|| Error::new(ErrorKind::NoAuthenticatingAuthority, "can not detect KDC url"))?;
+            let kdc_url = detect_kdc_url(&get_client_principal_realm(&username, ""));
             debug!("Negotiate: try Kerberos");
 
             let config = KerberosConfig {
-                kdc_url: Some(host),
+                kdc_resolution: KdcResolution::KdcUrl(kdc_url),
                 client_computer_name: negotiate.client_computer_name.clone(),
             };
 
@@ -93,6 +92,16 @@ pub(crate) async fn initialize_security_context<'a>(
             .protocol
             .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
             .await;
+    }
+
+    // When the machine is not domain-joined, Kerberos cannot use the LocalKDC for TGT exchange
+    // and attempts to locate an external KDC as a fallback. Since no external KDC is available,
+    // the server returns `STATUS_NO_LOGON_SERVERS` error.
+    // Therefore, if IAKerb is enabled, we must disable the Kerberos U2U extension (`USE_SESSION_KEY` flag).
+    if let NegotiatedProtocol::Kerberos(kerberos) = &negotiate.protocol
+        && kerberos.is_iakerb()
+    {
+        builder.context_requirements.remove(ClientRequestFlags::USE_SESSION_KEY);
     }
 
     match negotiate.state {
@@ -162,6 +171,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             let mech_types = generate_mech_type_list(
                 matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(_)),
+                matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(kerberos) if kerberos.is_iakerb()),
                 negotiate.package_list.ntlm,
             )?;
 
@@ -224,12 +234,20 @@ pub(crate) async fn initialize_security_context<'a>(
                 .await?;
 
             if result.status == SecurityStatus::Ok {
-                if negotiate.mic_needed {
-                    let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
-                    negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
+                // If the server sent a `mechListMIC`, we should send it as well, even though it is optional for certain cases
+                // (e.g., when the selected mechanism is preferred by both the initiator or the acceptor).
+                if mech_list_mic.is_some() {
+                    negotiate.mic_needed = true;
                 }
 
-                let neg_result = if !negotiate.mic_needed || negotiate.mic_verified {
+                // TODO(FIX): The client rejects the server's `mechListMIC`: https://github.com/Devolutions/sspi-rs/issues/748
+                // if negotiate.mic_needed {
+                //     negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+                // }
+                negotiate.mic_verified = true;
+
+                let neg_result = if !negotiate.mic_needed {
                     result.status = SecurityStatus::Ok;
                     negotiate.state = NegotiateState::Ok;
 

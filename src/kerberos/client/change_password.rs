@@ -15,7 +15,7 @@ use crate::kerberos::client::generators::{
 use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
 use crate::kerberos::utils::serialize_message;
-use crate::kerberos::{CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN, client};
+use crate::kerberos::{CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN, server};
 use crate::utils::generate_random_symmetric_key;
 use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result};
 
@@ -29,6 +29,13 @@ pub async fn change_password<'a>(
     yield_point: &mut YieldPointLocal,
     change_password: ChangePassword<'a>,
 ) -> Result<()> {
+    if client.is_iakerb() {
+        return Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "Changing password is not supported with IAKerb.",
+        ));
+    }
+
     let username = &change_password.account_name;
     let domain = &change_password.domain_name;
     let password = &change_password.old_password;
@@ -60,7 +67,7 @@ pub async fn change_password<'a>(
         with_pre_auth: false,
     });
 
-    let as_rep = client::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
+    let as_rep = server::as_exchange::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 

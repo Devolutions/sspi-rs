@@ -733,6 +733,15 @@ impl CredentialsBuffers {
             _ => None,
         }
     }
+
+    pub fn extract_password(&self) -> Secret<String> {
+        Secret::new(match self {
+            CredentialsBuffers::AuthIdentity(auth_identity) => auth_identity.password.as_ref().as_ref().to_string(),
+            #[cfg(feature = "scard")]
+            CredentialsBuffers::SmartCard(smart_card) => smart_card.pin.as_ref().as_ref().to_string(),
+            CredentialsBuffers::Keytab(_keytab) => String::new(),
+        })
+    }
 }
 
 /// Generic enum that encapsulates credentials for any type of authentication

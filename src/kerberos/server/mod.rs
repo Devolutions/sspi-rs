@@ -35,6 +35,13 @@ use crate::{
     Secret, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
 };
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum KerberosServerState {
+    TgtExchange,
+    Preauthentication,
+    ApExchange,
+}
+
 /// Additional properties that are needed only for server-side Kerberos.
 #[derive(Debug, Clone)]
 pub struct ServerProperties {
@@ -148,13 +155,23 @@ pub async fn accept_security_context(
     yield_point: &mut YieldPointLocal,
     builder: FilledAcceptSecurityContext<'_, <Kerberos as SspiImpl>::CredentialsHandle>,
 ) -> Result<AcceptSecurityContextResult> {
+    let mut state = match server.state {
+        KerberosState::Server(state) => state,
+        KerberosState::Client(_) | KerberosState::Final => {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                format!("got wrong Kerberos state: {:?}", server.state),
+            ));
+        }
+    };
+
     let input = builder
         .input
         .as_ref()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "input buffers must be specified"))?;
     let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
 
-    if server.state == KerberosState::TgtExchange {
+    if state == KerberosServerState::TgtExchange {
         if let Ok(tgt_req) = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
             picky_asn1_der::from_bytes::<TgtReq>(&input_token.buffer).map_err(Error::from)
         } else {
@@ -199,7 +216,7 @@ pub async fn accept_security_context(
             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
             output_token.buffer = encoded_tgt_rep;
 
-            server.state = KerberosState::Preauthentication;
+            server.state = KerberosState::Server(KerberosServerState::Preauthentication);
 
             return Ok(AcceptSecurityContextResult {
                 status: SecurityStatus::ContinueNeeded,
@@ -214,7 +231,7 @@ pub async fn accept_security_context(
             // The client may send ApReq instead of TgtReq in the first message.
             // It means that the client wants to perform regular Kerberos without U2U.
             // In that case, we just move Kerberos state to the next one and process further.
-            server.state = KerberosState::Preauthentication;
+            state = KerberosServerState::Preauthentication;
         } else {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
@@ -224,8 +241,8 @@ pub async fn accept_security_context(
     }
 
     let status =
-        match server.state {
-            KerberosState::Preauthentication => {
+        match state {
+            KerberosServerState::Preauthentication => {
                 let ap_req = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                     picky_asn1_der::from_bytes::<ApReq>(&input_token.buffer)?
                 } else {
@@ -449,7 +466,7 @@ pub async fn accept_security_context(
                     let (status, encoded_ap_rep) =
                         if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                             let encoded_ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
-                            server.state = KerberosState::ApExchange;
+                            server.state = KerberosState::Server(KerberosServerState::ApExchange);
 
                             (SecurityStatus::ContinueNeeded, encoded_ap_rep)
                         } else {
@@ -498,7 +515,7 @@ pub async fn accept_security_context(
 
                 status
             }
-            KerberosState::ApExchange => {
+            KerberosServerState::ApExchange => {
                 if !builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
                     return Err(Error::new(
                         ErrorKind::OutOfSequence,
@@ -530,12 +547,7 @@ pub async fn accept_security_context(
 
                 SecurityStatus::Ok
             }
-            KerberosState::Final | KerberosState::TgtExchange => {
-                return Err(Error::new(
-                    ErrorKind::OutOfSequence,
-                    format!("got wrong Kerberos state: {:?}", server.state),
-                ));
-            }
+            KerberosServerState::TgtExchange => unreachable!("TgtExchange state is handled above"),
         };
 
     Ok(AcceptSecurityContextResult {

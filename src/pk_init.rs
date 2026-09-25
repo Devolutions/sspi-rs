@@ -29,23 +29,23 @@ use sha1::{Digest, Sha1};
 use time::OffsetDateTime;
 
 use crate::kerberos::client::generators::MAX_MICROSECONDS;
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind, Result, Secret};
 
 /// [Generation of Client Request](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.1)
 /// 9. This nonce string MUST be as long as the longest key length of the symmetric key types that the client supports.
 /// Key length of Aes256 is equal to 32
 pub(crate) const DH_NONCE_LEN: usize = 32;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DhParameters {
     // g
     pub base: Vec<u8>,
     // p
     pub modulus: Vec<u8>,
-    //
+    // q
     pub q: Vec<u8>,
     // generated private key
-    pub private_key: Vec<u8>,
+    pub private_key: Secret<Vec<u8>>,
     // received public key
     pub other_public_key: Option<Vec<u8>>,
     pub client_nonce: Option<[u8; DH_NONCE_LEN]>,
@@ -115,7 +115,11 @@ pub(crate) fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions
 
     let kdc_req_body_sha1_hash = sha1.finalize().to_vec();
 
-    let public_value = compute_public_key(&dh_parameters.private_key, &dh_parameters.modulus, &dh_parameters.base)?;
+    let public_value = compute_public_key(
+        dh_parameters.private_key.as_ref(),
+        &dh_parameters.modulus,
+        &dh_parameters.base,
+    )?;
 
     let auth_pack = AuthPack {
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {

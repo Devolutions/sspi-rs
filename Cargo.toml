@@ -185,6 +185,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 proptest = "1.6"
 cfg-if = "1"
 
+[patch.crates-io]
+picky = { path = "../picky-rs/picky" }
+picky-asn1 = { path = "../picky-rs/picky-asn1" }
+picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
+picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509" }
+picky-krb = { path = "../picky-rs/picky-krb" }
+
 [lints]
 workspace = true
 
