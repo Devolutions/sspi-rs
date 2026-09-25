@@ -221,7 +221,7 @@ fn chuid_to_container_name(chuid: &[u8], tag: [u8; 3]) -> Result<String> {
 /// extract the GUID from the CHUID, and then construct the key container name.
 #[instrument(level = "trace", ret)]
 fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
-    let context = SystemScardContext::establish(ScardScope::User, false)?;
+    let context = SystemScardContext::establish(ScardScope::User)?;
     let ScardConnectData {
         protocol: _,
         handle: mut card,
