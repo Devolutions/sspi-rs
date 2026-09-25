@@ -3146,7 +3146,7 @@ mod tests {
 
         free_credentials_handle(&mut cred_handle);
     }
-        
+
     #[test]
     fn query_context_attributes_sizes() {
         let mut sizes = SecPkgContextSizes {
