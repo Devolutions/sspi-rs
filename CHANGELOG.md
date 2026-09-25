@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.22.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.0...sspi-v0.22.1)] - 2026-09-25
+
+### <!-- 4 -->Bug Fixes
+
+- Preserve RC4 sealing state across mechListMIC ([#753](https://github.com/Devolutions/sspi-rs/issues/753)) ([5b2b137e13](https://github.com/Devolutions/sspi-rs/commit/5b2b137e13b6839790049727bdb742e967cb1248)) 
+
+  CredSSP can wrap `pubKeyAuth` after the initiator sends its mechListMIC
+  but before it verifies the acceptor's MIC. Resetting both NTLM RC4
+  handles during verification loses the advanced send state and breaks the
+  next wrapped message.
+  
+  Snapshot and restore only the sealing handle used for each MIC,
+  including when verification fails. Remove the obsolete reset helper and
+  add regression coverage for both directions, the CredSSP ordering, and
+  invalid signatures. Sequence numbers remain unchanged.
+
+
+
 ## [[0.22.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.3...sspi-v0.22.0)] - 2026-09-15
 
 ### <!-- 1 -->Features
