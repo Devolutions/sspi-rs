@@ -182,6 +182,18 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Download glibc x64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-x64-release
+          path: dependencies/runtimes/linux-x64
+
+      - name: Download glibc arm64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-arm64-release
+          path: dependencies/runtimes/linux-arm64
+
       - name: Download musl x64 library
         uses: actions/download-artifact@v8
         with:
@@ -207,7 +219,7 @@ jobs:
           $Archive = [System.IO.Compression.ZipFile]::OpenRead($Packages[0].FullName)
           try {
             $Paths = @($Archive.Entries | ForEach-Object FullName)
-            foreach ($Rid in @('linux-musl-x64', 'linux-musl-arm64')) {
+            foreach ($Rid in @('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64')) {
               $NativePath = "runtimes/$Rid/native/libDevolutionsSspi.so"
               if ($Paths -notcontains $NativePath) { throw "Missing $NativePath in NuGet package" }
             }
