@@ -394,6 +394,79 @@ jobs:
           name: sspi-${{matrix.os}}-${{matrix.arch}}-${{matrix.build}}-symbols
           path: symbols/${{matrix.os}}-${{matrix.arch}}
 
+  build-musl:
+    name: Musl build [${{ matrix.arch }}] [${{ matrix.build }}]
+    runs-on: ${{ matrix.runner }}
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ x64, arm64 ]
+        build: [ debug, release ]
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            rust-target: x86_64-unknown-linux-musl
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            rust-target: aarch64-unknown-linux-musl
+
+    steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v6
+
+      - name: Build on Alpine
+        env:
+          RUST_TARGET: ${{ matrix.rust-target }}
+          BUILD_TYPE: ${{ matrix.build }}
+          PACKAGE_VERSION: ${{ needs.preflight.outputs.package-version }}
+          DOTNET_RID: linux-musl-${{ matrix.arch }}
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e RUST_TARGET -e BUILD_TYPE -e PACKAGE_VERSION -e DOTNET_RID \
+            alpine:3.22 sh -euc '
+              apk add --no-cache binutils build-base ca-certificates cmake curl perl
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs |
+                sh -s -- -y --profile minimal --default-toolchain 1.97.1
+              export PATH="$HOME/.cargo/bin:$PATH"
+              rustup target add "$RUST_TARGET"
+              sed -i "s/^version = \"0.0.0\"/version = \"$PACKAGE_VERSION\"/" ffi/Cargo.toml
+
+              if [ "$BUILD_TYPE" = release ]; then
+                cargo build -p sspi-ffi --target "$RUST_TARGET" --profile ffi-production
+                target_dir="target/$RUST_TARGET/ffi-production"
+              else
+                cargo build -p sspi-ffi --target "$RUST_TARGET"
+                target_dir="target/$RUST_TARGET/debug"
+              fi
+
+              runtime_dir="dependencies/runtimes/$DOTNET_RID/native"
+              mkdir -p "$runtime_dir"
+              cp "$target_dir/libsspi.so" "$runtime_dir/libDevolutionsSspi.so"
+
+              if [ "$BUILD_TYPE" = release ]; then
+                symbols_dir="symbols/$DOTNET_RID"
+                mkdir -p "$symbols_dir"
+                objcopy --only-keep-debug "$target_dir/libsspi.so" "$symbols_dir/libDevolutionsSspi.so.debug"
+                strip --strip-unneeded "$runtime_dir/libDevolutionsSspi.so"
+              fi
+            '
+
+      - name: Upload native components
+        uses: actions/upload-artifact@v7
+        with:
+          name: sspi-linux-musl-${{ matrix.arch }}-${{ matrix.build }}
+          path: dependencies/runtimes/linux-musl-${{ matrix.arch }}
+          if-no-files-found: error
+
+      - name: Upload debug symbols
+        if: matrix.build == 'release'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sspi-linux-musl-${{ matrix.arch }}-release-symbols
+          path: symbols/linux-musl-${{ matrix.arch }}
+          if-no-files-found: error
+
   build-universal:
     name: Universal Build
     runs-on: ubuntu-24.04
