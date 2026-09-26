@@ -78,6 +78,7 @@ fn secbuffer_readonly_with_checksum() {
         krb5_user_to_user: false,
         server: Some(Box::new(test_data::fake_server_properties())),
         remote_seq_number: 0,
+        clock_offset: time::Duration::ZERO,
     };
 
     // RPC header
@@ -259,6 +260,7 @@ fn integrity_only_wrap_decryption() {
         krb5_user_to_user: false,
         server: None,
         remote_seq_number: 0,
+        clock_offset: time::Duration::ZERO,
     };
 
     let mut buffer = token_bytes;

@@ -23,7 +23,7 @@ use self::extractors::{
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions, GenerateKeytabPaDataOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep,
-    generate_ap_req, generate_as_req_kdc_body, generate_authenticator, generate_tgs_req,
+    generate_ap_req, generate_as_req_kdc_body, generate_authenticator_at, generate_tgs_req,
 };
 use self::principal::{
     ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
@@ -316,14 +316,18 @@ pub async fn initialize_security_context<'a>(
             let mut hops = 0;
 
             let (tgs_rep, session_key_2) = loop {
-                let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-                    kdc_rep: &auth_rep,
-                    seq_num: Some(rand.next_u32()),
-                    sub_key: None,
-                    checksum: None,
-                    channel_bindings: client.channel_bindings.as_ref(),
-                    extensions: Vec::new(),
-                })?;
+                let now = client.current_kdc_time()?;
+                let mut authenticator = generate_authenticator_at(
+                    GenerateAuthenticatorOptions {
+                        kdc_rep: &auth_rep,
+                        seq_num: Some(rand.next_u32()),
+                        sub_key: None,
+                        checksum: None,
+                        channel_bindings: client.channel_bindings.as_ref(),
+                        extensions: Vec::new(),
+                    },
+                    now,
+                )?;
 
                 let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
                     realm: &realm,
@@ -436,7 +440,8 @@ pub async fn initialize_security_context<'a>(
                 extensions: Vec::new(),
             };
 
-            let authenticator = generate_authenticator(authenticator_options)?;
+            let now = client.current_kdc_time()?;
+            let authenticator = generate_authenticator_at(authenticator_options, now)?;
 
             let ap_req = generate_ap_req(
                 tgs_rep.0.ticket.0,
