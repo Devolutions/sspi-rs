@@ -11,9 +11,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+use picky_krb::constants::key_usages::{AP_REQ_AUTHENTICATOR, TICKET_REP};
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
-use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
-use picky_krb::gss_api::MechTypeList;
+use picky_krb::crypto::CipherSuite;
+use picky_krb::data_types::{Authenticator, EncTicketPart, KerberosStringAsn1, PrincipalName};
+use picky_krb::gss_api::{KrbMessage, MechTypeList};
+use picky_krb::messages::ApReq;
 use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
@@ -22,6 +25,7 @@ use sspi::{
     Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
     SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
+use time::OffsetDateTime;
 use url::Url;
 
 use crate::client_server::kerberos::context_validator::{
@@ -251,6 +255,35 @@ fn run_kerberos(
     panic!("Kerberos authentication should not exceed {steps} steps");
 }
 
+fn ap_req_authenticator_time(token: &[u8], service_key: &[u8]) -> OffsetDateTime {
+    let ap_req = KrbMessage::<ApReq>::decode_application_krb_message(token)
+        .expect("client token contains an AP-REQ")
+        .0
+        .krb_msg;
+    let encrypted_ticket = &ap_req.0.ticket.0.0.enc_part.0;
+    let ticket_cipher = CipherSuite::try_from(encrypted_ticket.etype.0.0.as_slice())
+        .expect("supported ticket encryption type")
+        .cipher();
+    let ticket_data = ticket_cipher
+        .decrypt(service_key, TICKET_REP, &encrypted_ticket.cipher.0.0)
+        .expect("service decrypts the ticket");
+    let ticket: EncTicketPart = picky_asn1_der::from_bytes(&ticket_data).expect("valid ticket");
+
+    let encrypted_authenticator = &ap_req.0.authenticator.0;
+    let authenticator_cipher = CipherSuite::try_from(encrypted_authenticator.etype.0.0.as_slice())
+        .expect("supported authenticator encryption type")
+        .cipher();
+    let authenticator_data = authenticator_cipher
+        .decrypt(
+            &ticket.0.key.0.key_value.0.0,
+            AP_REQ_AUTHENTICATOR,
+            &encrypted_authenticator.cipher.0.0,
+        )
+        .expect("session key decrypts the authenticator");
+    let authenticator: Authenticator = picky_asn1_der::from_bytes(&authenticator_data).expect("valid authenticator");
+    OffsetDateTime::try_from(authenticator.0.ctime.0.0).expect("valid authenticator time")
+}
+
 #[test]
 fn kerberos_auth() {
     let KrbEnvironment {
@@ -387,7 +420,7 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
         let server_properties = ServerProperties {
             mech_types: MechTypeList::from(Vec::new()),
             max_time_skew: std::time::Duration::from_secs(30),
-            ticket_decryption_key: Some(ticket_decryption_key.into()),
+            ticket_decryption_key: Some(ticket_decryption_key.clone().into()),
             service_name: target_service_name,
             additional_service_keys: Vec::new(),
             user: None,
@@ -399,19 +432,58 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
         let credentials = CredentialsBuffers::try_from(credentials).unwrap();
         let mut client_credentials_handle = Some(credentials.clone());
         let mut server_credentials_handle = Some(credentials);
+        let mut client = SspiContext::Kerberos(kerberos_client);
+        let mut server = SspiContext::Kerberos(kerberos_server);
+        let client_flags = ClientRequestFlags::MUTUAL_AUTH | ClientRequestFlags::INTEGRITY;
+        let server_flags = ServerRequestFlags::MUTUAL_AUTH | ServerRequestFlags::INTEGRITY;
 
-        run_kerberos(
-            &mut SspiContext::Kerberos(kerberos_client),
+        let before = OffsetDateTime::now_utc() + clock_offset;
+        let (status, ap_req_token) = initialize_security_context(
+            &mut client,
             &mut client_credentials_handle,
-            ClientRequestFlags::MUTUAL_AUTH | ClientRequestFlags::INTEGRITY,
+            client_flags,
             &target_name,
-            &mut SspiContext::Kerberos(kerberos_server),
-            &mut server_credentials_handle,
-            ServerRequestFlags::MUTUAL_AUTH | ServerRequestFlags::INTEGRITY,
+            Vec::new(),
             &mut network_client,
-            2,
-            EmptySspiContextValidator,
         );
+        let after = OffsetDateTime::now_utc() + clock_offset;
+        assert_eq!(status, SecurityStatus::ContinueNeeded);
+
+        let ctime = ap_req_authenticator_time(&ap_req_token, &ticket_decryption_key);
+        // KerberosTime stores whole seconds, so ctime can precede the sampled start by less than a second.
+        assert!(
+            (before - time::Duration::seconds(1)..=after).contains(&ctime),
+            "AP authenticator time {ctime} should use the KDC clock offset {clock_offset} (observed {before}..{after})"
+        );
+
+        let (_, ap_rep_token) = accept_security_context(
+            &mut server,
+            &mut server_credentials_handle,
+            server_flags,
+            ap_req_token,
+            &mut network_client,
+        );
+        let (status, final_token) = initialize_security_context(
+            &mut client,
+            &mut client_credentials_handle,
+            client_flags,
+            &target_name,
+            ap_rep_token,
+            &mut network_client,
+        );
+        assert_eq!(status, SecurityStatus::Ok);
+        if !final_token.is_empty() {
+            accept_security_context(
+                &mut server,
+                &mut server_credentials_handle,
+                server_flags,
+                final_token,
+                &mut network_client,
+            );
+        }
+        test_encryption(&mut client, &mut server);
+        test_stream_buffer_encryption(&mut client, &mut server);
+        test_rpc_request_encryption(&mut client, &mut server);
         assert_eq!(as_requests.load(Ordering::SeqCst), 3);
     }
 }
