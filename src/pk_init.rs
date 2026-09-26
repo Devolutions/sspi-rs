@@ -73,6 +73,13 @@ pub(crate) struct GenerateAsPaDataOptions<'a> {
 
 #[instrument(level = "trace", skip_all, ret)]
 pub(crate) fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
+    generate_pa_datas_for_as_req_at(options, OffsetDateTime::now_utc())
+}
+
+pub(crate) fn generate_pa_datas_for_as_req_at(
+    options: &mut GenerateAsPaDataOptions<'_>,
+    current_date: OffsetDateTime,
+) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         p2p_cert,
         kdc_req_body,
@@ -99,7 +106,6 @@ pub(crate) fn generate_pa_datas_for_as_req(options: &mut GenerateAsPaDataOptions
         ]);
     }
 
-    let current_date = OffsetDateTime::now_utc();
     let mut microseconds = current_date.microsecond();
     if microseconds > MAX_MICROSECONDS {
         microseconds = MAX_MICROSECONDS;

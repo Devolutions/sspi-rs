@@ -130,10 +130,13 @@ pub struct GenerateAsPaDataOptions<'a> {
 
 /// Build the PA-ENC-TIMESTAMP pre-auth value, encrypting the current time with
 /// an already-derived long-term `key` of type `encryption_type`.
-fn encode_enc_timestamp_pa_data(key: &[u8], encryption_type: &CipherSuite) -> Result<PaData> {
+fn encode_enc_timestamp_pa_data(
+    key: &[u8],
+    encryption_type: &CipherSuite,
+    current_date: OffsetDateTime,
+) -> Result<PaData> {
     let cipher = encryption_type.cipher();
 
-    let current_date = OffsetDateTime::now_utc();
     let microseconds = current_date.microsecond().min(MAX_MICROSECONDS);
 
     let timestamp = PaEncTsEnc {
@@ -178,6 +181,13 @@ fn encode_pac_request_pa_data() -> Result<PaData> {
 
 #[instrument(level = "trace", ret, skip_all, fields(options.salt, options.enc_params, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Result<Vec<PaData>> {
+    generate_pa_datas_for_as_req_at(options, OffsetDateTime::now_utc())
+}
+
+pub(crate) fn generate_pa_datas_for_as_req_at(
+    options: &GenerateAsPaDataOptions<'_>,
+    timestamp: OffsetDateTime,
+) -> Result<Vec<PaData>> {
     let GenerateAsPaDataOptions {
         password,
         salt,
@@ -192,7 +202,7 @@ pub fn generate_pa_datas_for_as_req(options: &GenerateAsPaDataOptions<'_>) -> Re
         let key = encryption_type
             .cipher()
             .generate_key_from_password(password.as_bytes(), salt)?;
-        pa_datas.push(encode_enc_timestamp_pa_data(&key, encryption_type)?);
+        pa_datas.push(encode_enc_timestamp_pa_data(&key, encryption_type, timestamp)?);
     }
 
     pa_datas.push(encode_pac_request_pa_data()?);
@@ -214,12 +224,20 @@ pub struct GenerateKeytabPaDataOptions {
 
 #[instrument(level = "trace", ret, skip_all, fields(options.key_enctype, options.with_pre_auth))]
 pub fn generate_pa_datas_for_as_req_with_key(options: &GenerateKeytabPaDataOptions) -> Result<Vec<PaData>> {
+    generate_pa_datas_for_as_req_with_key_at(options, OffsetDateTime::now_utc())
+}
+
+pub(crate) fn generate_pa_datas_for_as_req_with_key_at(
+    options: &GenerateKeytabPaDataOptions,
+    timestamp: OffsetDateTime,
+) -> Result<Vec<PaData>> {
     let mut pa_datas = Vec::new();
 
     if options.with_pre_auth {
         pa_datas.push(encode_enc_timestamp_pa_data(
             options.key.as_ref(),
             &options.key_enctype,
+            timestamp,
         )?);
     }
 
@@ -600,6 +618,13 @@ pub struct GenerateAuthenticatorOptions<'a> {
 /// Generated ApReq Authenticator.
 #[instrument(level = "trace", ret)]
 pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Result<Authenticator> {
+    generate_authenticator_at(options, OffsetDateTime::now_utc())
+}
+
+pub(crate) fn generate_authenticator_at(
+    options: GenerateAuthenticatorOptions<'_>,
+    current_date: OffsetDateTime,
+) -> Result<Authenticator> {
     let GenerateAuthenticatorOptions {
         kdc_rep,
         seq_num,
@@ -609,7 +634,6 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
         ..
     } = options;
 
-    let current_date = OffsetDateTime::now_utc();
     let mut microseconds = current_date.microsecond();
     if microseconds > MAX_MICROSECONDS {
         microseconds = MAX_MICROSECONDS;
@@ -969,5 +993,32 @@ mod tests {
         .expect("generate keytab pa-datas");
         // PA-ENC-TIMESTAMP plus PA-PAC-REQUEST.
         assert_eq!(pa_datas.len(), 2);
+    }
+
+    #[test]
+    fn keytab_pa_data_uses_supplied_timestamp() {
+        let key = vec![0_u8; 32];
+        let timestamp = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap() + Duration::milliseconds(123);
+        let pa_datas = generate_pa_datas_for_as_req_with_key_at(
+            &GenerateKeytabPaDataOptions {
+                key: key.clone().into(),
+                key_enctype: CipherSuite::Aes256CtsHmacSha196,
+                with_pre_auth: true,
+            },
+            timestamp,
+        )
+        .unwrap();
+
+        let encrypted: EncryptedData = picky_asn1_der::from_bytes(&pa_datas[0].padata_data.0.0).unwrap();
+        let decrypted = CipherSuite::Aes256CtsHmacSha196
+            .cipher()
+            .decrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &encrypted.cipher.0.0)
+            .unwrap();
+        let decoded: PaEncTsEnc = picky_asn1_der::from_bytes(&decrypted).unwrap();
+        assert_eq!(
+            OffsetDateTime::try_from(decoded.patimestamp.0.0).unwrap(),
+            timestamp - Duration::milliseconds(123)
+        );
+        assert_eq!(decoded.pausec.0.unwrap().0.0, 123_000_u32.to_be_bytes());
     }
 }

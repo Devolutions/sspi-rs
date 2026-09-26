@@ -6,6 +6,8 @@ pub(super) mod network_client;
 
 use std::collections::{HashMap, HashSet};
 use std::panic;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
@@ -16,8 +18,8 @@ use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
-    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, Kerberos,
-    KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
+    AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
+    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
     SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use url::Url;
@@ -343,6 +345,143 @@ fn kerberos_auth() {
         2,
         EmptySspiContextValidator,
     );
+}
+
+#[test]
+fn kerberos_auth_recovers_from_kdc_clock_skew() {
+    for clock_offset in [time::Duration::seconds(15), time::Duration::seconds(-15)] {
+        let KrbEnvironment {
+            realm,
+            credentials,
+            keys,
+            users,
+            target_name,
+            target_service_name,
+        } = init_krb_environment();
+        let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+        let as_requests = Arc::new(AtomicUsize::new(0));
+        let request_counter = Arc::clone(&as_requests);
+        let kdc = KdcMock::new(
+            realm,
+            keys,
+            users,
+            Validators {
+                as_req: Box::new(move |_| {
+                    request_counter.fetch_add(1, Ordering::SeqCst);
+                }),
+                tgs_req: Box::new(|_| {}),
+            },
+        )
+        .with_clock_offset(clock_offset);
+        let mut network_client = NetworkClientMock { kdc };
+
+        let client_config = KerberosConfig {
+            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        };
+        let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
+        let server_config = KerberosConfig {
+            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            client_computer_name: SERVER_COMPUTER_NAME.into(),
+        };
+        let server_properties = ServerProperties {
+            mech_types: MechTypeList::from(Vec::new()),
+            max_time_skew: std::time::Duration::from_secs(30),
+            ticket_decryption_key: Some(ticket_decryption_key.into()),
+            service_name: target_service_name,
+            additional_service_keys: Vec::new(),
+            user: None,
+            client: None,
+            authenticators_cache: HashSet::new(),
+        };
+        let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+
+        let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+        let mut client_credentials_handle = Some(credentials.clone());
+        let mut server_credentials_handle = Some(credentials);
+
+        run_kerberos(
+            &mut SspiContext::Kerberos(kerberos_client),
+            &mut client_credentials_handle,
+            ClientRequestFlags::MUTUAL_AUTH | ClientRequestFlags::INTEGRITY,
+            &target_name,
+            &mut SspiContext::Kerberos(kerberos_server),
+            &mut server_credentials_handle,
+            ServerRequestFlags::MUTUAL_AUTH | ServerRequestFlags::INTEGRITY,
+            &mut network_client,
+            2,
+            EmptySspiContextValidator,
+        );
+        assert_eq!(as_requests.load(Ordering::SeqCst), 3);
+    }
+}
+
+#[test]
+fn kerberos_skew_retry_is_bounded_and_does_not_retry_other_errors() {
+    for (force_skew, expected_error, expected_requests) in
+        [(true, ErrorKind::TimeSkew, 3), (false, ErrorKind::KdcInvalidRequest, 2)]
+    {
+        let KrbEnvironment {
+            realm,
+            credentials,
+            keys,
+            mut users,
+            target_name,
+            ..
+        } = init_krb_environment();
+        if !force_skew {
+            for user in users.values_mut() {
+                user.password = b"wrong password".to_vec();
+            }
+        }
+
+        let as_requests = Arc::new(AtomicUsize::new(0));
+        let request_counter = Arc::clone(&as_requests);
+        let kdc = KdcMock::new(
+            realm,
+            keys,
+            users,
+            Validators {
+                as_req: Box::new(move |_| {
+                    request_counter.fetch_add(1, Ordering::SeqCst);
+                }),
+                tgs_req: Box::new(|_| {}),
+            },
+        );
+        let kdc = if force_skew {
+            kdc.with_clock_offset(time::Duration::seconds(15))
+                .reject_valid_preauth_with_skew()
+        } else {
+            kdc
+        };
+        let network_client = NetworkClientMock { kdc };
+        let mut client = SspiContext::Kerberos(
+            Kerberos::new_client_from_config(KerberosConfig {
+                kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+                client_computer_name: CLIENT_COMPUTER_NAME.into(),
+            })
+            .unwrap(),
+        );
+        let mut credentials_handle = Some(CredentialsBuffers::try_from(credentials).unwrap());
+        let mut input_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut output_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut builder = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut credentials_handle)
+            .with_context_requirements(ClientRequestFlags::MUTUAL_AUTH)
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(&target_name)
+            .with_input(&mut input_token)
+            .with_output(&mut output_token);
+
+        let err = client
+            .initialize_security_context_impl(&mut builder)
+            .unwrap()
+            .resolve_with_client(&network_client)
+            .unwrap_err();
+        assert_eq!(err.error_type, expected_error);
+        assert_eq!(as_requests.load(Ordering::SeqCst), expected_requests);
+    }
 }
 
 #[test]

@@ -73,7 +73,7 @@ fn validate_pa_data_timestamp(
         .map_err(|_| KdcError::PreAuthFailed("unable to decode PaEncTsEnc timestamp value"))?;
     let current = OffsetDateTime::now_utc();
 
-    if client_timestamp > current || current - client_timestamp > Duration::from_secs(max_time_skew) {
+    if (current - client_timestamp).abs() > Duration::from_secs(max_time_skew) {
         return Err(KdcError::ClockSkew("invalid pa-data: clock skew too great"));
     }
 
@@ -230,4 +230,74 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(as_rep_enc_data)),
         }),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_asn1::date::GeneralizedTime;
+    use picky_asn1::wrapper::ExplicitContextTag0;
+    use picky_krb::data_types::KerberosTime;
+
+    use super::*;
+
+    fn encrypted_timestamp(user: &DomainUser, client_time: OffsetDateTime) -> PaData {
+        let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+        let key = cipher
+            .generate_key_from_password(user.password.as_bytes(), user.salt.as_bytes())
+            .unwrap();
+        let timestamp = PaEncTsEnc {
+            patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(client_time))),
+            pausec: Optional::from(None),
+        };
+        let encrypted = cipher
+            .encrypt(
+                &key,
+                PA_ENC_TIMESTAMP_KEY_USAGE,
+                &picky_asn1_der::to_vec(&timestamp).unwrap(),
+            )
+            .unwrap();
+
+        PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&EncryptedData {
+                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![u8::from(
+                        CipherSuite::Aes256CtsHmacSha196,
+                    )])),
+                    kvno: Optional::from(None),
+                    cipher: ExplicitContextTag2::from(OctetStringAsn1::from(encrypted)),
+                })
+                .unwrap(),
+            )),
+        }
+    }
+
+    #[test]
+    fn encrypted_timestamp_allows_skew_in_both_directions() {
+        let user = DomainUser {
+            username: "user@example.com".to_owned(),
+            password: "password".to_owned(),
+            salt: "EXAMPLE.COMuser".to_owned(),
+        };
+        let now = OffsetDateTime::now_utc();
+
+        for delta in [-200, 0, 200] {
+            let pa_data = encrypted_timestamp(&user, now + time::Duration::seconds(delta));
+            assert!(
+                validate_pa_data_timestamp(&user, 300, &[pa_data]).is_ok(),
+                "offset {delta}s"
+            );
+        }
+
+        for delta in [-400, 400] {
+            let pa_data = encrypted_timestamp(&user, now + time::Duration::seconds(delta));
+            assert!(
+                matches!(
+                    validate_pa_data_timestamp(&user, 300, &[pa_data]),
+                    Err(KdcError::ClockSkew(_))
+                ),
+                "offset {delta}s"
+            );
+        }
+    }
 }
