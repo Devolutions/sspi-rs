@@ -10,7 +10,7 @@ use crate::kerberos::client::extractors::{
 };
 use crate::kerberos::client::generators::{
     EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_as_req_kdc_body,
-    generate_authenticator, generate_krb_priv_request,
+    generate_authenticator_at, generate_krb_priv_request,
 };
 use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
@@ -82,17 +82,21 @@ pub async fn change_password<'a>(
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
     let authenticator_seb_key = generate_random_symmetric_key(enc_type, &mut rand);
 
-    let authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-        kdc_rep: &as_rep.0,
-        seq_num: Some(seq_num),
-        sub_key: Some(EncKey {
-            key_type: enc_type.clone(),
-            key_value: authenticator_seb_key,
-        }),
-        checksum: None,
-        channel_bindings: client.channel_bindings.as_ref(),
-        extensions: Vec::new(),
-    })?;
+    let now = client.current_kdc_time()?;
+    let authenticator = generate_authenticator_at(
+        GenerateAuthenticatorOptions {
+            kdc_rep: &as_rep.0,
+            seq_num: Some(seq_num),
+            sub_key: Some(EncKey {
+                key_type: enc_type.clone(),
+                key_value: authenticator_seb_key,
+            }),
+            checksum: None,
+            channel_bindings: client.channel_bindings.as_ref(),
+            extensions: Vec::new(),
+        },
+        now,
+    )?;
 
     let krb_priv = generate_krb_priv_request(
         as_rep.0.ticket.0,

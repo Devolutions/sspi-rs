@@ -21,6 +21,7 @@ use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::KdcProxyMessage;
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
+use time::{Duration, OffsetDateTime};
 use url::Url;
 
 pub use self::client::initialize_security_context;
@@ -100,6 +101,8 @@ pub struct Kerberos {
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
     pub(crate) remote_seq_number: u32,
+    /// KDC time minus local time, learned from a clock-skew error during AS pre-authentication.
+    pub(crate) clock_offset: Duration,
 }
 
 impl Kerberos {
@@ -121,6 +124,7 @@ impl Kerberos {
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
+            clock_offset: Duration::ZERO,
         })
     }
 
@@ -142,11 +146,18 @@ impl Kerberos {
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
             remote_seq_number: 0,
+            clock_offset: Duration::ZERO,
         })
     }
 
     pub fn is_client(&self) -> bool {
         self.server.is_none()
+    }
+
+    pub(crate) fn current_kdc_time(&self) -> Result<OffsetDateTime> {
+        OffsetDateTime::now_utc()
+            .checked_add(self.clock_offset)
+            .ok_or_else(|| Error::new(ErrorKind::TimeSkew, "KDC clock offset is out of range"))
     }
 
     pub fn config(&self) -> &KerberosConfig {
@@ -847,6 +858,7 @@ pub mod test_data {
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
+            clock_offset: time::Duration::ZERO,
         }
     }
 
@@ -894,6 +906,7 @@ pub mod test_data {
             krb5_user_to_user: false,
             server: Some(Box::new(fake_server_properties())),
             remote_seq_number: 0,
+            clock_offset: time::Duration::ZERO,
         }
     }
 }
