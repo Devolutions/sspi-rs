@@ -200,29 +200,19 @@ impl TlsConnection {
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
-        if payload
-            .get(0..1 /* ContentType */ + 2 /* ProtocolVersion */)
-            .expect("payload length is due to prior check")
-            != tls_packet_start
-        {
+        if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
                 format!(
                     "invalid TLS packet header: expected {:?} but got {:?}",
                     tls_packet_start,
-                    payload.get(0..3).expect("payload length is due to prior check")
+                    &payload[0..3]
                 ),
             ));
         }
 
         // Safe: payload length is checked above.
-        let encrypted_application_data_len = usize::from(u16::from_be_bytes(
-            payload
-                .get(3..5)
-                .expect("payload length is due to prior check")
-                .try_into()
-                .expect("slice length is exactly 2 bytes"),
-        ));
+        let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
 
         let tls_packet_len = header_len + encrypted_application_data_len;
         if payload.len() < tls_packet_len {
@@ -232,11 +222,7 @@ impl TlsConnection {
         }
 
         // Safe: payload length is checked above.
-        Ok(FindTlsPacketResult::TlsPacket(
-            payload
-                .get_mut(0..tls_packet_len)
-                .expect("payload length is due to prior check"),
-        ))
+        Ok(FindTlsPacketResult::TlsPacket(&mut payload[0..tls_packet_len]))
     }
 
     // This function splits the incoming TLS traffic into three parts (if possible):
@@ -271,29 +257,19 @@ impl TlsConnection {
         tls_packet_start.extend_from_slice(&tls_version.to_be_bytes());
 
         // Safe: payload length is checked above.
-        if payload
-            .get(0..1 /* ContentType */ + 2 /* ProtocolVersion */)
-            .expect("payload length is due to prior check")
-            != tls_packet_start
-        {
+        if payload[0..1 /* ContentType */ + 2 /* ProtocolVersion */] != tls_packet_start {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
                 format!(
                     "invalid TLS packet header: expected {:?} but got {:?}",
                     tls_packet_start,
-                    payload.get(0..3).expect("payload length is due to prior check"),
+                    &payload[0..3],
                 ),
             ));
         }
 
         // Safe: payload length is checked above.
-        let encrypted_application_data_len = usize::from(u16::from_be_bytes(
-            payload
-                .get(3..5)
-                .expect("payload length is due to prior check")
-                .try_into()
-                .expect("slice is guaranteed 2 bytes"),
-        ));
+        let encrypted_application_data_len = usize::from(u16::from_be_bytes(payload[3..5].try_into().unwrap()));
 
         if payload.len() < usize::from(TLS_PACKET_HEADER_LEN) + encrypted_application_data_len {
             return Err(Error::new(ErrorKind::InvalidToken, "Input TLS buffer is too short."));
@@ -340,13 +316,7 @@ impl TlsConnection {
                     plain_data.resize(decrypted_data_len + tls_state.plaintext_bytes_to_read(), 0);
 
                     let mut reader = tls_connection.reader();
-                    // `decrypted_data_len` is never greater than `plain_data.len()` because `plain_data` was
-                    // just resized to `decrypted_data_len + tls_state.plaintext_bytes_to_read()`.
-                    let _plain_data_len = reader.read(
-                        plain_data
-                            .get_mut(decrypted_data_len..)
-                            .expect("decrypted_data_len <= plain_data.len()"),
-                    )?;
+                    let _plain_data_len = reader.read(&mut plain_data[decrypted_data_len..])?;
                 }
 
                 let TlsTrafficParts {
@@ -362,9 +332,7 @@ impl TlsConnection {
                     ));
                 }
 
-                let decrypted = application_data
-                    .get_mut(0..plain_data.len())
-                    .expect("application_data.len() >= plain_data.len() due to prior check");
+                let decrypted = &mut application_data[0..plain_data.len()];
                 decrypted.copy_from_slice(&plain_data);
 
                 Ok(DecryptionResult::Success(DecryptionResultBuffers {

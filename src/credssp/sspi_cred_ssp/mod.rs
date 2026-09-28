@@ -209,19 +209,14 @@ impl Sspi for SspiCredSsp {
                 extra,
             }) => {
                 // buffers order is important. MSTSC won't work with another buffers order.
-                // `message.len() >= 4` is checked above.
-                *message.get_mut(0).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::stream_header_buf(header);
-                *message.get_mut(1).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::data_buf(decrypted);
+                message[0] = SecurityBufferRef::stream_header_buf(header);
+                message[1] = SecurityBufferRef::data_buf(decrypted);
                 // https://learn.microsoft.com/en-us/windows/win32/api/sspi/ns-sspi-secbuffer
                 // SECBUFFER_STREAM_TRAILER: It is not usually of interest to callers.
                 //
                 // So, we can just set an empty buffer here.
-                *message.get_mut(2).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::stream_trailer_buf(&mut []);
-                *message.get_mut(3).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::extra_buf(extra);
+                message[2] = SecurityBufferRef::stream_trailer_buf(&mut []);
+                message[3] = SecurityBufferRef::extra_buf(extra);
 
                 Ok(DecryptionFlags::empty())
             }
@@ -232,10 +227,8 @@ impl Sspi for SspiCredSsp {
                 // * https://stackoverflow.com/a/6832633/9123725
                 // * https://stackoverflow.com/a/65101172
 
-                *message.get_mut(0).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::missing_buf(needed_bytes_amount);
-                *message.get_mut(1).expect("message.len() >= 4 due to prior check") =
-                    SecurityBufferRef::missing_buf(needed_bytes_amount);
+                message[0] = SecurityBufferRef::missing_buf(needed_bytes_amount);
+                message[1] = SecurityBufferRef::missing_buf(needed_bytes_amount);
 
                 Err(Error::new(ErrorKind::IncompleteMessage, "Got incomplete TLS message"))
             }

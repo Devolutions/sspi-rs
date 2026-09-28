@@ -28,28 +28,11 @@ impl ChannelBindings {
             ));
         }
 
-        let initiator_addr_type = u32::from_le_bytes(
-            data.get(0..4)
-                .expect("data[0..4] is in bounds because of prior check")
-                .try_into()
-                .unwrap(),
-        );
+        let initiator_addr_type = u32::from_le_bytes(data[0..4].try_into().unwrap());
 
-        let initiator_len: usize = u32::from_le_bytes(
-            data.get(4..8)
-                .expect("data[4..8] is in bounds because of prior check")
-                .try_into()
-                .unwrap(),
-        )
-        .try_into()?;
+        let initiator_len: usize = u32::from_le_bytes(data[4..8].try_into().unwrap()).try_into()?;
 
-        let initiator_offset: usize = u32::from_le_bytes(
-            data.get(8..12)
-                .expect("data[8..12] is in bounds because of prior check")
-                .try_into()
-                .unwrap(),
-        )
-        .try_into()?;
+        let initiator_offset: usize = u32::from_le_bytes(data[8..12].try_into().unwrap()).try_into()?;
 
         let initiator = if initiator_len > 0 {
             let Some(initiator_data) = data.get(initiator_offset..(initiator_offset + initiator_len)) else {
@@ -69,23 +52,20 @@ impl ChannelBindings {
         };
 
         let acceptor_addr_type = u32::from_le_bytes(
-            data.get(12..16)
-                .expect("data[12..16] is in bounds because of prior check")
+            data[12..16]
                 .try_into()
                 .expect("data[12..16] is castable to [u8; 4] because of prior check"),
         );
 
         let acceptor_len: usize = u32::from_le_bytes(
-            data.get(16..20)
-                .expect("data[16..20] is in bounds because of prior check")
+            data[16..20]
                 .try_into()
                 .expect("data[16..20] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
         let acceptor_offset: usize = u32::from_le_bytes(
-            data.get(20..24)
-                .expect("data[20..24] is in bounds because of prior check")
+            data[20..24]
                 .try_into()
                 .expect("data[20..24] is castable to [u8; 4] because of prior check"),
         )
@@ -109,16 +89,14 @@ impl ChannelBindings {
         };
 
         let application_len: usize = u32::from_le_bytes(
-            data.get(24..28)
-                .expect("data[24..28] is in bounds because of prior check")
+            data[24..28]
                 .try_into()
                 .expect("data[24..28] is castable to [u8; 4] because of prior check"),
         )
         .try_into()?;
 
         let application_offset: usize = u32::from_le_bytes(
-            data.get(28..32)
-                .expect("data[28..32] is in bounds because of prior check")
+            data[28..32]
                 .try_into()
                 .expect("data[28..32] is castable to [u8; 4] because of prior check"),
         )

@@ -262,11 +262,9 @@ pub(crate) async fn accept_security_context(
             check_auth_scheme!(ap_req_exchange.auth_scheme, server.auth_scheme);
 
             let exchange_message_len = mech_token.len() - initiator_verify_data.len();
-            server.negoex_messages.extend_from_slice(
-                mech_token
-                    .get(..exchange_message_len)
-                    .expect("exchange_message_len <= mech_token.len()"),
-            );
+            server
+                .negoex_messages
+                .extend_from_slice(&mech_token[..exchange_message_len]);
 
             let (initiator_verify, tail) = decode_verify_message(initiator_verify_data)?;
             ensure_no_negoex_tail(tail)?;
@@ -465,12 +463,7 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     server.peer_certificate = Some(client_certificate.clone());
     server.peer_certificate_trusted = true;
     let expected_username = generate_as_req_username_from_certificate(&client_certificate)?;
-    if cname
-        .name_string
-        .0
-        .first()
-        .is_none_or(|username| username.to_string() != expected_username)
-    {
+    if cname.name_string.0.len() != 1 || cname.name_string.0[0].to_string() != expected_username {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
             "PKU2U initiator principal does not match its certificate",
@@ -889,7 +882,12 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
             format!("unexpected authenticator checksum type: {:?}", checksum.0.cksumtype.0.0),
         ));
     }
-    let checksum_value = &checksum.0.checksum.0.0;
+    let Some((checksum_value, checksum_extensions)) = checksum.0.checksum.0.0.split_first_chunk::<24>() else {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "authenticator checksum is too short",
+        ));
+    };
 
     // Channel bindings (RFC 4121 §4.1.1): bytes [4..20) must be either the MD5 hash of the negotiated
     // channel bindings (if we were given any) or all-zero (if not).
@@ -897,13 +895,7 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
         Some(channel_bindings) => compute_md5_channel_bindings_hash(channel_bindings)?,
         None => [0; 16],
     };
-    let Some(channel_bindings_buf) = checksum_value.get(4..20) else {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            "authenticator checksum is too short for channel bindings",
-        ));
-    };
-    if channel_bindings_buf != expected_channel_binding_hash {
+    if checksum_value[4..20] != expected_channel_binding_hash {
         return Err(Error::new(
             ErrorKind::MessageAltered,
             "authenticator channel bindings do not match",
@@ -921,16 +913,10 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
         .clone()
         .into();
 
-    let Some(checksum_extension) = checksum_value.get(24..) else {
-        return Err(Error::new(
-            ErrorKind::InvalidToken,
-            "authenticator checksum is too short for extensions",
-        ));
-    };
     // The "Finished" extension (draft-zhu-pku2u §6): a checksum over the whole AS-REQ/AS-REP GSS-API
     // transcript, proving the initiator saw the exact AS-REP we sent (and thus that nothing tampered
     // with it in transit).
-    let finished_extension = find_authenticator_extension(checksum_extension, GSS_EXTS_FINISHED).ok_or_else(|| {
+    let finished_extension = find_authenticator_extension(checksum_extensions, GSS_EXTS_FINISHED).ok_or_else(|| {
         Error::new(
             ErrorKind::InvalidToken,
             "authenticator checksum has no Finished (GSS_EXTS_FINISHED) extension",
@@ -957,10 +943,10 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
 
     let remote_seq_number = parse_authenticator_seq_number(seq_number)
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "authenticator has no sequence number"))?;
-    let Some(first_cname) = cname.name_string.0.first() else {
-        return Err(Error::new(ErrorKind::InvalidToken, "authenticator has no cname"));
+    let Some(principal) = cname.0.name_string.0.first() else {
+        return Err(Error::new(ErrorKind::InvalidToken, "authenticator cname is empty"));
     };
-    let principal = first_cname.to_string();
+    let principal = principal.to_string();
     let (domain, account_name) = principal
         .split_once('\\')
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "PKU2U initiator name is not qualified"))?;
@@ -1019,11 +1005,8 @@ fn parse_authenticator_seq_number(seq_number: &Optional<Option<ExplicitContextTa
     let bytes = &seq_number.0.as_ref()?.0.0;
     let mut buf = [0u8; 4];
     let start = bytes.len().saturating_sub(4);
-    // `start` is `len - min(len, 4)`, so `slice.len() <= 4`.
-    let slice = bytes.get(start..).expect("start <= bytes.len()");
-    buf.get_mut(4 - slice.len()..)
-        .expect("slice.len() <= 4")
-        .copy_from_slice(slice);
+    let slice = &bytes[start..];
+    buf[4 - slice.len()..].copy_from_slice(slice);
     Some(u32::from_be_bytes(buf))
 }
 
@@ -1039,9 +1022,7 @@ fn find_authenticator_extension(mut extensions: &[u8], extension_type: u32) -> O
         if ty == extension_type {
             return Some(value);
         }
-        extensions = extensions
-            .get(value_end..)
-            .expect("value_end <= extensions.len() checked by prior .get()");
+        extensions = &extensions[value_end..];
     }
     None
 }

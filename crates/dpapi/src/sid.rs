@@ -25,26 +25,21 @@ pub(crate) fn sid_to_bytes(sid: &str) -> Result<Vec<u8>> {
         Err(SidError::InvalidSid(sid.to_owned()))?;
     }
 
-    // `parts[1]` and `parts[2]` are within bounds because `parts.len() >= 3` is checked above.
-    let revision_part = parts.get(1).expect("parts.len() >= 3 due to prior check");
-    let authority_part = parts.get(2).expect("parts.len() >= 3 due to prior check");
-
-    let revision = revision_part.parse::<u8>().map_err(|error| Error::ParseInt {
+    let revision = parts[1].parse::<u8>().map_err(|error| Error::ParseInt {
         description: "cannot parse SID part",
-        value: (*revision_part).to_owned(),
+        value: parts[1].to_owned(),
         error,
     })?;
-    let authority = authority_part.parse::<u64>().map_err(|error| Error::ParseInt {
+    let authority = parts[2].parse::<u64>().map_err(|error| Error::ParseInt {
         description: "cannot parse SID part",
-        value: (*authority_part).to_owned(),
+        value: parts[2].to_owned(),
         error,
     })?;
 
     let mut data = Vec::new();
     data.extend_from_slice(&authority.to_be_bytes());
-    // `data` has just been extended with 8 bytes, so indices 0 and 1 are within bounds.
-    *data.get_mut(0).expect("data has 8 bytes") = revision;
-    *data.get_mut(1).expect("data has 8 bytes") = u8::try_from(parts.len() - 3)?;
+    data[0] = revision;
+    data[1] = u8::try_from(parts.len() - 3)?;
 
     for part in parts.iter().skip(3) {
         let sub_auth = part.parse::<u32>().map_err(|error| Error::ParseInt {

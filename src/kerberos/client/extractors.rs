@@ -186,16 +186,14 @@ pub fn extract_status_code_from_krb_priv_response(
         picky_asn1_der::from_bytes(&cipher.decrypt(auth_key, KRB_PRIV_ENC_PART, &krb_priv.0.enc_part.0.cipher.0.0)?)?;
     let user_data = enc_part.0.user_data.0.0;
 
-    let Some(status_code) = user_data.get(0..2) else {
+    let Some((status_code, _)) = user_data.split_first_chunk::<2>() else {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             "Invalid KRB_PRIV message: user-data first is too short (expected at least 2 bytes)",
         ));
     };
 
-    Ok(u16::from_be_bytes(
-        status_code.try_into().expect("slice is guaranteed 2 bytes"),
-    ))
+    Ok(u16::from_be_bytes(*status_code))
 }
 
 /// Decrypt and decodes the encrypted part of the encoded [ApRep] message.

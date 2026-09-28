@@ -44,10 +44,7 @@ where
 
         while !buf.is_empty() {
             let bytes_read = Box::pin(async { self.stream.read(buf).await }).await?;
-            // `read()` never returns more bytes than the buffer size.
-            buf = buf
-                .get_mut(bytes_read..)
-                .expect("read() must not return more bytes than the buffer size");
+            buf = &mut buf[bytes_read..];
 
             if bytes_read == 0 {
                 return Err(ErrorKind::UnexpectedEof.into());

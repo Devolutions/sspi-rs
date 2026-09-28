@@ -281,11 +281,8 @@ impl<'a, T: Transport> RpcClient<'a, T> {
     async fn send_pdu(&mut self, pdu: Pdu, encrypt_offsets: Option<EncryptionOffsets>) -> Result<Pdu> {
         let mut pdu_encoded = pdu.encode_vec()?;
         let frag_len = u16::try_from(pdu_encoded.len())?;
-        // Set `frag_len` in the PDU header. The encoded PDU always contains at least a 10-byte header.
-        pdu_encoded
-            .get_mut(8..10)
-            .expect("encoded PDU always contains at least a 10-byte header")
-            .copy_from_slice(&frag_len.to_le_bytes());
+        // Set `frag_len` in the PDU header.
+        pdu_encoded[8..10].copy_from_slice(&frag_len.to_le_bytes());
 
         if let Some(encrypt_offsets) = encrypt_offsets {
             self.encrypt_pdu(&mut pdu_encoded, encrypt_offsets)?;
@@ -297,18 +294,11 @@ impl<'a, T: Transport> RpcClient<'a, T> {
         let mut pdu_buf = self.stream.read_vec(PduHeader::FIXED_PART_SIZE).await?;
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
-        if usize::from(pdu_header.frag_len) < PduHeader::FIXED_PART_SIZE {
-            Err(RpcClientError::InvalidFragLength(pdu_header.frag_len))?;
-        }
-
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        self.stream
-            .read_exact(
-                pdu_buf
-                    .get_mut(PduHeader::FIXED_PART_SIZE..)
-                    .expect("frag_len >= PduHeader::FIXED_PART_SIZE due to prior check"),
-            )
-            .await?;
+        let Some(pdu_body) = pdu_buf.get_mut(PduHeader::FIXED_PART_SIZE..) else {
+            return Err(RpcClientError::InvalidFragLength(pdu_header.frag_len).into());
+        };
+        self.stream.read_exact(pdu_body).await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;

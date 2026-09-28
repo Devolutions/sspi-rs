@@ -488,11 +488,7 @@ impl ChecksumValues {
     pub(crate) fn set_flags(&mut self, flags: GssFlags) {
         let flag_bits = flags.bits();
         let flag_bytes = flag_bits.to_le_bytes();
-        // `self.inner` is always 24 bytes long, constructed from `[u8; 24]`.
-        self.inner
-            .get_mut(20..24)
-            .expect("self.inner is 24 bytes long")
-            .copy_from_slice(&flag_bytes);
+        self.inner[20..24].copy_from_slice(&flag_bytes);
     }
 
     pub(crate) fn into_inner(self) -> Vec<u8> {

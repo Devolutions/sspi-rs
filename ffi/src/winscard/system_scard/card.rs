@@ -209,13 +209,12 @@ impl WinScard for SystemScard {
             )?;
         }
 
-        let reader_name_len = reader_name_len.try_into()?;
-        let multi_string_buffer = reader_name.get(0..reader_name_len).ok_or_else(|| {
-            Error::new(
+        let Some(multi_string_buffer) = reader_name.get(0..reader_name_len.try_into()?) else {
+            return Err(Error::new(
                 ErrorKind::InternalError,
                 "reader name length returned by SCardStatus is out of bounds",
-            )
-        })?;
+            ));
+        };
 
         let readers = if let Ok(readers) = parse_multi_string_owned(multi_string_buffer) {
             readers
@@ -363,17 +362,15 @@ impl WinScard for SystemScard {
             "SCardTransmit failed"
         )?;
 
-        let output_apdu_len: usize = output_apdu_len.try_into()?;
+        let Some(output_apdu) = output_apdu.get(0..output_apdu_len.try_into()?) else {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "output APDU length returned by SCardTransmit is out of bounds",
+            ));
+        };
+
         Ok(TransmitOutData {
-            output_apdu: output_apdu
-                .get(0..output_apdu_len)
-                .ok_or_else(|| {
-                    Error::new(
-                        ErrorKind::InternalError,
-                        "output APDU length returned by SCardTransmit is out of bounds",
-                    )
-                })?
-                .to_vec(),
+            output_apdu: output_apdu.to_vec(),
             receive_pci: None,
         })
     }
