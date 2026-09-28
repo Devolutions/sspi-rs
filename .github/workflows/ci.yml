@@ -170,6 +170,109 @@ jobs:
     needs: formatting
     uses: ./.github/workflows/build-native.yml
 
+  pack-musl:
+    name: Pack musl libraries
+    runs-on: ubuntu-latest
+    needs: build-native
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download glibc x64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-x64-release
+          path: dependencies/runtimes/linux-x64
+
+      - name: Download glibc arm64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-arm64-release
+          path: dependencies/runtimes/linux-arm64
+
+      - name: Download musl x64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-musl-x64-release
+          path: dependencies/runtimes/linux-musl-x64
+
+      - name: Download musl arm64 library
+        uses: actions/download-artifact@v8
+        with:
+          name: sspi-linux-musl-arm64-release
+          path: dependencies/runtimes/linux-musl-arm64
+
+      - name: Build and check NuGet package
+        shell: pwsh
+        run: |
+          dotnet build ffi/dotnet/Devolutions.Sspi/Devolutions.Sspi.csproj -c Release -o package
+          if ($LASTEXITCODE -ne 0) { throw "NuGet build failed" }
+
+          Add-Type -AssemblyName System.IO.Compression
+          $Packages = @(Get-ChildItem package -Filter 'Devolutions.Sspi.*.nupkg')
+          if ($Packages.Count -ne 1) { throw "Expected one NuGet package, found $($Packages.Count)" }
+
+          $Archive = [System.IO.Compression.ZipFile]::OpenRead($Packages[0].FullName)
+          try {
+            $Paths = @($Archive.Entries | ForEach-Object FullName)
+            foreach ($Rid in @('linux-x64', 'linux-arm64', 'linux-musl-x64', 'linux-musl-arm64')) {
+              $NativePath = "runtimes/$Rid/native/libDevolutionsSspi.so"
+              if ($Paths -notcontains $NativePath) { throw "Missing $NativePath in NuGet package" }
+            }
+          } finally {
+            $Archive.Dispose()
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sspi-musl-nupkg
+          path: package/*.nupkg
+          if-no-files-found: error
+
+  test-musl-package:
+    name: Test NuGet on Alpine [${{ matrix.arch }}]
+    runs-on: ${{ matrix.runner }}
+    needs: pack-musl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: sspi-musl-nupkg
+          path: package
+
+      - name: Restore, publish and load the native library on Alpine
+        env:
+          RID: linux-musl-${{ matrix.arch }}
+        run: |
+          docker run --rm -v "$PWD:/workspace:ro" -w /tmp -e RID \
+            mcr.microsoft.com/dotnet/sdk:10.0-alpine sh -euc '
+              dotnet new console --framework net10.0 --no-restore -o smoke
+              dotnet add smoke package Devolutions.Sspi --source /workspace/package
+              printf "%s\n" \
+                "using Devolutions.Sspi;" \
+                "unsafe" \
+                "{" \
+                "    var table = Sspi.InitSecurityInterfaceW();" \
+                "    if (table == null || table->dwVersion > 1000)" \
+                "        throw new Exception(\"Invalid SSPI table\");" \
+                "}" > smoke/Program.cs
+              dotnet publish smoke -r "$RID" --self-contained false -p:AllowUnsafeBlocks=true -o published
+              test -f published/libDevolutionsSspi.so
+              dotnet published/smoke.dll
+            '
+
   success:
     name: Success
     runs-on: ubuntu-latest
@@ -181,6 +284,8 @@ jobs:
       - miri
       - wasm
       - build-native
+      - pack-musl
+      - test-musl-package
 
     steps:
       - name: CI succeeded

@@ -28,6 +28,8 @@
     <NativeLibPath_osx_universal>$(RuntimesPath)/osx-universal/native/libDevolutionsSspi.dylib</NativeLibPath_osx_universal>
     <NativeLibPath_linux_x64>$(RuntimesPath)/linux-x64/native/libDevolutionsSspi.so</NativeLibPath_linux_x64>
     <NativeLibPath_linux_arm64>$(RuntimesPath)/linux-arm64/native/libDevolutionsSspi.so</NativeLibPath_linux_arm64>
+    <NativeLibPath_linux_musl_x64>$(RuntimesPath)/linux-musl-x64/native/libDevolutionsSspi.so</NativeLibPath_linux_musl_x64>
+    <NativeLibPath_linux_musl_arm64>$(RuntimesPath)/linux-musl-arm64/native/libDevolutionsSspi.so</NativeLibPath_linux_musl_arm64>
     <NativeLibPath_android_x86>$(RuntimesPath)/android-x86/native/libDevolutionsSspi.so</NativeLibPath_android_x86>
     <NativeLibPath_android_x64>$(RuntimesPath)/android-x64/native/libDevolutionsSspi.so</NativeLibPath_android_x64>
     <NativeLibPath_android_arm>$(RuntimesPath)/android-arm/native/libDevolutionsSspi.so</NativeLibPath_android_arm>
@@ -94,6 +96,24 @@
     <Content Include="$(NativeLibPath_linux_arm64)">
       <Link>%(Filename)%(Extension)</Link>
       <PackagePath>runtimes/linux-arm64/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_linux_musl_x64)')">
+    <Content Include="$(NativeLibPath_linux_musl_x64)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/linux-musl-x64/native/%(Filename)%(Extension)</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(NativeLibPath_linux_musl_arm64)')">
+    <Content Include="$(NativeLibPath_linux_musl_arm64)">
+      <Link>%(Filename)%(Extension)</Link>
+      <PackagePath>runtimes/linux-musl-arm64/native/%(Filename)%(Extension)</PackagePath>
       <Pack>true</Pack>
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Content>

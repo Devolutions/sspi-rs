@@ -266,6 +266,7 @@ jobs:
           - Windows (x64, arm64)
           - macOS (x64, arm64, universal)
           - Linux (x64, arm64)
+          - Linux musl / Alpine (x64, arm64)
           - iOS device (arm64)
           - iOS Simulator (arm64)
           - Android (x86, x64, arm, arm64)
