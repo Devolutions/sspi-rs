@@ -3,8 +3,7 @@
 #![warn(clippy::std_instead_of_alloc)]
 #![warn(clippy::std_instead_of_core)]
 #![warn(missing_docs)]
-// This crate decodes untrusted network data, so out-of-bounds access must be handled explicitly.
-#![deny(clippy::indexing_slicing)]
+#![deny(clippy::indexing_slicing, reason = "crate decodes untrusted network data, we handle out-of-bounds access explicitly")]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
