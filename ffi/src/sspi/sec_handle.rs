@@ -2835,25 +2835,29 @@ mod tests {
             dw_lower: 0,
             dw_upper: 0,
         };
+        let mut new_context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
         let mut attrs = 0;
         let status = unsafe {
             InitializeSecurityContextW(
                 cred_handle,
-                null_mut(),
+                &mut context,
                 target.as_ptr(),
                 0,
                 0,
                 0x10,
                 null_mut(),
                 0,
-                &mut context,
+                &mut new_context,
                 &mut buffer_desc,
                 &mut attrs,
                 null_mut(),
             )
         };
         if status == ContinueNeeded.to_u32().unwrap() {
-            assert_eq!(unsafe { DeleteSecurityContext(&mut context) }, 0);
+            assert_eq!(unsafe { DeleteSecurityContext(&mut new_context) }, 0);
         }
         status
     }
