@@ -255,7 +255,7 @@ pub const SEC_WINNT_AUTH_IDENTITY_VERSION_2: u32 = 0x201;
 #[repr(C)]
 pub struct SecHandle {
     /// If [SecHandle] is used as a context handle, this field contains the security package ID of the security context.
-    /// If [SecHandle] is used as a credentials handle, this field contains the credentials handle pointer address.
+    /// If [SecHandle] is used as a credentials handle, this field contains an opaque credentials handle ID.
     pub dw_lower: c_ulonglong,
     /// If [SecHandle] is used as a context handle, this field contains the pointer to the security context.
     /// If [SecHandle] is used as a credentials handle, this field is unused.

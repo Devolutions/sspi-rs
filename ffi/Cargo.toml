@@ -22,6 +22,7 @@ dpapi = ["dep:dpapi", "dep:dpapi-transport", "dep:dpapi-native-transport", "dep:
 
 [dependencies]
 cfg-if = "1"
+getrandom = "0.3"
 num-traits = { version = "0.2", default-features = true }
 whoami = "2.1"
 sha1 = { version = "0.11", default-features = false }

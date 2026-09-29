@@ -2985,6 +2985,7 @@ dependencies = [
  "dpapi-transport",
  "embed-resource",
  "ffi-types",
+ "getrandom 0.3.4",
  "libc",
  "num-traits",
  "picky",

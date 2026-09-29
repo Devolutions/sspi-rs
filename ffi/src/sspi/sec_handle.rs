@@ -1,6 +1,5 @@
-use std::collections::{HashMap, hash_map};
+use std::collections::{HashMap, VecDeque};
 use std::ffi::{CStr, c_ulonglong};
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::mem::size_of;
 use std::ptr::{self, NonNull, copy_nonoverlapping};
 use std::slice::from_raw_parts;
@@ -8,6 +7,9 @@ use std::sync::{LazyLock, Mutex};
 
 use libc::c_void;
 use num_traits::{FromPrimitive, ToPrimitive};
+use sha2::{Digest, Sha256};
+#[cfg(feature = "scard")]
+use sspi::SmartCardType;
 use sspi::builders::ChangePasswordBuilder;
 use sspi::credssp::SspiContext;
 #[cfg(feature = "tsssp")]
@@ -257,79 +259,157 @@ pub struct CredentialsHandle {
 }
 
 impl CredentialsHandle {
-    /// Hash of the identity-defining fields.
-    ///
-    /// Attributes and password/scard pin are excluded on purpose: they must not influence which handle a given set of
-    /// credentials maps onto.
-    fn identity_hash(&self) -> c_ulonglong {
-        let mut hasher = DefaultHasher::new();
+    fn fingerprint(&self, salt: &[u8; 32]) -> [u8; 32] {
+        fn add_bytes(hasher: &mut Sha256, bytes: &[u8]) {
+            hasher.update(bytes.len().to_le_bytes());
+            hasher.update(bytes);
+        }
 
-        self.security_package_name.hash(&mut hasher);
-
+        let mut hasher = Sha256::new();
+        hasher.update(salt);
+        add_bytes(&mut hasher, self.security_package_name.as_bytes());
         match &self.credentials {
             CredentialsBuffers::AuthIdentity(identity) => {
-                0_u8.hash(&mut hasher);
-                identity.user.hash(&mut hasher);
-                identity.domain.hash(&mut hasher);
+                hasher.update([0]);
+                add_bytes(&mut hasher, identity.user.as_bytes_le());
+                add_bytes(&mut hasher, identity.domain.as_bytes_le());
+                add_bytes(&mut hasher, identity.password.as_ref().0.as_bytes_le());
             }
             #[cfg(feature = "scard")]
             CredentialsBuffers::SmartCard(identity) => {
-                1_u8.hash(&mut hasher);
-                identity.username.hash(&mut hasher);
-                identity.reader_name.hash(&mut hasher);
-                identity.csp_name.hash(&mut hasher);
+                hasher.update([1]);
+                add_bytes(&mut hasher, identity.username.as_bytes_le());
+                add_bytes(&mut hasher, identity.certificate.as_ref());
+                for field in [&identity.card_name, &identity.container_name] {
+                    match field {
+                        Some(value) => {
+                            hasher.update([1]);
+                            add_bytes(&mut hasher, value.as_ref().as_bytes_le());
+                        }
+                        None => hasher.update([0]),
+                    }
+                }
+                add_bytes(&mut hasher, identity.reader_name.as_bytes_le());
+                add_bytes(&mut hasher, identity.csp_name.as_bytes_le());
+                add_bytes(&mut hasher, identity.pin.as_ref().0.as_bytes_le());
+                if let Some(key) = &identity.private_key_pem {
+                    hasher.update([1]);
+                    add_bytes(&mut hasher, key.as_ref().as_bytes_le());
+                } else {
+                    hasher.update([0]);
+                }
+                match &identity.scard_type {
+                    SmartCardType::Emulated { scard_pin } => {
+                        hasher.update([0]);
+                        add_bytes(&mut hasher, scard_pin.as_ref());
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    SmartCardType::SystemProvided { pkcs11_module_path } => {
+                        hasher.update([1]);
+                        add_bytes(&mut hasher, pkcs11_module_path.as_os_str().as_encoded_bytes());
+                    }
+                    #[cfg(target_os = "windows")]
+                    SmartCardType::WindowsNative => hasher.update([2]),
+                }
             }
             CredentialsBuffers::Keytab(identity) => {
-                2_u8.hash(&mut hasher);
-                identity.principal.inner().hash(&mut hasher);
+                hasher.update([2]);
+                add_bytes(&mut hasher, identity.principal.inner().as_bytes());
+                add_bytes(&mut hasher, identity.key.as_ref());
+                add_bytes(&mut hasher, format!("{:?}", identity.key_enctype).as_bytes());
             }
         }
 
-        hasher.finish()
+        hasher.finalize().into()
     }
 }
 
 struct CredentialsEntry {
     credentials: CredentialsHandle,
-    ref_count: usize,
+    fingerprint: [u8; 32],
 }
 
-/// Live credentials handles, keyed by the raw handle value written into [`SecHandle::dw_lower`].
-///
-/// Acquiring the same credentials twice hands back the same raw handle, because callers compare
-/// credentials handles across reconnects and reject the session when they differ.
-static CREDENTIALS: LazyLock<Mutex<HashMap<c_ulonglong, CredentialsEntry>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+#[derive(Default)]
+struct CredentialsRegistry {
+    live: HashMap<c_ulonglong, CredentialsEntry>,
+    released: VecDeque<([u8; 32], c_ulonglong)>,
+    salt: Option<[u8; 32]>,
+    next_handle: c_ulonglong,
+}
 
-/// Registers `credentials` and returns their raw handle value.
-///
-/// Credentials that are already registered keep their handle and gain a reference.
-pub(crate) fn register_credentials(credentials: CredentialsHandle) -> Result<c_ulonglong> {
-    let mut registry = CREDENTIALS.lock()?;
-    let handle = credentials.identity_hash();
+const MAX_RELEASED_CREDENTIALS: usize = 128;
 
-    match registry.entry(handle) {
-        hash_map::Entry::Occupied(mut occupied) => {
-            // The password/PIN/other sensitive fields may be updated between calls,
-            // so we also update them internally too.
-            occupied.get_mut().credentials = credentials;
+impl CredentialsRegistry {
+    fn register(&mut self, credentials: CredentialsHandle) -> Result<c_ulonglong> {
+        let salt = match self.salt {
+            Some(salt) => salt,
+            None => {
+                let mut salt = [0; 32];
+                getrandom::fill(&mut salt).map_err(|error| {
+                    Error::new(
+                        ErrorKind::InternalError,
+                        format!("Cannot seed credentials cache: {error}"),
+                    )
+                })?;
+                self.salt = Some(salt);
+                salt
+            }
+        };
+        let fingerprint = credentials.fingerprint(&salt);
+        let handle = if let Some(index) = self.released.iter().rposition(|(key, _)| key == &fingerprint) {
+            self.released
+                .remove(index)
+                .expect("index points to a released handle")
+                .1
+        } else {
+            self.next_handle = self
+                .next_handle
+                .checked_add(1)
+                .ok_or_else(|| Error::new(ErrorKind::InternalError, "credentials handle space exhausted"))?;
+            self.next_handle
+        };
 
-            occupied.get_mut().ref_count += 1;
-        }
-        hash_map::Entry::Vacant(vacant) => {
-            vacant.insert(CredentialsEntry {
+        self.live.insert(
+            handle,
+            CredentialsEntry {
                 credentials,
-                ref_count: 1,
-            });
-        }
+                fingerprint,
+            },
+        );
+        Ok(handle)
     }
 
-    Ok(handle)
+    fn release(&mut self, handle: c_ulonglong) -> bool {
+        let Some(entry) = self.live.remove(&handle) else {
+            return false;
+        };
+        if self.released.len() >= MAX_RELEASED_CREDENTIALS {
+            self.released.pop_front();
+        }
+        self.released.push_back((entry.fingerprint, handle));
+        true
+    }
+}
+
+/// Credentials handles keyed by the raw value written into [`SecHandle::dw_lower`].
+///
+/// A released handle can be reused for the same credentials during reconnection, but simultaneous
+/// acquisitions must not share credentials or attributes. Only the most recently released handles
+/// are retained, without storing the credentials themselves.
+static CREDENTIALS: LazyLock<Mutex<CredentialsRegistry>> = LazyLock::new(|| Mutex::new(CredentialsRegistry::default()));
+
+/// Registers `credentials` and returns their raw handle value.
+pub(crate) fn register_credentials(credentials: CredentialsHandle) -> Result<c_ulonglong> {
+    CREDENTIALS.lock()?.register(credentials)
 }
 
 /// Returns a copy of the credentials registered under `handle`.
 pub(crate) fn credentials_by_handle(handle: c_ulonglong) -> Result<Option<CredentialsHandle>> {
-    Ok(CREDENTIALS.lock()?.get(&handle).map(|entry| entry.credentials.clone()))
+    Ok(CREDENTIALS
+        .lock()?
+        .live
+        .get(&handle)
+        .map(|entry| entry.credentials.clone()))
 }
 
 /// Applies `update` to the attributes of the credentials registered under `handle`.
@@ -341,28 +421,17 @@ pub(crate) fn update_credentials_attributes(
 ) -> Result<bool> {
     Ok(CREDENTIALS
         .lock()?
+        .live
         .get_mut(&handle)
         .map(|entry| update(&mut entry.credentials.attributes))
         .is_some())
 }
 
-/// Drops one reference to the credentials registered under `handle`, removing them once the last
-/// reference is released.
+/// Releases a credential while retaining only its fingerprint and handle for reconnection.
 ///
 /// Returns `false` when nothing is registered under `handle`.
 pub(crate) fn release_credentials(handle: c_ulonglong) -> Result<bool> {
-    let mut registry = CREDENTIALS.lock()?;
-
-    let hash_map::Entry::Occupied(mut occupied) = registry.entry(handle) else {
-        return Ok(false);
-    };
-
-    occupied.get_mut().ref_count -= 1;
-    if occupied.get().ref_count == 0 {
-        occupied.remove();
-    }
-
-    Ok(true)
+    Ok(CREDENTIALS.lock()?.release(handle))
 }
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
@@ -1913,13 +1982,15 @@ mod tests {
     use libc::c_void;
     use num_traits::ToPrimitive;
     use sspi::SecurityStatus::ContinueNeeded;
-    use sspi::{ErrorKind, U16CString, Utf16String, Utf16StringExt};
+    use sspi::{AuthIdentityBuffers, CredentialsBuffers, ErrorKind, U16CString, Utf16String, Utf16StringExt};
 
     use crate::sspi::common::{DeleteSecurityContext, FreeContextBuffer, FreeCredentialsHandle};
+    use crate::sspi::credentials_attributes::CredentialsAttributes;
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{
-        AcquireCredentialsHandleA, AcquireCredentialsHandleW, InitializeSecurityContextA, InitializeSecurityContextW,
-        SecHandle, SecurityPackageId,
+        AcquireCredentialsHandleA, AcquireCredentialsHandleW, CredentialsHandle, CredentialsRegistry,
+        InitializeSecurityContextA, InitializeSecurityContextW, MAX_RELEASED_CREDENTIALS, SecHandle, SecurityPackageId,
+        SetCredentialsAttributesW, credentials_by_handle,
     };
     use crate::sspi::sec_pkg_info::{
         EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, PSecPkgInfoA, PSecPkgInfoW, QuerySecurityPackageInfoA,
@@ -2698,11 +2769,15 @@ mod tests {
     }
 
     fn acquire_ntlm_credentials_handle(user: &str, domain: &str) -> SecHandle {
+        acquire_ntlm_credentials_handle_with_password(user, domain, "password")
+    }
+
+    fn acquire_ntlm_credentials_handle_with_password(user: &str, domain: &str, password: &str) -> SecHandle {
         let pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
 
         let user = user.encode_utf16().collect::<Vec<_>>();
         let domain = domain.encode_utf16().collect::<Vec<_>>();
-        let password = "password".encode_utf16().collect::<Vec<_>>();
+        let password = password.encode_utf16().collect::<Vec<_>>();
 
         let credentials = SecWinntAuthIdentityW {
             user: user.as_ptr(),
@@ -2742,18 +2817,242 @@ mod tests {
         assert_eq!(status, 0);
     }
 
+    fn initialize_ntlm_security_context(cred_handle: &mut SecHandle) -> u32 {
+        const OUTPUT_LEN: usize = 4096;
+        let target = "TERMSRV/example.com\0".encode_utf16().collect::<Vec<_>>();
+        let mut output = vec![0; OUTPUT_LEN];
+        let mut buffer = SecBuffer {
+            cb_buffer: OUTPUT_LEN.try_into().unwrap(),
+            buffer_type: 2,
+            pv_buffer: output.as_mut_ptr().cast(),
+        };
+        let mut buffer_desc = SecBufferDesc {
+            ul_version: 0,
+            c_buffers: 1,
+            p_buffers: &mut buffer,
+        };
+        let mut context = SecHandle {
+            dw_lower: 0,
+            dw_upper: 0,
+        };
+        let mut attrs = 0;
+        let status = unsafe {
+            InitializeSecurityContextW(
+                cred_handle,
+                null_mut(),
+                target.as_ptr(),
+                0,
+                0,
+                0x10,
+                null_mut(),
+                0,
+                &mut context,
+                &mut buffer_desc,
+                &mut attrs,
+                null_mut(),
+            )
+        };
+        if status == ContinueNeeded.to_u32().unwrap() {
+            assert_eq!(unsafe { DeleteSecurityContext(&mut context) }, 0);
+        }
+        status
+    }
+
+    fn registry_credentials(user: &str) -> CredentialsHandle {
+        CredentialsHandle {
+            credentials: CredentialsBuffers::AuthIdentity(AuthIdentityBuffers::new(
+                Utf16String::from_str(user),
+                Utf16String::from_str("domain"),
+                Utf16String::from_str("password"),
+            )),
+            security_package_name: "NTLM".to_owned(),
+            attributes: CredentialsAttributes::default(),
+        }
+    }
+
     #[test]
-    fn acquire_credentials_handle_is_stable_for_the_same_credentials() {
+    fn acquire_credentials_handle_is_distinct_while_live() {
         let mut first = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
         let mut second = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
         let mut third = acquire_ntlm_credentials_handle("stable_user", "stable_domain");
 
-        assert_eq!(first.dw_lower, second.dw_lower);
-        assert_eq!(second.dw_lower, third.dw_lower);
+        assert_ne!(first.dw_lower, second.dw_lower);
+        assert_ne!(second.dw_lower, third.dw_lower);
+        assert_ne!(first.dw_lower, third.dw_lower);
 
+        let second_handle = second.dw_lower;
         free_credentials_handle(&mut first);
+        assert!(credentials_by_handle(second_handle).unwrap().is_some());
+        assert_eq!(
+            unsafe { FreeCredentialsHandle(&mut first) },
+            ErrorKind::InvalidHandle.to_u32().unwrap()
+        );
+
         free_credentials_handle(&mut second);
         free_credentials_handle(&mut third);
+    }
+
+    #[test]
+    fn acquiring_same_user_with_different_password_does_not_replace_credentials_or_attributes() {
+        let mut bad = acquire_ntlm_credentials_handle_with_password("same_user", "same_domain", "badpass");
+        let mut workstation = "first-workstation\0".encode_utf16().collect::<Vec<_>>();
+        assert_eq!(
+            unsafe { SetCredentialsAttributesW(&mut bad, 1, workstation.as_mut_ptr().cast(), 0) },
+            0
+        );
+
+        let mut good = acquire_ntlm_credentials_handle_with_password("same_user", "same_domain", "goodpass");
+        assert_ne!(bad.dw_lower, good.dw_lower);
+
+        let bad_credentials = credentials_by_handle(bad.dw_lower).unwrap().unwrap();
+        let good_credentials = credentials_by_handle(good.dw_lower).unwrap().unwrap();
+        assert_eq!(
+            bad_credentials
+                .credentials
+                .as_auth_identity()
+                .unwrap()
+                .password
+                .as_ref()
+                .0,
+            Utf16String::from_str("badpass")
+        );
+        assert_eq!(
+            good_credentials
+                .credentials
+                .as_auth_identity()
+                .unwrap()
+                .password
+                .as_ref()
+                .0,
+            Utf16String::from_str("goodpass")
+        );
+        assert_eq!(
+            bad_credentials.attributes.workstation.as_deref(),
+            Some("first-workstation")
+        );
+        assert_eq!(good_credentials.attributes.workstation, None);
+
+        let bad_handle = bad.dw_lower;
+        free_credentials_handle(&mut bad);
+        assert!(credentials_by_handle(bad_handle).unwrap().is_none());
+        assert!(credentials_by_handle(good.dw_lower).unwrap().is_some());
+        free_credentials_handle(&mut good);
+
+        let mut reacquired_good = acquire_ntlm_credentials_handle_with_password("same_user", "same_domain", "goodpass");
+        assert_ne!(reacquired_good.dw_lower, bad_handle);
+        assert!(credentials_by_handle(bad_handle).unwrap().is_none());
+        free_credentials_handle(&mut reacquired_good);
+    }
+
+    #[test]
+    fn initialize_security_context_rejects_freed_copy_with_a_different_password_live() {
+        let mut bad = acquire_ntlm_credentials_handle_with_password("copied_user", "domain", "badpass");
+        let mut stale = SecHandle {
+            dw_lower: bad.dw_lower,
+            dw_upper: bad.dw_upper,
+        };
+        let mut good = acquire_ntlm_credentials_handle_with_password("copied_user", "domain", "goodpass");
+        free_credentials_handle(&mut bad);
+
+        assert_eq!(
+            initialize_ntlm_security_context(&mut stale),
+            ErrorKind::InvalidHandle.to_u32().unwrap()
+        );
+        assert_eq!(
+            initialize_ntlm_security_context(&mut good),
+            ContinueNeeded.to_u32().unwrap()
+        );
+        free_credentials_handle(&mut good);
+    }
+
+    #[test]
+    fn initialize_security_context_rejects_freed_copy_while_identical_credentials_are_live() {
+        let mut first = acquire_ntlm_credentials_handle("same_secret_user", "domain");
+        let mut stale = SecHandle {
+            dw_lower: first.dw_lower,
+            dw_upper: first.dw_upper,
+        };
+        let mut second = acquire_ntlm_credentials_handle("same_secret_user", "domain");
+        free_credentials_handle(&mut first);
+
+        assert_eq!(
+            initialize_ntlm_security_context(&mut stale),
+            ErrorKind::InvalidHandle.to_u32().unwrap()
+        );
+        assert_eq!(
+            initialize_ntlm_security_context(&mut second),
+            ContinueNeeded.to_u32().unwrap()
+        );
+        free_credentials_handle(&mut second);
+    }
+
+    #[test]
+    fn initialize_security_context_accepts_reactivated_freed_copy() {
+        let mut first = acquire_ntlm_credentials_handle("reactivated_user", "domain");
+        let mut stale = SecHandle {
+            dw_lower: first.dw_lower,
+            dw_upper: first.dw_upper,
+        };
+        free_credentials_handle(&mut first);
+
+        let mut second = acquire_ntlm_credentials_handle("reactivated_user", "domain");
+        assert_eq!(stale.dw_lower, second.dw_lower);
+        assert_eq!(
+            initialize_ntlm_security_context(&mut stale),
+            ContinueNeeded.to_u32().unwrap()
+        );
+        free_credentials_handle(&mut second);
+    }
+
+    #[test]
+    fn released_handle_reuse_ignores_changed_package_list() {
+        let mut registry = CredentialsRegistry::default();
+        let mut first_credentials = registry_credentials("package_list_user");
+        first_credentials.attributes.package_list = Some("NTLM".to_owned());
+        let first = registry.register(first_credentials).unwrap();
+        assert!(registry.release(first));
+
+        let second = registry.register(registry_credentials("package_list_user")).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(
+            registry.live.get(&second).unwrap().credentials.attributes.package_list,
+            None
+        );
+    }
+
+    #[test]
+    fn released_handle_cache_evicts_oldest_entry_at_capacity() {
+        let mut registry = CredentialsRegistry::default();
+        let oldest = registry.register(registry_credentials("evicted_user")).unwrap();
+        assert!(registry.release(oldest));
+
+        for index in 0..MAX_RELEASED_CREDENTIALS - 1 {
+            let handle = registry
+                .register(registry_credentials(&format!("cache_user_{index}")))
+                .unwrap();
+            assert!(registry.release(handle));
+        }
+        assert_eq!(registry.released.len(), MAX_RELEASED_CREDENTIALS);
+        assert_eq!(registry.released.front().unwrap().1, oldest);
+
+        let newest = registry
+            .register(registry_credentials(&format!(
+                "cache_user_{}",
+                MAX_RELEASED_CREDENTIALS - 1
+            )))
+            .unwrap();
+        assert!(registry.release(newest));
+        assert_eq!(registry.released.len(), MAX_RELEASED_CREDENTIALS);
+        assert!(registry.released.iter().all(|(_, handle)| *handle != oldest));
+
+        let reused = registry
+            .register(registry_credentials(&format!(
+                "cache_user_{}",
+                MAX_RELEASED_CREDENTIALS - 1
+            )))
+            .unwrap();
+        assert_eq!(reused, newest);
+        assert_ne!(registry.register(registry_credentials("evicted_user")).unwrap(), oldest);
     }
 
     #[test]
