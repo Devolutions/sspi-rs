@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.22.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.0...sspi-v0.22.1)] - 2026-09-29
+
+### <!-- 4 -->Bug Fixes
+
+- Preserve the NTLM RC4 sealing state across MIC generation and verification ([#753](https://github.com/Devolutions/sspi-rs/issues/753)) ([5b2b137e13](https://github.com/Devolutions/sspi-rs/commit/5b2b137e13b6839790049727bdb742e967cb1248))
+
+  Generating or verifying a MIC no longer resets the NTLM RC4 sealing
+  handles, so a message sealed right after a MIC keeps the correct state.
+  CredSSP relies on this: it wraps `pubKeyAuth` after the initiator sends
+  its `mechListMIC` but before it verifies the acceptor's MIC, and the
+  previous reset dropped the advanced send state, corrupting the next
+  wrapped message. Sequence numbers are unchanged.
+
+- Recover from KDC clock skew during the Kerberos AS exchange ([#757](https://github.com/Devolutions/sspi-rs/issues/757)) ([24c9c52352](https://github.com/Devolutions/sspi-rs/commit/24c9c5235204174e8d64b685c7633794a07fcc68))
+
+  When a KDC rejects encrypted AS pre-authentication with
+  `KRB_AP_ERR_SKEW`, the client derives the KDC time offset from the
+  error's `stime`/`susec` and retries once; a second skew error or any
+  other error is returned as before. The offset is applied to password,
+  keytab, and smart-card pre-authentication timestamps, and to subsequent
+  TGS, AP, and password-change authenticators, so Kerberos logon succeeds
+  when the local clock differs from the KDC's.
+
 ## [[0.22.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.21.3...sspi-v0.22.0)] - 2026-09-15
 
 ### <!-- 1 -->Features
