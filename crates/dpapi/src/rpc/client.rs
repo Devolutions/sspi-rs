@@ -34,6 +34,8 @@ pub fn bind_time_feature_negotiation(flags: BindTimeFeatureNegotiationBitmask) -
 pub enum RpcClientError {
     #[error("invalid encryption offset: {0}")]
     InvalidEncryptionOffset(&'static str),
+    #[error("PDU fragment length ({0}) is smaller than the PDU header size")]
+    InvalidFragLength(u16),
 }
 
 /// Represents structural offsets in RPC PDU.
@@ -293,9 +295,10 @@ impl<'a, T: Transport> RpcClient<'a, T> {
         let pdu_header: PduHeader = decode_owned(pdu_buf.as_slice())?;
 
         pdu_buf.resize(usize::from(pdu_header.frag_len), 0);
-        self.stream
-            .read_exact(&mut pdu_buf[PduHeader::FIXED_PART_SIZE..])
-            .await?;
+        let Some(pdu_body) = pdu_buf.get_mut(PduHeader::FIXED_PART_SIZE..) else {
+            return Err(RpcClientError::InvalidFragLength(pdu_header.frag_len).into());
+        };
+        self.stream.read_exact(pdu_body).await?;
 
         if let (true, Some(encrypt_offsets)) = (pdu_header.auth_len > 0, encrypt_offsets) {
             self.decrypt_response(&mut pdu_buf, &pdu_header, encrypt_offsets)?;

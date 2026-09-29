@@ -731,20 +731,20 @@ impl SspiEx for Ntlm {
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> crate::Result<()> {
-        if identities.is_empty() {
+        let Some(first_identity) = identities.first() else {
             return Err(Error::new(ErrorKind::NoCredentials, "no credentials provided"));
-        }
+        };
 
         // Set identity from the first candidate (for wire user/domain
         // during complete_authenticate), without going through
         // custom_set_auth_identity which would also set allowed_identities.
         if let Some(credentials) = &mut self.identity {
             if credentials.password.as_ref().as_ref().is_empty() {
-                let identity: AuthIdentityBuffers = identities[0].clone().into();
+                let identity: AuthIdentityBuffers = first_identity.clone().into();
                 credentials.password = identity.password;
             }
         } else {
-            self.identity = Some(identities[0].clone().into());
+            self.identity = Some(first_identity.clone().into());
         }
 
         self.allowed_identities = Some(identities.into_iter().map(AuthIdentityBuffers::from).collect());

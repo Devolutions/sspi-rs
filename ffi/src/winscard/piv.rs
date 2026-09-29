@@ -145,50 +145,44 @@ fn chuid_to_container_name(chuid: &[u8], tag: [u8; 3]) -> Result<String> {
     // Issuer Asymmetric Signature | 0x3E | Variable | 2816
     // Error Detection Code        | 0xFE | LRC      | 0
 
-    // Precalculated minimal CHUID length based on the table above.
-    //
-    // The precalculated value includes only needed CHUID fields: FASC-N, GUID, and Error Detection Code.
-    const MINIMAL_CHUID_LEN: usize =
-        1 /* CHUID tag */  + 1 /* CHUID data len */ +
-        1 /* FASC-N tag */ + 1 /* FASC-N data length */ + 25 /* FASC-N data */ +
-        1 /* GUID tag */   + 1 /* GUID data length */   + 16 /* GUID data */ +
-        1 /* Error Detection Code tag */ + 1 /* Error Detection Code length */;
-
     const BYTES_BEFORE_FASN_N: usize = 1 /* CHUID tag */  + 1 /* CHUID data len */;
     const BYTES_BEFORE_GUID: usize = BYTES_BEFORE_FASN_N + 1 /* FASC-N tag */ + 1 /* FASC-N data length */ + 25 /* FASC-N data */;
     // How many bytes we have to skip before GUID value.
     const BYTES_TO_SKIP: usize = BYTES_BEFORE_GUID + 1 /* GUID tag */ + 1 /* GUID data length */;
 
-    let chuid_len = chuid.len();
-
-    if chuid_len < MINIMAL_CHUID_LEN {
+    // We need only the following CHUID fields: FASC-N, GUID, and Error Detection Code.
+    let Some((header, rest)) = chuid.split_first_chunk::<BYTES_TO_SKIP>() else {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: not enough bytes"));
-    }
+    };
+    let Some((guid, rest)) = rest.split_first_chunk::<16 /* GUID length */>() else {
+        return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: not enough bytes"));
+    };
+    let Some((_, error_detection_code)) = rest.split_last_chunk::<2>() else {
+        return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: not enough bytes"));
+    };
 
     // Check CHUID tag.
-    if chuid[0] != tlv_tags::DATA {
+    if header[0] != tlv_tags::DATA {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad CHUID tag"));
     }
 
     // Check FASC-N tag.
-    if chuid[BYTES_BEFORE_FASN_N] != tlv_tags::FASC_N {
+    if header[BYTES_BEFORE_FASN_N] != tlv_tags::FASC_N {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad FASN-N tag"));
     }
 
     // Check GUID tag.
-    if chuid[BYTES_BEFORE_GUID] != tlv_tags::GUID {
+    if header[BYTES_BEFORE_GUID] != tlv_tags::GUID {
         return Err(Error::new(ErrorKind::NoCredentials, "invalid CHUID: bad GUID tag"));
     }
 
     // Check the Error Detection Code.
-    if chuid[chuid_len - 2] != tlv_tags::ERROR_DETECTION_CODE || chuid[chuid_len - 1] != 0 {
+    if *error_detection_code != [tlv_tags::ERROR_DETECTION_CODE, 0] {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "invalid CHUID: bad error detection code",
         ));
     }
-
-    let guid = &chuid[BYTES_TO_SKIP..BYTES_TO_SKIP + 16 /* GUID length */];
 
     // Construct the value Windows would use for a PIV key's container name.
     let container_name = format!(
@@ -232,15 +226,8 @@ fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
         receive_pci: _,
     } = card.transmit(APDU_PIV_SELECT_AID)?;
 
-    if output.len() < 2 {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "failed to extract container name: failed to select PIV card application",
-        ));
-    }
-
     // Check status word.
-    if output[output.len() - 2..] != WINSCARD_STATUS_OK {
+    if output.last_chunk::<2>() != Some(&WINSCARD_STATUS_OK) {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
@@ -252,22 +239,19 @@ fn extract_piv_container_name(reader: &str, tag: [u8; 3]) -> Result<String> {
         receive_pci: _,
     } = card.transmit(APDU_PIV_GET_CHUID)?;
 
-    if output.len() < 2 {
-        return Err(Error::new(
-            ErrorKind::NoCredentials,
-            "failed to extract container name: failed to select PIV card application",
-        ));
-    }
-
     // Check status word.
-    if output[output.len() - 2 /* status word */..] != WINSCARD_STATUS_OK {
+    let Some((chuid, status)) = output.split_last_chunk::<2>() else {
+        return Err(Error::new(
+            ErrorKind::NoCredentials,
+            "failed to extract container name: failed to select PIV card application",
+        ));
+    };
+    if *status != WINSCARD_STATUS_OK {
         return Err(Error::new(
             ErrorKind::NoCredentials,
             "failed to extract container name: failed to select PIV card application",
         ));
     }
-
-    let chuid = &output[0..output.len() - 2 /* status word */];
 
     chuid_to_container_name(chuid, tag)
 }

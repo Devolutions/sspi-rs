@@ -235,7 +235,7 @@ impl WinScardContextHandle {
     ) -> WinScardResult<OutBuffer<'static>> {
         Ok(match buffer_type {
             RequestedBufferType::Buf(buf) => {
-                if buf.len() < data.len() {
+                let Some(buf) = buf.get_mut(0..data.len()) else {
                     return Err(Error::new(
                         ErrorKind::InsufficientBuffer,
                         format!(
@@ -244,9 +244,9 @@ impl WinScardContextHandle {
                             data.len()
                         ),
                     ));
-                }
+                };
 
-                buf[0..data.len()].copy_from_slice(data);
+                buf.copy_from_slice(data);
 
                 OutBuffer::Written(data.len())
             }

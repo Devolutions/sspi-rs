@@ -36,6 +36,9 @@ pub enum ClientError {
 
     #[error("failed to set rustls crypto provider")]
     CryptoProvider,
+
+    #[error("security trailer pad length ({0}) exceeds the response stub data length")]
+    InvalidPadLength(usize),
 }
 
 fn get_epm_contexts() -> Vec<ContextElement> {
@@ -120,14 +123,20 @@ fn process_ept_map_result(response: &Response) -> Result<u16> {
 
 #[instrument(level = "trace", ret)]
 fn process_get_key_result(response: &Response, security_trailer: Option<SecurityTrailer>) -> Result<GroupKeyEnvelope> {
-    let pad_length = response.stub_data.len()
-        - security_trailer
-            .as_ref()
-            .map(|sec_trailer| usize::from(sec_trailer.pad_length))
-            .unwrap_or_default();
+    let pad_length = security_trailer
+        .as_ref()
+        .map(|sec_trailer| usize::from(sec_trailer.pad_length))
+        .unwrap_or_default();
     trace!(pad_length);
 
-    let data = &response.stub_data[..pad_length];
+    let Some(data) = response
+        .stub_data
+        .len()
+        .checked_sub(pad_length)
+        .and_then(|data_len| response.stub_data.get(..data_len))
+    else {
+        return Err(ClientError::InvalidPadLength(pad_length).into());
+    };
 
     unpack_response(data)
 }

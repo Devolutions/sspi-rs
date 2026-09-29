@@ -882,13 +882,12 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
             format!("unexpected authenticator checksum type: {:?}", checksum.0.cksumtype.0.0),
         ));
     }
-    let checksum_value = &checksum.0.checksum.0.0;
-    if checksum_value.len() < 24 {
+    let Some((checksum_value, checksum_extensions)) = checksum.0.checksum.0.0.split_first_chunk::<24>() else {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             "authenticator checksum is too short",
         ));
-    }
+    };
 
     // Channel bindings (RFC 4121 §4.1.1): bytes [4..20) must be either the MD5 hash of the negotiated
     // channel bindings (if we were given any) or all-zero (if not).
@@ -917,13 +916,12 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
     // The "Finished" extension (draft-zhu-pku2u §6): a checksum over the whole AS-REQ/AS-REP GSS-API
     // transcript, proving the initiator saw the exact AS-REP we sent (and thus that nothing tampered
     // with it in transit).
-    let finished_extension =
-        find_authenticator_extension(&checksum_value[24..], GSS_EXTS_FINISHED).ok_or_else(|| {
-            Error::new(
-                ErrorKind::InvalidToken,
-                "authenticator checksum has no Finished (GSS_EXTS_FINISHED) extension",
-            )
-        })?;
+    let finished_extension = find_authenticator_extension(checksum_extensions, GSS_EXTS_FINISHED).ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidToken,
+            "authenticator checksum has no Finished (GSS_EXTS_FINISHED) extension",
+        )
+    })?;
     let finished: KrbFinished = picky_asn1_der::from_bytes(finished_extension)?;
     let checksum_suite = check_if_empty!(
         server.encryption_params.encryption_type.as_ref(),
@@ -945,7 +943,10 @@ fn validate_ap_req(server: &mut Pku2u, ap_req: &ApReq) -> Result<ValidatedApReq>
 
     let remote_seq_number = parse_authenticator_seq_number(seq_number)
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "authenticator has no sequence number"))?;
-    let principal = cname.0.name_string.0[0].to_string();
+    let Some(principal) = cname.0.name_string.0.first() else {
+        return Err(Error::new(ErrorKind::InvalidToken, "authenticator cname is empty"));
+    };
+    let principal = principal.to_string();
     let (domain, account_name) = principal
         .split_once('\\')
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "PKU2U initiator name is not qualified"))?;

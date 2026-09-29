@@ -711,9 +711,9 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_a(p_auth_data: *const c_void) -
 
     if domain_len == 0 {
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = username.find('\\') {
-            auth_identity_buffers.domain = Utf16String::from_str(&username[0..index]);
-            auth_identity_buffers.user = Utf16String::from_str(&username[(index + 1)..]);
+        if let Some((domain, user)) = username.split_once('\\') {
+            auth_identity_buffers.domain = Utf16String::from_str(domain);
+            auth_identity_buffers.user = Utf16String::from_str(user);
         } else {
             auth_identity_buffers.user = Utf16String::from_str(username);
         }
@@ -964,19 +964,10 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
     auth_identity_buffers.user = Utf16String::from_bytes_le(username)?;
 
     if domain_len == 0 {
-        // '\\' char in UTF-16LE encoding.
-        const BACK_SLASH_UTF16: [u8; 2] = [b'\\', 0];
         // Sometimes username can be formatted as `DOMAIN\username`.
-        if let Some(index) = auth_identity_buffers
-            .user
-            .as_bytes_le()
-            .windows(2)
-            .position(|b| b == BACK_SLASH_UTF16)
-        {
-            auth_identity_buffers.domain =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[0..index])?;
-            auth_identity_buffers.user =
-                Utf16String::from_bytes_le(&auth_identity_buffers.user.as_bytes_le()[(index + 2)..])?;
+        if let Some((domain, user)) = auth_identity_buffers.user.to_string().split_once('\\') {
+            auth_identity_buffers.domain = Utf16String::from_str(domain);
+            auth_identity_buffers.user = Utf16String::from_str(user);
         }
     } else {
         // In the `auth_identity_buffers` structure we hold credentials as raw wide string without NULL-terminator bytes.

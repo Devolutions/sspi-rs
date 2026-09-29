@@ -771,11 +771,11 @@ impl FixedPartSize for Pdu {
 
 impl FindLength for Pdu {
     fn find_frame_length(bytes: &[u8]) -> DecodeResult<Option<usize>> {
-        if bytes.len() < Self::FIXED_PART_SIZE {
+        let Some(header) = bytes.get(0..Self::FIXED_PART_SIZE) else {
             return Ok(None);
-        }
+        };
 
-        let pdu_header = PduHeader::decode_owned(&mut ReadCursor::new(&bytes[0..Self::FIXED_PART_SIZE]))?;
+        let pdu_header = PduHeader::decode_owned(&mut ReadCursor::new(header))?;
 
         Ok(Some(usize::from(pdu_header.frag_len)))
     }

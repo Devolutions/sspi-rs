@@ -233,7 +233,8 @@ impl Kerberos {
                 yield_point.suspend(request).await
             }
             NetworkProtocol::Udp => {
-                if data.len() < 4 {
+                // First 4 bytes are message length and it’s not included when using UDP
+                let Some(data) = data.get(4..) else {
                     return Err(Error::new(
                         ErrorKind::InternalError,
                         format!(
@@ -241,13 +242,12 @@ impl Kerberos {
                             data.len()
                         ),
                     ));
-                }
+                };
 
-                // First 4 bytes are message length and it’s not included when using UDP
                 let request = NetworkRequest {
                     protocol,
                     url: kdc_url,
-                    data: data[4..].to_vec(),
+                    data: data.to_vec(),
                 };
                 yield_point.suspend(request).await
             }

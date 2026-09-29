@@ -2,7 +2,7 @@ use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{fmt, mem};
+use core::fmt;
 
 use crypto_bigint::BoxedUint;
 use dpapi_core::str::{encode_utf16_le, read_c_str_utf16_le, str_utf16_len};
@@ -318,16 +318,14 @@ impl FfcdhParameters {
 }
 
 fn pad_key_buffer(key_length: usize, buf: &mut Vec<u8>) -> EncodeResult<()> {
-    if buf.len() > key_length {
+    let Some(padding_len) = key_length.checked_sub(buf.len()) else {
         return Err(EncodeError::other("key", "key is bigger then specified key length"));
-    }
+    };
 
-    let mut key = vec![0; key_length];
+    let mut key = vec![0; padding_len];
+    key.extend_from_slice(buf);
 
-    let start = key_length - buf.len();
-    key[start..].copy_from_slice(buf);
-
-    mem::swap(&mut key, buf);
+    *buf = key;
 
     Ok(())
 }

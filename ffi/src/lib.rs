@@ -2,6 +2,10 @@
 #![allow(clippy::print_stdout)]
 #![allow(non_snake_case)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![deny(
+    clippy::indexing_slicing,
+    reason = "crate decodes untrusted network data, we handle out-of-bounds access explicitly"
+)]
 
 #[macro_use]
 extern crate tracing;

@@ -599,8 +599,8 @@ fn decrypt_sealed_wrap(
                 data.extend_from_slice(buffer.data());
             } else {
                 let end = plaintext_offset + buffer.buf_len();
-                if end <= plaintext.len() {
-                    data.extend_from_slice(&plaintext[plaintext_offset..end]);
+                if let Some(plaintext) = plaintext.get(plaintext_offset..end) {
+                    data.extend_from_slice(plaintext);
                     plaintext_offset = end;
                 }
             }
@@ -671,8 +671,8 @@ fn decrypt_integrity_only_wrap(
                 data.extend_from_slice(buffer.data());
             } else {
                 let end = plaintext_offset + buffer.buf_len();
-                if end <= plaintext.len() {
-                    data.extend_from_slice(&plaintext[plaintext_offset..end]);
+                if let Some(plaintext) = plaintext.get(plaintext_offset..end) {
+                    data.extend_from_slice(plaintext);
                     plaintext_offset = end;
                 }
             }
