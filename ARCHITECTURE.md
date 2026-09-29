@@ -1,13 +1,5 @@
 # Architecture
 
-This document describes the high-level architecture of IronRDP.
-
-> Roughly, it takes 2x more time to write a patch if you are unfamiliar with the
-> project, but it takes 10x more time to figure out where you should change the
-> code.
-
-[Source](https://matklad.github.io/2021/02/06/ARCHITECTURE.md.html)
-
 ## Code Map
 
 This section talks briefly about various important directories and data structures.
@@ -62,6 +54,11 @@ This crate contains common types and traits for implementing custom DPAPI RPC co
 ### `crates/dpapi-native-transport`
 
 This crate implements DPAPI transport (traits from the `crates/dpapi-transport`) using native networking stack (TCP and WebSocket).
+
+### `crates/dpapi-web`
+
+This crate implement WebAssembly high-level bindings targeting web browsers of the DPAPI implementation.
+It has its own WS-based transport implementation using browsers API.
 
 ## MSRV policy
 
