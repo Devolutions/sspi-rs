@@ -39,6 +39,14 @@ const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
 // The same applies to the `SCardReleaseContext`. We need to ensure that the passed context handle was not
 // released before.
 static SCARD_CONTEXTS: LazyLock<Mutex<Vec<ScardContext>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// Identifier of the emulated smart card.
+///
+/// We emulate one smart card, so all emulated smart card contexts represent the same card and
+/// thus share one identifier. The emulated smart card reports it in the CHUID, and all its cache
+/// items are scoped by it. It is generated once and remains the same for the process lifetime:
+/// the caller must see the same card every time it connects to the reader.
+static EMULATED_SCARD_ID: LazyLock<Uuid> = LazyLock::new(Uuid::new_v4);
 // This API table instance is only needed for the `SCardAccessStartedEvent` function. This function
 // doesn't accept any parameters, so we need a separate initialized API table to call the system API.
 #[cfg(target_os = "windows")]
@@ -70,6 +78,7 @@ fn release_context(context: ScardContext) {
 fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContext>> {
     Ok(Box::new(PivCardContext::new(
         SmartCardInfo::try_from_env()?,
+        *EMULATED_SCARD_ID,
         Box::new(GlobalScardCache),
     )?))
 }

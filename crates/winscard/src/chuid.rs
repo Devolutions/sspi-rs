@@ -11,7 +11,7 @@ pub(crate) const CHUID_LENGTH: usize = 61;
 
 // The CHUID has to be encoded manually because for some weird reason all nested tags use the SIMPLE-TLV encoding.
 // This makes it impossible to encode this particular object using iso7816_tlv crate (or any other BER-TLV crate out there)
-pub(crate) fn build_chuid() -> WinScardResult<[u8; CHUID_LENGTH]> {
+pub(crate) fn build_chuid(card_id: Uuid) -> WinScardResult<[u8; CHUID_LENGTH]> {
     // We do this by hand, because iso7816_tlv uses Vecs when constructing a new TLV value
     // By avoiding using Tlv::new(), we can avoid allocating a new Vec for each TLV value and use slices instead
     let mut chuid = Vec::with_capacity(CHUID_LENGTH);
@@ -30,8 +30,10 @@ pub(crate) fn build_chuid() -> WinScardResult<[u8; CHUID_LENGTH]> {
     let guid_length = 0x10;
     chuid.extend_from_slice(&[tlv_tags::GUID, guid_length]);
     // Section 3.4.1 of https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf
-    let uuid = Uuid::new_v4();
-    chuid.extend_from_slice(uuid.as_bytes());
+    //
+    // This GUID identifies the smart card: the smart card minidriver uses it as the card
+    // identifier (and derives the key container name from it). So, it must be stable.
+    chuid.extend_from_slice(card_id.as_bytes());
     let expiration_date_length = 0x8;
     chuid.extend_from_slice(&[tlv_tags::EXPIRATION_DATE, expiration_date_length]);
     // Section 3.1.2 of https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf

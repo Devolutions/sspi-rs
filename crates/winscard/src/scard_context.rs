@@ -137,6 +137,11 @@ impl<'a> SmartCardInfo<'a> {
 #[derive(Debug)]
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
+    /// Identifier of the smart card this context represents.
+    ///
+    /// The emulated smart card reports it in the CHUID, and all the cache items of this card are
+    /// scoped by it.
+    card_id: Uuid,
     cache: Box<dyn Cache>,
 }
 
@@ -145,10 +150,14 @@ impl<'a> ScardContext<'a> {
     ///
     /// On the first call, the provided [Cache] is filled with the items that describe the emulated
     /// smart card. The subsequent calls leave the cache as is: see [CARD_CACHE_INITIALIZED].
-    pub fn new(smart_card_info: SmartCardInfo<'a>, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
+    pub fn new(smart_card_info: SmartCardInfo<'a>, card_id: Uuid, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
         // The zero freshness counter means that any cached item revision suits us.
-        if cache.read(CARD_CACHE_INITIALIZED, 0).is_ok() {
-            return Ok(Self { smart_card_info, cache });
+        if cache.read(card_id, 0, CARD_CACHE_INITIALIZED).is_ok() {
+            return Ok(Self {
+                smart_card_info,
+                card_id,
+                cache,
+            });
         }
 
         // The cache items written below describe the card we emulate, so nothing the caller can
@@ -179,7 +188,7 @@ impl<'a> ScardContext<'a> {
             header
         };
 
-        cache.write("Cached_CardProperty_Read Only Mode_0".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Read Only Mode_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -190,7 +199,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_CardProperty_Cache Mode_0".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Cache Mode_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -202,8 +211,9 @@ impl<'a> ScardContext<'a> {
             value
         });
         cache.write(
-            "Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(),
+            card_id,
             u32::MAX,
+            "Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(),
             {
                 let mut value = CACHE_ITEM_HEADER.to_vec();
                 // unkown flags
@@ -216,7 +226,7 @@ impl<'a> ScardContext<'a> {
                 value
             },
         );
-        cache.write("Cached_GeneralFile/mscp/cmapfile".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_GeneralFile/mscp/cmapfile".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -238,7 +248,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_CardmodFile\\Cached_CMAPFile".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardmodFile\\Cached_CMAPFile".into(), {
             // CONTAINER_MAP_RECORD:
             let mut value = smart_card_info
                 .container_name
@@ -253,7 +263,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_ContainerProperty_PIN Identifier_0".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_ContainerProperty_PIN Identifier_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -264,7 +274,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_ContainerInfo_00".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_ContainerInfo_00".into(), {
             // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
             // RSA 4096 is not defined in the specification so we don't support it.
             // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
@@ -325,7 +335,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_GeneralFile/mscp/kxc00".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_GeneralFile/mscp/kxc00".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -347,7 +357,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.write("Cached_CardProperty_Capabilities_0".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Capabilities_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -361,7 +371,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.write("Cached_CardProperty_Key Sizes_2".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Key Sizes_2".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -380,7 +390,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.write("Cached_CardProperty_Key Sizes_1".into(), u32::MAX, {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Key Sizes_1".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -400,26 +410,33 @@ impl<'a> ScardContext<'a> {
         });
 
         cache.write(
-            "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
+            card_id,
             u32::MAX,
+            "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
             PIN_FRESHNESS.to_vec(),
         );
         cache.write(
-            "Cached_CardmodFile\\Cached_File_Freshness".into(),
+            card_id,
             u32::MAX,
+            "Cached_CardmodFile\\Cached_File_Freshness".into(),
             FILE_FRESHNESS.to_vec(),
         );
         cache.write(
-            "Cached_CardmodFile\\Cached_Container_Freshness".into(),
+            card_id,
             u32::MAX,
+            "Cached_CardmodFile\\Cached_Container_Freshness".into(),
             CONTAINER_FRESHNESS.to_vec(),
         );
 
         // The marker is written last: if any of the writes above is skipped because of an error,
         // the next context creation will perform the initialization again.
-        cache.write(CARD_CACHE_INITIALIZED.into(), u32::MAX, vec![1]);
+        cache.write(card_id, u32::MAX, CARD_CACHE_INITIALIZED.into(), vec![1]);
 
-        Ok(Self { smart_card_info, cache })
+        Ok(Self {
+            smart_card_info,
+            card_id,
+            cache,
+        })
     }
 
     /// Returns available smart card reader name.
@@ -445,6 +462,7 @@ impl WinScardContext for ScardContext<'_> {
         Ok(ScardConnectData {
             handle: Box::new(SmartCard::new(
                 Cow::Owned(reader_name.to_owned()),
+                self.card_id,
                 self.smart_card_info.pin.clone(),
                 self.smart_card_info.auth_cert_der.clone(),
                 self.smart_card_info.auth_pk.clone(),
@@ -483,12 +501,22 @@ impl WinScardContext for ScardContext<'_> {
         true
     }
 
-    fn read_cache(&self, _: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
-        Ok(Cow::Owned(self.cache.read(key, freshness_counter)?))
+    // The caller-provided card id is ignored on purpose: we always use the id of the card this
+    // context represents. The values must be the same, because the emulated smart card reports
+    // the same id in its CHUID, but using our own one guarantees that the cache items written
+    // during the context creation are always reachable.
+    fn read_cache(&self, _card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
+        Ok(Cow::Owned(self.cache.read(self.card_id, freshness_counter, key)?))
     }
 
-    fn write_cache(&mut self, _: Uuid, freshness_counter: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
-        self.cache.write(key, freshness_counter, value);
+    fn write_cache(
+        &mut self,
+        _card_id: Uuid,
+        freshness_counter: u32,
+        key: String,
+        value: Vec<u8>,
+    ) -> WinScardResult<()> {
+        self.cache.write(self.card_id, freshness_counter, key, value);
 
         Ok(())
     }

@@ -338,10 +338,10 @@ impl WinScardContext for SystemScardContext {
     }
 
     #[instrument(ret)]
-    fn read_cache(&self, _card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
+    fn read_cache(&self, card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
         #[cfg(not(target_os = "windows"))]
         {
-            Ok(Cow::Owned(cache::read(key, freshness_counter)?))
+            Ok(Cow::Owned(cache::read(card_id, freshness_counter, key)?))
         }
         #[cfg(target_os = "windows")]
         {
@@ -353,7 +353,7 @@ impl WinScardContext for SystemScardContext {
             let mut data_len = SCARD_AUTOALLOCATE;
 
             let c_cache_key = CString::new(key)?;
-            let mut card_id = uuid_to_c_guid(_card_id);
+            let mut c_card_id = uuid_to_c_guid(card_id);
 
             let mut data: *mut u8 = null_mut();
 
@@ -362,14 +362,14 @@ impl WinScardContext for SystemScardContext {
             try_execute!(
                 // SAFETY:
                 // - `h_context` is set by a previous call to `SCardEstablishContext`.
-                // - `&mut card_id` is a properly-aligned, readable pointer to a local variable.
+                // - `&mut c_card_id` is a properly-aligned, readable pointer to a local variable.
                 // - `c_cache_key` is a valid, null-terminated C String due to the `CString` type.
                 // - `&mut data` is a properly-aligned, writable pointer to a local pointer.
                 // - `&mut data_len` is a properly-aligned, writable pointer to a local variable.
                 unsafe {
                     (self.api.SCardReadCacheA)(
                         self.h_context,
-                        &mut card_id,
+                        &mut c_card_id,
                         freshness_counter,
                         c_cache_key.into_raw().cast(),
                         ptr::from_mut(&mut data).cast(),
@@ -413,14 +413,14 @@ impl WinScardContext for SystemScardContext {
 
     fn write_cache(
         &mut self,
-        _card_id: Uuid,
+        card_id: Uuid,
         freshness_counter: u32,
         key: String,
         value: Vec<u8>,
     ) -> WinScardResult<()> {
         #[cfg(not(target_os = "windows"))]
         {
-            cache::write(key, freshness_counter, value);
+            cache::write(card_id, freshness_counter, key, value);
 
             Ok(())
         }
@@ -429,19 +429,19 @@ impl WinScardContext for SystemScardContext {
             use super::uuid_to_c_guid;
 
             let c_cache_key = CString::new(key.as_str())?;
-            let mut card_id = uuid_to_c_guid(_card_id);
+            let mut c_card_id = uuid_to_c_guid(card_id);
 
             try_execute!(
                 // SAFETY:
                 // - `h_context` is set by a previous call to `SCardEstablishContext`.
-                // - `&mut card_id` is a properly-aligned, readable pointer to a local variable.
+                // - `&mut c_card_id` is a properly-aligned, readable pointer to a local variable.
                 // - `c_cache_key` is a valid, null-terminated C String due to the `CString` type.
                 // - `&mut value` is a properly-aligned, readable pointer to a local `Vec`.
                 // - `value.len()` is a valid length of the `value` buffer.
                 unsafe {
                     (self.api.SCardWriteCacheA)(
                         self.h_context,
-                        &mut card_id,
+                        &mut c_card_id,
                         freshness_counter,
                         c_cache_key.into_raw().cast(),
                         value.as_ptr(),

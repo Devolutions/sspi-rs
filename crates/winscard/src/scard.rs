@@ -11,6 +11,7 @@ use picky::key::PrivateKey;
 use rsa::traits::PublicKeyParts;
 use rsa::{Pkcs1v15Sign, RsaPrivateKey};
 use sha1::Sha1;
+use uuid::Uuid;
 
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{CHUID_LENGTH, build_chuid};
@@ -94,11 +95,12 @@ impl SmartCard<'_> {
     /// Creates a smart card instance based on the provided data.
     pub fn new(
         reader_name: Cow<'_, str>,
+        card_id: Uuid,
         pin: Vec<u8>,
         auth_cert_der: Vec<u8>,
         auth_pk: PrivateKey,
     ) -> WinScardResult<SmartCard<'_>> {
-        let chuid = build_chuid()?;
+        let chuid = build_chuid(card_id)?;
         let auth_cert = build_auth_cert(auth_cert_der)?;
 
         Ok(SmartCard {
@@ -664,7 +666,15 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let auth_pk = PrivateKey::from_pem_str(rsa_2048_private_key).unwrap();
         let certificate_stub = vec![0xff; 1024];
         let pin = vec![0x39; 6];
-        SmartCard::new(Cow::Borrowed("Reader 0"), pin, certificate_stub, auth_pk).unwrap()
+        SmartCard::new(
+            Cow::Borrowed("Reader 0"),
+            // The tests do not care about the card identifier, so any fixed value suits them.
+            Uuid::from_u128(1),
+            pin,
+            certificate_stub,
+            auth_pk,
+        )
+        .unwrap()
     }
 
     // Helper function that calls the GET RESPONSE handler until there is no more data to read
