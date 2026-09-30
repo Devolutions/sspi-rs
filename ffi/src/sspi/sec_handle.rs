@@ -2000,8 +2000,9 @@ mod tests {
     use crate::sspi::sec_buffer::{SecBuffer, SecBufferDesc};
     use crate::sspi::sec_handle::{
         AcquireCredentialsHandleA, AcquireCredentialsHandleW, CredentialsHandle, CredentialsRegistry,
-        InitializeSecurityContextA, InitializeSecurityContextW, MAX_RELEASED_CREDENTIALS, QueryContextAttributesW,
-        SecHandle, SecurityPackageId, SetCredentialsAttributesW, SspiHandle, credentials_by_handle,
+        InitializeSecurityContextA, InitializeSecurityContextW, MAX_RELEASED_CREDENTIALS, QueryContextAttributesA,
+        QueryContextAttributesW, SecHandle, SecurityPackageId, SetCredentialsAttributesW, SspiHandle,
+        credentials_by_handle,
     };
     use crate::sspi::sec_pkg_info::{
         EnumerateSecurityPackagesA, EnumerateSecurityPackagesW, PSecPkgInfoA, PSecPkgInfoW, QuerySecurityPackageInfoA,
@@ -3014,7 +3015,7 @@ mod tests {
     fn query_context_names() {
         use ffi_types::sspi::{SecPkgContextNamesA, SecPkgContextNamesW};
 
-        use crate::sspi::sec_handle::{QueryContextAttributesA, SECPKG_ATTR_NAMES};
+        use crate::sspi::sec_handle::SECPKG_ATTR_NAMES;
 
         // We use the Kerberos fake_client because we need an established security context
         // to query the names.
@@ -3611,12 +3612,23 @@ mod tests {
         }
     }
 
-    /// Queries the `SECPKG_ATTR_PACKAGE_INFO` attribute and asserts the returned package info.
+    /// Queries the `SECPKG_ATTR_PACKAGE_INFO` attribute using both the W and A entry points
+    /// and asserts the returned package info.
     ///
     /// The caller owns the `SecPkgContext_PackageInfo` structure which contains only a pointer to
     /// the package info allocated by the security package. So, the caller must free it using the
     /// `FreeContextBuffer` function.
     fn check_context_package_info(sec_context: &mut SecHandle, package_name: &str, comment: &str, max_token_len: u32) {
+        check_context_package_info_w(sec_context, package_name, comment, max_token_len);
+        check_context_package_info_a(sec_context, package_name, comment, max_token_len);
+    }
+
+    fn check_context_package_info_w(
+        sec_context: &mut SecHandle,
+        package_name: &str,
+        comment: &str,
+        max_token_len: u32,
+    ) {
         let mut package_info: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
         let status = unsafe {
@@ -3643,6 +3655,45 @@ mod tests {
             unsafe { U16CString::from_ptr_str(package_info_ref.comment) }
                 .to_string()
                 .expect("package comment must be valid UTF-16"),
+            comment
+        );
+
+        let status = unsafe { FreeContextBuffer(package_info.cast()) };
+        assert_eq!(status, 0);
+    }
+
+    fn check_context_package_info_a(
+        sec_context: &mut SecHandle,
+        package_name: &str,
+        comment: &str,
+        max_token_len: u32,
+    ) {
+        let mut package_info: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
+
+        let status = unsafe {
+            QueryContextAttributesA(
+                sec_context,
+                SECPKG_ATTR_PACKAGE_INFO,
+                ptr::from_mut(&mut package_info).cast(),
+            )
+        };
+        assert_eq!(status, 0);
+
+        let package_info_ref = unsafe { package_info.as_ref() }.expect("package_info is not null");
+
+        assert_eq!(package_info_ref.f_capabilities, PackageCapabilities::empty().bits());
+        assert_eq!(package_info_ref.w_rpc_id, PACKAGE_ID_NONE);
+        assert_eq!(package_info_ref.cb_max_token, max_token_len);
+        assert_eq!(
+            unsafe { CStr::from_ptr(package_info_ref.name) }
+                .to_str()
+                .expect("package name must be valid UTF-8"),
+            package_name
+        );
+        assert_eq!(
+            unsafe { CStr::from_ptr(package_info_ref.comment) }
+                .to_str()
+                .expect("package comment must be valid UTF-8"),
             comment
         );
 
