@@ -20,6 +20,14 @@ use crate::{Error, ErrorKind, WinScardResult};
 /// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 
+/// Cache item that marks the emulated smart card cache as initialized.
+///
+/// The cache is global and shared by every established resource manager context, so the items
+/// that describe the emulated smart card must be written only once: the values the smart card
+/// minidriver writes afterwards must survive the next context creation. The smart card minidriver
+/// has no reason to write an item with such a name, so it is safe to use it as a marker.
+const CARD_CACHE_INITIALIZED: &str = "is_card_initialized";
+
 /// Default name of the emulated smart card.
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
 /// Default CSP name.
@@ -135,8 +143,14 @@ pub struct ScardContext<'a> {
 impl<'a> ScardContext<'a> {
     /// Creates a new smart card based on the list of smart card readers.
     ///
-    /// The provided [Cache] is seeded with the items that describe the emulated smart card.
+    /// On the first call, the provided [Cache] is filled with the items that describe the emulated
+    /// smart card. The subsequent calls leave the cache as is: see [CARD_CACHE_INITIALIZED].
     pub fn new(smart_card_info: SmartCardInfo<'a>, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
+        // The zero freshness counter means that any cached item revision suits us.
+        if cache.read(CARD_CACHE_INITIALIZED, 0).is_ok() {
+            return Ok(Self { smart_card_info, cache });
+        }
+
         // The cache items written below describe the card we emulate, so nothing the caller can
         // learn from the card invalidates them. They are written with the maximal freshness
         // counter value and thus never become stale.
@@ -400,6 +414,10 @@ impl<'a> ScardContext<'a> {
             u32::MAX,
             CONTAINER_FRESHNESS.to_vec(),
         );
+
+        // The marker is written last: if any of the writes above is skipped because of an error,
+        // the next context creation will perform the initialization again.
+        cache.write(CARD_CACHE_INITIALIZED.into(), u32::MAX, vec![1]);
 
         Ok(Self { smart_card_info, cache })
     }
