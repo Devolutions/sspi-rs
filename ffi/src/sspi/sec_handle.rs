@@ -2392,6 +2392,14 @@ mod tests {
             if client_status == SecurityStatus::Ok.to_u32().unwrap()
                 && server_status == SecurityStatus::CompleteNeeded.to_u32().unwrap()
             {
+                let status = unsafe {
+                    crate::sspi::common::CompleteAuthToken(
+                        &mut server_sec_context,
+                        &mut server_out_buffer_desc,
+                    )
+                };
+                assert_eq!(status, 0);
+
                 // Both security contexts are established: they must be usable.
                 assert_ntlm_context_sizes(&mut client_sec_context);
                 assert_ntlm_context_sizes(&mut server_sec_context);
