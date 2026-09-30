@@ -6,4 +6,4 @@
   Code that requires `std` must be feature-gated.
 * Follow the [NIST.SP.800-73-4] specification as close as possible.
 
-[NIST.SP.800-73-4]: https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-73-4.pdf
+[NIST.SP.800-73-4]: https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf

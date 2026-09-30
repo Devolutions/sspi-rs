@@ -6,4 +6,4 @@ Thus, Windows is able to authorize the logon using its built-in minidriver.
 
 ## Specifications
 
-* [NIST.SP.800-73-4](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-73-4.pdf).
+* [NIST.SP.800-73-4](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf).
