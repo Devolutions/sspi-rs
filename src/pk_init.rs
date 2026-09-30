@@ -127,7 +127,7 @@ pub(crate) fn generate_pa_datas_for_as_req_at(
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
             cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
             ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(authenticator_nonce.to_vec())),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from_bytes_be_unsigned(authenticator_nonce.to_vec())),
             pa_checksum: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
                 kdc_req_body_sha1_hash,
             )))),

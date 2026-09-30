@@ -23,7 +23,7 @@ use self::extractors::{
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions,
     GenerateAuthenticatorOptions, GenerateKeytabPaDataOptions, GenerateTgsReqOptions, GssFlags, generate_ap_rep,
-    generate_ap_req, generate_as_req_kdc_body, generate_authenticator_at, generate_tgs_req,
+    generate_ap_req, generate_as_req_kdc_body, generate_authenticator_at, generate_nonce, generate_tgs_req,
 };
 use self::principal::{
     ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
@@ -187,7 +187,7 @@ pub async fn initialize_security_context<'a>(
                 cname_type,
                 snames: &[TGT_SERVICE_NAME, &realm],
                 // 4 = size of u32
-                nonce: &rand.next_u32().to_be_bytes(),
+                nonce: &generate_nonce(&mut rand).to_be_bytes(),
                 hostname: &client.config.client_computer_name,
                 context_requirements: builder.context_requirements,
             };
@@ -237,7 +237,7 @@ pub async fn initialize_security_context<'a>(
                             smart_card.sign(digest)
                         }),
                         with_pre_auth: false,
-                        authenticator_nonce: rand.next_u32().to_be_bytes(),
+                        authenticator_nonce: generate_nonce(&mut rand).to_be_bytes(),
                     }))
                 }
             };

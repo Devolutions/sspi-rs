@@ -393,8 +393,8 @@ pub(super) fn generate_ap_rep(
             key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![encryption_type.into()])),
             key_value: ExplicitContextTag1::from(OctetStringAsn1::from(subkey.as_ref().clone())),
         }))),
-        // The client's `extract_seq_number_from_ap_rep` requires exactly 4 bytes (`u32::from_be_bytes`),
-        // so this must stay the full-width, non-minimized encoding — not `from_bytes_be_unsigned`,
+        // Older clients' `extract_seq_number_from_ap_rep` required exactly 4 bytes (`u32::from_be_bytes`),
+        // so this stays the full-width, non-minimized encoding — not `from_bytes_be_unsigned`,
         // which would strip it down to as little as one byte for small sequence numbers.
         seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(
             seq_number.to_be_bytes().to_vec(),
