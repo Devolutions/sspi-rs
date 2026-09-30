@@ -1350,7 +1350,8 @@ unsafe fn write_cache(
     };
 
     debug!(
-        "Writing cache for card_id: {card_id:?}, freshness_counter: {freshness_counter}, lookup_name: {lookup_name:?}, data: {data:?}"
+        "Writing cache for card_id: {card_id:?}, freshness_counter: {freshness_counter}, lookup_name: {lookup_name:?}, data_len: {}",
+        data.len()
     );
 
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
