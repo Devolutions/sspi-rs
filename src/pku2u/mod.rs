@@ -1147,14 +1147,13 @@ impl Pku2u {
                 let next_seq_number = self.next_seq_number();
                 let mut rng = StdRng::try_from_rng(&mut SysRng)?;
                 let request_nonce = generate_nonce(&mut rng);
-                let request_nonce_bytes = request_nonce.to_be_bytes();
                 self.request_nonce = Some(request_nonce);
                 let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                     realm: WELLKNOWN_REALM,
                     username: &generate_as_req_username_from_certificate(&self.config.p2p_certificate)?,
                     cname_type: 0x80,
                     snames: &snames,
-                    nonce: &request_nonce_bytes,
+                    nonce: request_nonce,
                     hostname: &self.config.client_hostname,
                     context_requirements: builder.context_requirements,
                 })?;
@@ -1172,7 +1171,7 @@ impl Pku2u {
                         })
                     }),
                     with_pre_auth: true,
-                    authenticator_nonce: request_nonce_bytes,
+                    authenticator_nonce: request_nonce,
                 })?;
                 let as_req = generate_as_req(pa_datas, kdc_req_body);
 

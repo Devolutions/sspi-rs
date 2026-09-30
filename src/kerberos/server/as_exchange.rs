@@ -77,8 +77,7 @@ pub(crate) async fn request_tgt(
         username: &username,
         cname_type,
         snames: &[TGT_SERVICE_NAME, &realm],
-        // 4 = size of u32
-        nonce: &nonce.to_be_bytes(),
+        nonce,
         hostname: &server.config.client_computer_name,
         context_requirements: ClientRequestFlags::empty(),
     };

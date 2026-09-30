@@ -148,7 +148,7 @@ mod tests {
             username: "AzureAD\\issuer\\subject",
             cname_type: 0x80,
             snames: &["host"],
-            nonce: &[1, 2, 3, 4],
+            nonce: 0x0102_0304,
             hostname: "hostname",
             context_requirements: ClientRequestFlags::empty(),
         })
@@ -177,7 +177,7 @@ mod tests {
             username: "AzureAD\\issuer\\subject",
             cname_type: 0x80,
             snames: &["host"],
-            nonce: &[1, 2, 3, 4],
+            nonce: 0x0102_0304,
             hostname: "hostname",
             context_requirements: ClientRequestFlags::empty(),
         })

@@ -186,8 +186,7 @@ pub async fn initialize_security_context<'a>(
                 username: &username,
                 cname_type,
                 snames: &[TGT_SERVICE_NAME, &realm],
-                // 4 = size of u32
-                nonce: &generate_nonce(&mut rand).to_be_bytes(),
+                nonce: generate_nonce(&mut rand),
                 hostname: &client.config.client_computer_name,
                 context_requirements: builder.context_requirements,
             };
@@ -237,7 +236,7 @@ pub async fn initialize_security_context<'a>(
                             smart_card.sign(digest)
                         }),
                         with_pre_auth: false,
-                        authenticator_nonce: generate_nonce(&mut rand).to_be_bytes(),
+                        authenticator_nonce: generate_nonce(&mut rand),
                     }))
                 }
             };
