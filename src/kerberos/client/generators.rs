@@ -247,21 +247,26 @@ pub(crate) fn generate_pa_datas_for_as_req_with_key_at(
 
 /// Generates a random KDC-REQ nonce in the positive `Int32` range.
 ///
-/// Windows reads the nonce as a signed `Int32`. Like MIT krb5 and Heimdal, the high bit is cleared so
-/// the value is the same whether a peer reads the nonce as signed or unsigned.
+/// Windows and MIT krb5 read the nonce as a signed `Int32`. Like MIT krb5 and Heimdal, the high bit
+/// is cleared so the value is the same whether a peer reads the nonce as signed or unsigned.
 pub(crate) fn generate_nonce(rng: &mut impl Rng) -> u32 {
     rng.next_u32() & 0x7fff_ffff
 }
 
-/// Encodes a KDC-REQ nonce as a minimal DER INTEGER.
+/// Encodes a 4-byte big-endian nonce as a minimal DER INTEGER in the `Int32` range.
 ///
 /// The TGS-REQ authenticator checksum covers the DER encoded KDC-REQ-BODY and the Windows KDC
 /// verifies it against its own re-encoding of the body. Random bytes used as-is are not minimal
 /// DER when they start with `00` followed by a byte below `0x80`, or `FF` followed by a byte of
 /// `0x80` or above. The re-encoded body then differs and the KDC fails the request with
 /// `KRB_AP_ERR_MODIFIED`.
-fn nonce_to_asn1(nonce: &[u8]) -> IntegerAsn1 {
-    IntegerAsn1::from_bytes_be_unsigned(nonce.to_vec())
+///
+/// The bytes are encoded as a signed value, the way Windows re-encodes the nonce. A nonce with the
+/// high bit set stays a 4-byte negative INTEGER, an unsigned encoding would add a fifth `00` octet
+/// and the Windows KDC rejects the request outright. Nonces from [generate_nonce] are positive and
+/// encode the same either way.
+pub(crate) fn nonce_to_asn1(nonce: &[u8]) -> IntegerAsn1 {
+    IntegerAsn1::from_bytes_be_signed(nonce.to_vec())
 }
 
 /// Parameters for generating [AsReq].
@@ -902,6 +907,13 @@ mod tests {
             ([0x00, 0x00, 0x00, 0x00], vec![0x02, 0x01, 0x00]),
             ([0x7f, 0xa0, 0xb3, 0xdf], vec![0x02, 0x04, 0x7f, 0xa0, 0xb3, 0xdf]),
             ([0x12, 0x34, 0x56, 0x78], vec![0x02, 0x04, 0x12, 0x34, 0x56, 0x78]),
+            // A high bit must not add a fifth `00` octet, the Windows KDC rejects a nonce outside the
+            // `Int32` range.
+            ([0x9a, 0xbc, 0xde, 0xf0], vec![0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0]),
+            ([0x80, 0x00, 0x00, 0x00], vec![0x02, 0x04, 0x80, 0x00, 0x00, 0x00]),
+            ([0xff, 0xff, 0xff, 0xff], vec![0x02, 0x01, 0xff]),
+            // Non-minimal negative, previously failed with KRB_AP_ERR_MODIFIED.
+            ([0xff, 0xa0, 0xb3, 0xdf], vec![0x02, 0x03, 0xa0, 0xb3, 0xdf]),
         ] {
             assert_eq!(picky_asn1_der::to_vec(&nonce_to_asn1(&nonce)).unwrap(), expected);
         }
@@ -921,21 +933,30 @@ mod tests {
 
     #[test]
     fn as_req_kdc_body_nonce_is_minimal_der() {
-        let body = generate_as_req_kdc_body(&GenerateAsReqOptions {
-            realm: "CRABKA.TEST",
-            username: "alice",
-            cname_type: NT_PRINCIPAL,
-            snames: &["krbtgt", "CRABKA.TEST"],
-            nonce: &[0x00, 0x09, 0xa7, 0x92],
-            hostname: "host",
-            context_requirements: ClientRequestFlags::empty(),
-        })
-        .expect("generate as-req body");
+        for (nonce, expected) in [
+            (
+                [0x00, 0x09, 0xa7, 0x92],
+                &[0xa7, 0x05, 0x02, 0x03, 0x09, 0xa7, 0x92][..],
+            ),
+            // An unrestricted random nonce (e.g. `next_u32()`) must stay within 4 octets.
+            (
+                [0x9a, 0xbc, 0xde, 0xf0],
+                &[0xa7, 0x06, 0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0][..],
+            ),
+        ] {
+            let body = generate_as_req_kdc_body(&GenerateAsReqOptions {
+                realm: "CRABKA.TEST",
+                username: "alice",
+                cname_type: NT_PRINCIPAL,
+                snames: &["krbtgt", "CRABKA.TEST"],
+                nonce: &nonce,
+                hostname: "host",
+                context_requirements: ClientRequestFlags::empty(),
+            })
+            .expect("generate as-req body");
 
-        assert_eq!(
-            picky_asn1_der::to_vec(&body.nonce).unwrap(),
-            [0xa7, 0x05, 0x02, 0x03, 0x09, 0xa7, 0x92]
-        );
+            assert_eq!(picky_asn1_der::to_vec(&body.nonce).unwrap(), expected);
+        }
     }
 
     #[test]
