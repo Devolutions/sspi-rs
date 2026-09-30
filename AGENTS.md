@@ -40,6 +40,8 @@ They serve as an additional sub-projects for testing and/or debugging.
 
 ## Development Environment
 
+Format code and run lints after every implemented feature or fixed bug.
+
 - Format code using `rustfmt` and nightly toolchain: `cargo +nightly fmt --all`.
 - Run linter: `cargo clippy` (include crate-specific features when needed).
 - Run tests: `cargo test --all-targets` (include crate-specific features when needed).

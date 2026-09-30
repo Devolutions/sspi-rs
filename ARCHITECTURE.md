@@ -6,7 +6,7 @@ This section talks briefly about various important directories and data structur
 
 ### `sspi` crate
 
-This crate implements the Microsoft auth protocols stack: NTLM, Kerberos, PKU2U, SPNEGO, and CredSSP.
+This crate implements the Microsoft auth protocols stack: NTLM, Kerberos, PKU2U, SPNEGO, CredSSP, and TSSSP.
 All protocols are transport agnostic.
 Protocols correctness is confirmed in module-local unit tests and integration tests in the repository root `tests/` directory.
 
@@ -45,7 +45,7 @@ Implements fuzzing oracles for DPAPI PDUs.
 ### `crates/dpapi-core`
 
 This crate contains DPAPI core traits and types.
-PDUs from `crates/dpapi-pdu` implements there traits.
+PDUs from `crates/dpapi-pdu` implement these traits.
 
 ### `crates/dpapi-transport`
 
@@ -57,7 +57,7 @@ This crate implements DPAPI transport (traits from the `crates/dpapi-transport`)
 
 ### `crates/dpapi-web`
 
-This crate implement WebAssembly high-level bindings targeting web browsers of the DPAPI implementation.
+This crate implements WebAssembly high-level bindings targeting web browsers of the DPAPI implementation.
 It has its own WS-based transport implementation using browsers API.
 
 ## MSRV policy
