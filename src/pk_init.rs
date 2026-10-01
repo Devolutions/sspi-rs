@@ -68,7 +68,7 @@ pub(crate) struct GenerateAsPaDataOptions<'a> {
     pub dh_parameters: DhParameters,
     pub sign_data: SignDataFn,
     pub with_pre_auth: bool,
-    pub authenticator_nonce: [u8; 4],
+    pub authenticator_nonce: u32,
 }
 
 #[instrument(level = "trace", skip_all, ret)]
@@ -127,7 +127,7 @@ pub(crate) fn generate_pa_datas_for_as_req_at(
         pk_authenticator: ExplicitContextTag0::from(PkAuthenticator {
             cusec: ExplicitContextTag0::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
             ctime: ExplicitContextTag1::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-            nonce: ExplicitContextTag2::from(nonce_to_asn1(authenticator_nonce)),
+            nonce: ExplicitContextTag2::from(nonce_to_asn1(*authenticator_nonce)),
             pa_checksum: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
                 kdc_req_body_sha1_hash,
             )))),

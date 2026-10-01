@@ -253,20 +253,18 @@ pub(crate) fn generate_nonce(rng: &mut impl Rng) -> u32 {
     rng.next_u32() & 0x7fff_ffff
 }
 
-/// Encodes a 4-byte big-endian nonce as a minimal DER INTEGER in the `Int32` range.
+/// Encodes a nonce as a minimal DER INTEGER in the `Int32` range.
 ///
 /// The TGS-REQ authenticator checksum covers the DER encoded KDC-REQ-BODY and the Windows KDC
-/// verifies it against its own re-encoding of the body. Random bytes used as-is are not minimal
-/// DER when they start with `00` followed by a byte below `0x80`, or `FF` followed by a byte of
-/// `0x80` or above. The re-encoded body then differs and the KDC fails the request with
-/// `KRB_AP_ERR_MODIFIED`.
+/// verifies it against its own re-encoding of the body. A nonce that is not minimal DER makes the
+/// re-encoded body differ and the KDC fails the request with `KRB_AP_ERR_MODIFIED`.
 ///
-/// The bytes are encoded as a signed value, the way Windows re-encodes the nonce. A nonce with the
+/// The value is encoded as a signed `Int32`, the way Windows re-encodes the nonce. A nonce with the
 /// high bit set stays a 4-byte negative INTEGER, an unsigned encoding would add a fifth `00` octet
 /// and the Windows KDC rejects the request outright. Nonces from [generate_nonce] are positive and
 /// encode the same either way.
-pub(crate) fn nonce_to_asn1(nonce: &[u8]) -> IntegerAsn1 {
-    IntegerAsn1::from_bytes_be_signed(nonce.to_vec())
+pub(crate) fn nonce_to_asn1(nonce: u32) -> IntegerAsn1 {
+    IntegerAsn1::from_bytes_be_signed(nonce.to_be_bytes().to_vec())
 }
 
 /// Parameters for generating [AsReq].
@@ -276,7 +274,8 @@ pub struct GenerateAsReqOptions<'a> {
     pub username: &'a str,
     pub cname_type: u8,
     pub snames: &'a [&'a str],
-    pub nonce: &'a [u8],
+    /// KDC-REQ nonce, encoded with [nonce_to_asn1].
+    pub nonce: u32,
     pub hostname: &'a str,
     pub context_requirements: ClientRequestFlags,
 }
@@ -340,7 +339,7 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions<'_>) -> Result<Kd
         rtime: Optional::from(Some(ExplicitContextTag6::from(GeneralizedTimeAsn1::from(
             GeneralizedTime::from(expiration_date),
         )))),
-        nonce: ExplicitContextTag7::from(nonce_to_asn1(nonce)),
+        nonce: ExplicitContextTag7::from(nonce_to_asn1(*nonce)),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
             IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
             IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
@@ -406,7 +405,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions<'_>) -> Result<TgsReq> {
     }
 
     let mut rng = StdRng::try_from_rng(&mut SysRng)?;
-    let nonce = generate_nonce(&mut rng).to_be_bytes();
+    let nonce = generate_nonce(&mut rng);
 
     let req_body = KdcReqBody {
         kdc_options: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(
@@ -424,7 +423,7 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions<'_>) -> Result<TgsReq> {
         from: Optional::from(None),
         till: ExplicitContextTag5::from(GeneralizedTimeAsn1::from(GeneralizedTime::from(expiration_date))),
         rtime: Optional::from(None),
-        nonce: ExplicitContextTag7::from(nonce_to_asn1(&nonce)),
+        nonce: ExplicitContextTag7::from(nonce_to_asn1(nonce)),
         etype: ExplicitContextTag8::from(Asn1SequenceOf::from(vec![
             IntegerAsn1::from(vec![CipherSuite::Aes256CtsHmacSha196.into()]),
             IntegerAsn1::from(vec![CipherSuite::Aes128CtsHmacSha196.into()]),
@@ -902,20 +901,20 @@ mod tests {
     fn nonce_is_minimal_der() {
         for (nonce, expected) in [
             // Previously sent verbatim, the Windows KDC failed these with KRB_AP_ERR_MODIFIED.
-            ([0x00, 0x09, 0xa7, 0x92], vec![0x02, 0x03, 0x09, 0xa7, 0x92]),
-            ([0x00, 0x00, 0x00, 0x01], vec![0x02, 0x01, 0x01]),
-            ([0x00, 0x00, 0x00, 0x00], vec![0x02, 0x01, 0x00]),
-            ([0x7f, 0xa0, 0xb3, 0xdf], vec![0x02, 0x04, 0x7f, 0xa0, 0xb3, 0xdf]),
-            ([0x12, 0x34, 0x56, 0x78], vec![0x02, 0x04, 0x12, 0x34, 0x56, 0x78]),
+            (0x0009_a792, vec![0x02, 0x03, 0x09, 0xa7, 0x92]),
+            (0x0000_0001, vec![0x02, 0x01, 0x01]),
+            (0x0000_0000, vec![0x02, 0x01, 0x00]),
+            (0x7fa0_b3df, vec![0x02, 0x04, 0x7f, 0xa0, 0xb3, 0xdf]),
+            (0x1234_5678, vec![0x02, 0x04, 0x12, 0x34, 0x56, 0x78]),
             // A high bit must not add a fifth `00` octet, the Windows KDC rejects a nonce outside the
             // `Int32` range.
-            ([0x9a, 0xbc, 0xde, 0xf0], vec![0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0]),
-            ([0x80, 0x00, 0x00, 0x00], vec![0x02, 0x04, 0x80, 0x00, 0x00, 0x00]),
-            ([0xff, 0xff, 0xff, 0xff], vec![0x02, 0x01, 0xff]),
+            (0x9abc_def0, vec![0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0]),
+            (0x8000_0000, vec![0x02, 0x04, 0x80, 0x00, 0x00, 0x00]),
+            (0xffff_ffff, vec![0x02, 0x01, 0xff]),
             // Non-minimal negative, previously failed with KRB_AP_ERR_MODIFIED.
-            ([0xff, 0xa0, 0xb3, 0xdf], vec![0x02, 0x03, 0xa0, 0xb3, 0xdf]),
+            (0xffa0_b3df, vec![0x02, 0x03, 0xa0, 0xb3, 0xdf]),
         ] {
-            assert_eq!(picky_asn1_der::to_vec(&nonce_to_asn1(&nonce)).unwrap(), expected);
+            assert_eq!(picky_asn1_der::to_vec(&nonce_to_asn1(nonce)).unwrap(), expected);
         }
     }
 
@@ -934,22 +933,16 @@ mod tests {
     #[test]
     fn as_req_kdc_body_nonce_is_minimal_der() {
         for (nonce, expected) in [
-            (
-                [0x00, 0x09, 0xa7, 0x92],
-                &[0xa7, 0x05, 0x02, 0x03, 0x09, 0xa7, 0x92][..],
-            ),
+            (0x0009_a792, &[0xa7, 0x05, 0x02, 0x03, 0x09, 0xa7, 0x92][..]),
             // An unrestricted random nonce (e.g. `next_u32()`) must stay within 4 octets.
-            (
-                [0x9a, 0xbc, 0xde, 0xf0],
-                &[0xa7, 0x06, 0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0][..],
-            ),
+            (0x9abc_def0, &[0xa7, 0x06, 0x02, 0x04, 0x9a, 0xbc, 0xde, 0xf0][..]),
         ] {
             let body = generate_as_req_kdc_body(&GenerateAsReqOptions {
                 realm: "CRABKA.TEST",
                 username: "alice",
                 cname_type: NT_PRINCIPAL,
                 snames: &["krbtgt", "CRABKA.TEST"],
-                nonce: &nonce,
+                nonce,
                 hostname: "host",
                 context_requirements: ClientRequestFlags::empty(),
             })
@@ -1021,7 +1014,7 @@ mod tests {
             username,
             cname_type: NT_PRINCIPAL,
             snames: &["krbtgt", "CRABKA.TEST"],
-            nonce: &[0, 0, 0, 1],
+            nonce: 1,
             hostname: "host",
             context_requirements: ClientRequestFlags::empty(),
         })

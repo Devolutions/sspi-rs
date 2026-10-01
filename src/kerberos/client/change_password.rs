@@ -39,14 +39,13 @@ pub async fn change_password<'a>(
     let realm = &get_client_principal_realm(username, domain);
 
     let mut rand = StdRng::try_from_rng(&mut SysRng)?;
-    let nonce = &generate_nonce(&mut rand).to_be_bytes();
+    let nonce = generate_nonce(&mut rand);
 
     let options = GenerateAsReqOptions {
         realm,
         username,
         cname_type,
         snames: &[KADMIN, CHANGE_PASSWORD_SERVICE_NAME],
-        // 4 = size of u32
         nonce,
         hostname: &client.config.client_computer_name,
         context_requirements: ClientRequestFlags::empty(),
