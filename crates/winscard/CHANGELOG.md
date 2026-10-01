@@ -10,9 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->Features
 
-- [**breaking**] Winscard: remove scars cache seed and  make it global ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c)) 
-
-  Makes smart-card caching process-global while removing cache seeding for system-provided cards.
+- Add the `Cache` trait for plugging in a shared, card-scoped smart card resource manager cache ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
+- [**breaking**] `ScardContext::new` now takes a `card_id: Uuid` and a `Box<dyn Cache>`, and seeds the emulated card's cache items only once per card so later minidriver writes are preserved across contexts ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
+- [**breaking**] `ScardContext` no longer implements `Clone` ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
+- [**breaking**] `SmartCard::new` now takes a `card_id: Uuid`, which is reported as the stable CHUID GUID instead of a random value ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
+- `ScardContext` cache reads and writes now honor the freshness counter ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
 
 
 

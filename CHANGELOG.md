@@ -10,29 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 1 -->Features
 
-- [**breaking**] Winscard: remove scars cache seed and  make it global ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c)) 
-
-  Makes smart-card caching process-global while removing cache seeding for system-provided cards.
+- [**breaking**] Upgrade `winscard` to 0.4, so the public `From<winscard::Error> for sspi::Error` conversion now uses the `winscard` 0.4 error type ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
 
 ### <!-- 4 -->Bug Fixes
 
-- Use minimal DER for KDC-REQ nonce and AP-REP seq-number ([#759](https://github.com/Devolutions/sspi-rs/issues/759)) ([c724a94076](https://github.com/Devolutions/sspi-rs/commit/c724a940763a115f4458195663aba69c49c20b4f)) 
-
-  Fixes intermittent Kerberos failures caused by non-minimal DER nonce encoding and variable-width AP-REP sequence numbers.
-
-- Isolate credential handles across acquisitions ([#758](https://github.com/Devolutions/sspi-rs/issues/758)) ([f7335d5eaa](https://github.com/Devolutions/sspi-rs/commit/f7335d5eaafb46103eae9bc2ba2fa35812ff08a6)) 
-
-  - Give simultaneous credential acquisitions independent handles so a
-  later password or credential attribute cannot replace an earlier
-  handle's state.
-  - Reuse a released handle only when the complete credentials match,
-  preserving automatic RDP reconnection; exclude mutable package-list
-  attributes from that match.
-  - Limit released-handle history to 128 entries and salt its fingerprints
-  with OS randomness.
-  - Clarify the opaque FFI handle documentation and add regression tests
-  for copied handles, changed passwords, attribute changes, and cache
-  eviction.
+- Encode the Kerberos KDC-REQ nonce as a minimal DER positive 32-bit integer, fixing intermittent `KRB_AP_ERR_MODIFIED` failures from Windows KDCs ([#759](https://github.com/Devolutions/sspi-rs/issues/759)) ([c724a94076](https://github.com/Devolutions/sspi-rs/commit/c724a940763a115f4458195663aba69c49c20b4f))
+- Accept AP-REP sequence numbers of any valid DER length, fixing intermittent mutual authentication failures against Windows acceptors ([#759](https://github.com/Devolutions/sspi-rs/issues/759)) ([c724a94076](https://github.com/Devolutions/sspi-rs/commit/c724a940763a115f4458195663aba69c49c20b4f))
 
 
 
