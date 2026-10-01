@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.23.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.1...sspi-v0.23.0)] - 2026-10-01
+
+### <!-- 1 -->Features
+
+- [**breaking**] Upgrade `winscard` to 0.4, so the public `From<winscard::Error> for sspi::Error` conversion now uses the `winscard` 0.4 error type ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c))
+
+### <!-- 4 -->Bug Fixes
+
+- Encode the Kerberos KDC-REQ nonce as a minimal DER positive 32-bit integer, fixing intermittent `KRB_AP_ERR_MODIFIED` failures from Windows KDCs ([#759](https://github.com/Devolutions/sspi-rs/issues/759)) ([c724a94076](https://github.com/Devolutions/sspi-rs/commit/c724a940763a115f4458195663aba69c49c20b4f))
+- Accept AP-REP sequence numbers of any valid DER length, fixing intermittent mutual authentication failures against Windows acceptors ([#759](https://github.com/Devolutions/sspi-rs/issues/759)) ([c724a94076](https://github.com/Devolutions/sspi-rs/commit/c724a940763a115f4458195663aba69c49c20b4f))
+
+
+
 ## [[0.22.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.0...sspi-v0.22.1)] - 2026-09-29
 
 ### <!-- 4 -->Bug Fixes
