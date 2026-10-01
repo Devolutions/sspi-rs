@@ -20,6 +20,7 @@ use winscard::{Error, ErrorKind, ScardContext as PivCardContext, SmartCardInfo, 
 
 use super::buf_alloc::{build_buf_request_type, build_buf_request_type_wide, save_out_buf, save_out_buf_wide};
 use crate::utils::into_raw_ptr;
+use crate::winscard::cache::GlobalScardCache;
 use crate::winscard::scard_handle::{
     WinScardContextHandle, raw_scard_context_handle_to_scard_context_handle, scard_context_to_winscard_context,
 };
@@ -38,6 +39,14 @@ const SMART_CARD_TYPE: &str = "WINSCARD_USE_SYSTEM_SCARD";
 // The same applies to the `SCardReleaseContext`. We need to ensure that the passed context handle was not
 // released before.
 static SCARD_CONTEXTS: LazyLock<Mutex<Vec<ScardContext>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// Identifier of the emulated smart card.
+///
+/// We emulate one smart card, so all emulated smart card contexts represent the same card and
+/// thus share one identifier. The emulated smart card reports it in the CHUID, and all its cache
+/// items are scoped by it. It is generated once and remains the same for the process lifetime:
+/// the caller must see the same card every time it connects to the reader.
+static EMULATED_SCARD_ID: LazyLock<Uuid> = LazyLock::new(Uuid::new_v4);
 // This API table instance is only needed for the `SCardAccessStartedEvent` function. This function
 // doesn't accept any parameters, so we need a separate initialized API table to call the system API.
 #[cfg(target_os = "windows")]
@@ -67,7 +76,11 @@ fn release_context(context: ScardContext) {
 }
 
 fn create_emulated_smart_card_context() -> WinScardResult<Box<dyn WinScardContext>> {
-    Ok(Box::new(PivCardContext::new(SmartCardInfo::try_from_env()?)?))
+    Ok(Box::new(PivCardContext::new(
+        SmartCardInfo::try_from_env()?,
+        *EMULATED_SCARD_ID,
+        Box::new(GlobalScardCache),
+    )?))
 }
 
 /// The `SCardEstablishContext` function establishes the `resource manager context` (the scope) within
@@ -94,10 +107,9 @@ pub unsafe extern "system" fn SCardEstablishContext(
     let scard_context = if let Ok(use_system_card) = std::env::var(SMART_CARD_TYPE) {
         if use_system_card == "true" {
             info!("Creating system-provided smart card context");
-            Box::new(try_execute!(SystemScardContext::establish(
-                try_execute!(dw_scope.try_into()),
-                true
-            )))
+            Box::new(try_execute!(SystemScardContext::establish(try_execute!(
+                dw_scope.try_into()
+            ))))
         } else {
             info!("Creating emulated smart card context");
             try_execute!(create_emulated_smart_card_context())
@@ -1345,6 +1357,11 @@ unsafe fn write_cache(
         // SAFETY: The `data` parameter is not null (checked above).
         unsafe { from_raw_parts(data, data_len.try_into()?) }.to_vec()
     };
+
+    debug!(
+        "Writing cache for card_id: {card_id:?}, freshness_counter: {freshness_counter}, lookup_name: {lookup_name:?}, data_len: {}",
+        data.len()
+    );
 
     context.write_cache(card_id, freshness_counter, lookup_name.to_owned(), data)
 }

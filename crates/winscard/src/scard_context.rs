@@ -1,6 +1,5 @@
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
@@ -9,6 +8,7 @@ use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use uuid::Uuid;
 
+use crate::cache::Cache;
 use crate::scard::{SUPPORTED_CONNECTION_PROTOCOL, SmartCard};
 use crate::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
@@ -19,6 +19,14 @@ use crate::{Error, ErrorKind, WinScardResult};
 /// To be notified of the arrival of a new smart card reader,
 /// set the szReader member of a SCARD_READERSTATE structure to "\\?PnP?\Notification",
 const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
+
+/// Cache item that marks the emulated smart card cache as initialized.
+///
+/// The cache is global and shared by every established resource manager context, so the items
+/// that describe the emulated smart card must be written only once: the values the smart card
+/// minidriver writes afterwards must survive the next context creation. The smart card minidriver
+/// has no reason to write an item with such a name, so it is safe to use it as a marker.
+const CARD_CACHE_INITIALIZED: &str = "is_card_initialized";
 
 /// Default name of the emulated smart card.
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
@@ -126,15 +134,36 @@ impl<'a> SmartCardInfo<'a> {
 /// Represents the resource manager context (the scope).
 ///
 /// Currently, we support only one smart card per smart card context.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ScardContext<'a> {
     smart_card_info: SmartCardInfo<'a>,
-    cache: BTreeMap<String, Vec<u8>>,
+    /// Identifier of the smart card this context represents.
+    ///
+    /// The emulated smart card reports it in the CHUID, and all the cache items of this card are
+    /// scoped by it.
+    card_id: Uuid,
+    cache: Box<dyn Cache>,
 }
 
 impl<'a> ScardContext<'a> {
-    /// Creates a new smart card based on the list of smart card readers
-    pub fn new(smart_card_info: SmartCardInfo<'a>) -> WinScardResult<Self> {
+    /// Creates a new smart card based on the list of smart card readers.
+    ///
+    /// On the first call, the provided [Cache] is filled with the items that describe the emulated
+    /// smart card. The subsequent calls leave the cache as is: see [CARD_CACHE_INITIALIZED].
+    pub fn new(smart_card_info: SmartCardInfo<'a>, card_id: Uuid, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
+        // The zero freshness counter means that any cached item revision suits us.
+        if cache.read(card_id, 0, CARD_CACHE_INITIALIZED).is_ok() {
+            return Ok(Self {
+                smart_card_info,
+                card_id,
+                cache,
+            });
+        }
+
+        // The cache items written below describe the card we emulate, so nothing the caller can
+        // learn from the card invalidates them. They are written with the maximal freshness
+        // counter value and thus never become stale.
+
         // Freshness values may vary at different points in time.
         // We do not need to change them in runtime, so we hardcode them here.
         // Those values do not mean anything special. They are just extracted from the real TPM smart card.
@@ -159,8 +188,7 @@ impl<'a> ScardContext<'a> {
             header
         };
 
-        let mut cache = BTreeMap::new();
-        cache.insert("Cached_CardProperty_Read Only Mode_0".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Read Only Mode_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -171,7 +199,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Cache Mode_0".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Cache Mode_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -182,18 +210,23 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(), {
-            let mut value = CACHE_ITEM_HEADER.to_vec();
-            // unkown flags
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len
-            value.extend_from_slice(&4_u32.to_le_bytes());
-            // true
-            value.extend_from_slice(&1_u32.to_le_bytes());
+        cache.write(
+            card_id,
+            u32::MAX,
+            "Cached_CardProperty_Supports Windows x.509 Enrollment_0".into(),
+            {
+                let mut value = CACHE_ITEM_HEADER.to_vec();
+                // unkown flags
+                value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+                // actual data len
+                value.extend_from_slice(&4_u32.to_le_bytes());
+                // true
+                value.extend_from_slice(&1_u32.to_le_bytes());
 
-            value
-        });
-        cache.insert("Cached_GeneralFile/mscp/cmapfile".into(), {
+                value
+            },
+        );
+        cache.write(card_id, u32::MAX, "Cached_GeneralFile/mscp/cmapfile".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -215,7 +248,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardmodFile\\Cached_CMAPFile".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardmodFile\\Cached_CMAPFile".into(), {
             // CONTAINER_MAP_RECORD:
             let mut value = smart_card_info
                 .container_name
@@ -230,7 +263,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_ContainerProperty_PIN Identifier_0".into(), {
+        cache.write(card_id, u32::MAX, "Cached_ContainerProperty_PIN Identifier_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -241,7 +274,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_ContainerInfo_00".into(), {
+        cache.write(card_id, u32::MAX, "Cached_ContainerInfo_00".into(), {
             // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
             // RSA 4096 is not defined in the specification so we don't support it.
             // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
@@ -302,7 +335,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_GeneralFile/mscp/kxc00".into(), {
+        cache.write(card_id, u32::MAX, "Cached_GeneralFile/mscp/kxc00".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -324,7 +357,7 @@ impl<'a> ScardContext<'a> {
 
             value
         });
-        cache.insert("Cached_CardProperty_Capabilities_0".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Capabilities_0".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -338,7 +371,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert("Cached_CardProperty_Key Sizes_2".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Key Sizes_2".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -357,7 +390,7 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert("Cached_CardProperty_Key Sizes_1".into(), {
+        cache.write(card_id, u32::MAX, "Cached_CardProperty_Key Sizes_1".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
@@ -376,20 +409,34 @@ impl<'a> ScardContext<'a> {
             value
         });
 
-        cache.insert(
+        cache.write(
+            card_id,
+            u32::MAX,
             "Cached_CardmodFile\\Cached_Pin_Freshness".into(),
             PIN_FRESHNESS.to_vec(),
         );
-        cache.insert(
+        cache.write(
+            card_id,
+            u32::MAX,
             "Cached_CardmodFile\\Cached_File_Freshness".into(),
             FILE_FRESHNESS.to_vec(),
         );
-        cache.insert(
+        cache.write(
+            card_id,
+            u32::MAX,
             "Cached_CardmodFile\\Cached_Container_Freshness".into(),
             CONTAINER_FRESHNESS.to_vec(),
         );
 
-        Ok(Self { smart_card_info, cache })
+        // The marker is written last: if any of the writes above is skipped because of an error,
+        // the next context creation will perform the initialization again.
+        cache.write(card_id, u32::MAX, CARD_CACHE_INITIALIZED.into(), vec![1]);
+
+        Ok(Self {
+            smart_card_info,
+            card_id,
+            cache,
+        })
     }
 
     /// Returns available smart card reader name.
@@ -415,6 +462,7 @@ impl WinScardContext for ScardContext<'_> {
         Ok(ScardConnectData {
             handle: Box::new(SmartCard::new(
                 Cow::Owned(reader_name.to_owned()),
+                self.card_id,
                 self.smart_card_info.pin.clone(),
                 self.smart_card_info.auth_cert_der.clone(),
                 self.smart_card_info.auth_pk.clone(),
@@ -453,15 +501,22 @@ impl WinScardContext for ScardContext<'_> {
         true
     }
 
-    fn read_cache(&self, _: Uuid, _: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
-        self.cache
-            .get(key)
-            .map(|item| Cow::Borrowed(item.as_slice()))
-            .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("Cache item '{key}' not found")))
+    // The caller-provided card id is ignored on purpose: we always use the id of the card this
+    // context represents. The values must be the same, because the emulated smart card reports
+    // the same id in its CHUID, but using our own one guarantees that the cache items written
+    // during the context creation are always reachable.
+    fn read_cache(&self, _card_id: Uuid, freshness_counter: u32, key: &str) -> WinScardResult<Cow<'_, [u8]>> {
+        Ok(Cow::Owned(self.cache.read(self.card_id, freshness_counter, key)?))
     }
 
-    fn write_cache(&mut self, _: Uuid, _: u32, key: String, value: Vec<u8>) -> WinScardResult<()> {
-        self.cache.insert(key, value);
+    fn write_cache(
+        &mut self,
+        _card_id: Uuid,
+        freshness_counter: u32,
+        key: String,
+        value: Vec<u8>,
+    ) -> WinScardResult<()> {
+        self.cache.write(self.card_id, freshness_counter, key, value);
 
         Ok(())
     }
