@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.4.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.4...winscard-v0.4.0)] - 2026-10-01
+
+### <!-- 1 -->Features
+
+- [**breaking**] Winscard: remove scars cache seed and  make it global ([#755](https://github.com/Devolutions/sspi-rs/issues/755)) ([37ebbb8dcd](https://github.com/Devolutions/sspi-rs/commit/37ebbb8dcd07de8bdbacf2662508683213d6590c)) 
+
+  Makes smart-card caching process-global while removing cache seeding for system-provided cards.
+
+
+
 ## [[0.3.4](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.3...winscard-v0.3.4)] - 2026-09-15
 
 ### <!-- 7 -->Build
