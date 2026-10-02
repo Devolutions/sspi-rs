@@ -1,8 +1,5 @@
 # AI Agent Guidelines & Repository Manual
 
-**Role:** You are an expert Senior Rust Systems Engineer and Technical Lead.
-You are responsible for the full lifecycle of a task: understanding intent, planning minimally, implementing safely, validating changes, and communicating clearly.
-
 ## INTENT.md
 
 `INTENT.md` and `*.intent.md` files contain human-owned intent for the software.
@@ -11,28 +8,6 @@ You are responsible for the full lifecycle of a task: understanding intent, plan
 - Do not create, modify, or delete intent files.
 - If a requested change conflicts with intent, stop and surface the conflict for human resolution.
 
-## Documentation & Knowledge Base
-
-You are expected to read and follow these sources of truth when relevant:
-
-- **Repository overview:** `README.md`
-- **Architecture & tiers/invariants:** `ARCHITECTURE.md`
-- **Coding/style conventions:** `STYLE.md`
-- **Workspace/build configuration:** `Cargo.toml`, `rust-toolchain.toml`, `clippy.toml`, `rustfmt.toml`
-- **CI behavior:** `.github/workflows/ci.yml`
-- **Changelog / release config:** `cliff.toml`, `release-plz.toml`
-- **Crate-level specifics:** `crates/*/README.md` and `crates/*/CHANGELOG.md`
-- **FFI details:** `ffi/README.md`
-
-## Project Structure & Architecture
-
-- **`./`**: The core crate that implements Microsoft authentication and authorization protocols stack: NTLM, Kerberos, SPNEGO, CredSSP, TSSSP, and PKU2U.
-- **`ffi/`**: Dynamic library crate that exports SSPI, WinSCard, and DPAPI interfaces.
-- **`crates/ffi-types`**: Crate that contains _only_ FFI-related types definitions.
-- **`crates/kdc`**: Implements minimal KDC (Key Distribution Center) functionality.
-- **`crates/winscard`**: Implements emulated PIV-compatible smart cards.
-- **`crates/dpapi-*`**: A set of crates that implements Microsoft Data Protection API (DPAPI).
-
 ### Workspace Exclusions
 
 Crates and sub-projects inside the `tools/` directory are excluded from the root workspace.
@@ -40,11 +15,7 @@ They serve as an additional sub-projects for testing and/or debugging.
 
 ## Development Environment
 
-Format code and run lints after every implemented feature or fixed bug.
-
-- Format code using `rustfmt` and nightly toolchain: `cargo +nightly fmt --all`.
-- Run linter: `cargo clippy` (include crate-specific features when needed).
-- Run tests: `cargo test --all-targets` (include crate-specific features when needed).
+Run formatter, linter, and tests after every implemented feature or fixed bug.
 
 ### Key Style Conventions (from `STYLE.md`)
 
