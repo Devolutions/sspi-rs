@@ -7,12 +7,14 @@ pub mod principal;
 use std::io::Write;
 
 pub use change_password::change_password;
+use oid::ObjectIdentifier;
 use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{PrincipalName, Ticket};
 use picky_krb::messages::{ApRep, AsRep, TgsRep};
 use rand::rngs::{StdRng, SysRng};
+use rand_core::SeedableRng;
 
 use self::extractors::{
     decrypt_ap_rep, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
@@ -41,8 +43,6 @@ use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosState, Result, Secret, SecurityBuffer, SecurityStatus, SspiImpl,
 };
-use oid::ObjectIdentifier;
-use rand_core::SeedableRng;
 
 #[allow(
     clippy::enum_variant_names,
@@ -712,11 +712,12 @@ pub async fn initialize_security_context<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::referral_target_realm;
     use picky_asn1::restricted_string::IA5String;
     use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
     use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
     use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
+
+    use super::referral_target_realm;
 
     fn principal_name(name_type: u8, names: &[&str]) -> PrincipalName {
         PrincipalName {

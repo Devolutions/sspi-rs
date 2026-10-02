@@ -9,6 +9,8 @@ pub mod server;
 mod tests;
 pub(crate) mod utils;
 
+use std::sync::LazyLock;
+
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, OctetStringAsn1, Optional};
 use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
@@ -18,7 +20,6 @@ use picky_krb::gss_api::WrapToken;
 use picky_krb::messages::{IAKerbCookie, KdcProxyMessage};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
-use std::sync::LazyLock;
 use time::{Duration, OffsetDateTime};
 use url::Url;
 

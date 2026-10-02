@@ -1,4 +1,9 @@
-use crate::Result;
+use hmac::digest::common::getrandom::SysRng;
+use picky_krb::data_types::Ticket;
+use picky_krb::messages::{IAKerbCookie, KdcRep, TgsRep, TgsReq};
+use rand::prelude::StdRng;
+use rand_core::{Rng, SeedableRng};
+
 use crate::channel_bindings::ChannelBindings;
 use crate::kerberos::EncryptionParams;
 use crate::kerberos::client::extractors::extract_session_key_from_tgs_rep;
@@ -7,12 +12,7 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::client::referral_target_realm;
-use crate::{ClientRequestFlags, Error, ErrorKind, Secret};
-use hmac::digest::common::getrandom::SysRng;
-use picky_krb::data_types::Ticket;
-use picky_krb::messages::{IAKerbCookie, KdcRep, TgsRep, TgsReq};
-use rand::prelude::StdRng;
-use rand_core::{Rng, SeedableRng};
+use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
 
 const MAX_REFERRAL_HOPS: usize = 10;
 

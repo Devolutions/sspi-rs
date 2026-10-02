@@ -1,9 +1,10 @@
-use crate::{Error, ErrorKind};
 use picky_asn1_der::Asn1RawDer;
 use picky_krb::data_types::{KrbResult, ResultExt};
 use picky_krb::gss_api::IAKerbProxyMessage;
 use picky_krb::messages::IAKerbCookie;
 use serde::de::DeserializeOwned;
+
+use crate::{Error, ErrorKind};
 
 pub mod as_exchange;
 pub mod tgs_exchange;
@@ -43,8 +44,6 @@ fn decode_kdc_reply<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
-    use crate::kerberos::client::kdc::decode_kdc_reply;
-    use crate::kerberos::messages::generate_iakerb_proxy_message;
     use picky_asn1::restricted_string::Ia5String;
     use picky_asn1::wrapper::{
         Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
@@ -56,6 +55,9 @@ mod tests {
         EncryptedData, KerberosStringAsn1, KrbResult, PaData, PrincipalName, Ticket, TicketInner,
     };
     use picky_krb::messages::{AsRep, IAKerbCookie, KdcRep};
+
+    use crate::kerberos::client::kdc::decode_kdc_reply;
+    use crate::kerberos::messages::generate_iakerb_proxy_message;
 
     fn as_rep_raw() -> Vec<u8> {
         vec![
