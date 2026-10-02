@@ -12,8 +12,6 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::encryption_params::EncryptionParams;
 #[cfg(feature = "scard")]
-use crate::check_if_empty;
-#[cfg(feature = "scard")]
 use crate::pk_init::{
     GenerateAsPaDataOptions as SmartCardPaDataOptions, generate_pa_datas_for_as_req_at as generate_private_key_based_at,
 };

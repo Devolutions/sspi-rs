@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.21.3"
+version = "0.23.0"
 edition = "2024"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,7 @@ repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
-rust-version = "1.89"
+rust-version = "1.93"
 
 [workspace]
 resolver = "2"
@@ -60,6 +60,7 @@ undocumented_unsafe_blocks = "warn"
 multiple_unsafe_ops_per_block = "warn"
 
 # == Correctness == #
+as_conversions = "warn"
 as_underscore = "warn"
 filetype_is_file = "warn"
 float_cmp_const = "warn"
@@ -97,7 +98,7 @@ picky-krb = "=0.12.4"
 
 tokio = "1.52"
 ffi-types = { path = "crates/ffi-types" }
-winscard = { version = "0.3", path = "crates/winscard" }
+winscard = { version = "0.4", path = "crates/winscard" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
@@ -247,10 +248,10 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
 pkcs1 = { version = "=0.8.0-rc.4", optional = true }
-p256 = { version = "=0.14.0-rc.14", optional = true }
-primeorder = { version = "=0.14.0-rc.14", optional = true }
-p384 = { version = "=0.14.0-rc.14", optional = true }
-p521 = { version = "=0.14.0-rc.14", optional = true }
+p256 = { version = "=0.14.0", optional = true }
+primeorder = { version = "=0.14.0", optional = true }
+p384 = { version = "=0.14.0", optional = true }
+p521 = { version = "=0.14.0", optional = true }
 
 # "Zero-knowledge Cryptography in Rust" crates
 rustcrypto-ff = { version = "=0.14.0-rc.1", optional = true }
@@ -258,7 +259,7 @@ rustcrypto-ff_derive = { version = "=0.14.0-rc.0", optional = true }
 rustcrypto-group = { version = "=0.14.0-rc.1", optional = true }
 
 # "dalek cryptography" crates
-ed25519-dalek = { version = "=3.0.0-rc.1", optional = true }
+ed25519-dalek = { version = "=3.0.0", optional = true }
 curve25519-dalek = { version = "=5.0.0-rc.1", optional = true }
 
 [dev-dependencies]
