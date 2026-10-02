@@ -27,7 +27,9 @@ struct CngPrivateKey {
 
 impl CngPrivateKey {
     fn sign(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let digest = HashAlgorithm::SHA1.digest(data);
+        let digest = HashAlgorithm::SHA1
+            .digest(data)
+            .map_err(|error| Error::new(ErrorKind::InternalError, format!("PKU2U hashing failed: {error}")))?;
         let padding = BCRYPT_PKCS1_PADDING_INFO {
             pszAlgId: BCRYPT_SHA1_ALGORITHM,
         };

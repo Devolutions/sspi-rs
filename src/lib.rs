@@ -180,8 +180,8 @@ pub use self::ntlm::Ntlm;
 #[cfg(feature = "ntlm")]
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 #[cfg(feature = "pku2u")]
-pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uState};
-pub use self::secret::Secret;
+pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
+pub use self::secret::{Secret, SecretPrivateKey};
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
@@ -2269,6 +2269,15 @@ pub enum ErrorKind {
     MutualAuthFailed = 0x8009_0363,
     OnlyHttpsAllowed = 0x8009_0365,
     ApplicationProtocolMismatch = 0x8009_0367,
+}
+
+impl From<ErrorKind> for u32 {
+    fn from(value: ErrorKind) -> u32 {
+        #[expect(clippy::as_conversions, reason = "enum repr cast in From impl")]
+        {
+            value as u32
+        }
+    }
 }
 
 /// Holds the `ErrorKind` and the description of the SSPI-related error.

@@ -87,6 +87,17 @@ pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> re
 mod tests {
     use std::sync::Arc;
 
+    const NON_FIPS_PROVIDER_CHILD: &str = "SSPI_TEST_NON_FIPS_PROVIDER_CHILD";
+
+    #[derive(Debug)]
+    struct NonFipsSecureRandom(&'static dyn rustls::crypto::SecureRandom);
+
+    impl rustls::crypto::SecureRandom for NonFipsSecureRandom {
+        fn fill(&self, buf: &mut [u8]) -> Result<(), rustls::crypto::GetRandomFailed> {
+            self.0.fill(buf)
+        }
+    }
+
     #[test]
     fn fips_provider_and_config_report_fips() {
         super::install_default_crypto_provider_if_necessary().unwrap();
@@ -98,5 +109,35 @@ mod tests {
             .with_root_certificates(rustls::RootCertStore::empty())
             .with_no_client_auth();
         assert!(config.fips());
+    }
+
+    #[test]
+    fn fips_profile_rejects_preinstalled_non_fips_provider() {
+        if std::env::var_os(NON_FIPS_PROVIDER_CHILD).is_some() {
+            let mut provider = rustls::crypto::default_fips_provider();
+            provider.secure_random = Box::leak(Box::new(NonFipsSecureRandom(provider.secure_random)));
+            assert!(!provider.fips());
+            provider.install_default().unwrap();
+
+            assert_eq!(super::install_default_crypto_provider_if_necessary(), Err(()));
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "rustls::tests::fips_profile_rejects_preinstalled_non_fips_provider",
+                "--nocapture",
+            ])
+            .env(NON_FIPS_PROVIDER_CHILD, "1")
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "isolated test process failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
 }

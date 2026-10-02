@@ -90,6 +90,7 @@ sha2 = "0.11"
 num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
+# TODO: Replace this Git pin with the crates.io release that publishes `fips-aws-lc`.
 picky = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
@@ -248,10 +249,10 @@ tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
 pkcs1 = { version = "=0.8.0-rc.4", optional = true }
-p256 = { version = "=0.14.0", optional = true }
-primeorder = { version = "=0.14.0", optional = true }
-p384 = { version = "=0.14.0", optional = true }
-p521 = { version = "=0.14.0", optional = true }
+p256 = { version = "=0.14.0-rc.14", optional = true }
+primeorder = { version = "=0.14.0-rc.14", optional = true }
+p384 = { version = "=0.14.0-rc.14", optional = true }
+p521 = { version = "=0.14.0-rc.14", optional = true }
 
 # "Zero-knowledge Cryptography in Rust" crates
 rustcrypto-ff = { version = "=0.14.0-rc.1", optional = true }
@@ -259,7 +260,7 @@ rustcrypto-ff_derive = { version = "=0.14.0-rc.0", optional = true }
 rustcrypto-group = { version = "=0.14.0-rc.1", optional = true }
 
 # "dalek cryptography" crates
-ed25519-dalek = { version = "=3.0.0", optional = true }
+ed25519-dalek = { version = "=3.0.0-rc.1", optional = true }
 curve25519-dalek = { version = "=5.0.0-rc.1", optional = true }
 
 [dev-dependencies]

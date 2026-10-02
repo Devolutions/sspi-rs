@@ -35,14 +35,21 @@ cargo build -p sspi --no-default-features --features fips
 ```
 
 This profile selects the rustls AWS-LC FIPS provider and Picky's `fips-aws-lc` backend. It does not
-compile the in-crate NTLM, Kerberos, PKU2U, Negotiate, CredSSP, smartcard, TSSSP, or DPAPI surfaces.
-Those protocols require cryptography outside the validated provider boundary and remain available
-through the positive features above. `fips` is mutually exclusive with `all-ssps`, every individual
-protocol feature, `network_client`, `dns_resolver`, `scard`, `tsssp`, `aws-lc-rs`, and `ring`.
+compile the in-crate NTLM, Kerberos, PKU2U, Negotiate, CredSSP, smartcard, or TSSSP surfaces. The
+documented `-p sspi` command builds only the `sspi` package; it does not build the separate DPAPI
+workspace crates. Those protocols require cryptography outside the validated provider boundary and
+remain available through the positive features above. `fips` is mutually exclusive with `all-ssps`,
+every individual protocol feature, `network_client`, `dns_resolver`, `scard`, `tsssp`, `aws-lc-rs`,
+and `ring`.
 
 Selecting this feature does not by itself establish deployment compliance. The exact AWS-LC module,
 target platform, build procedure, operational environment, and applicable certificate coverage must
 be validated for each deployment.
+
+The Picky release containing `fips-aws-lc` is not yet available on crates.io, so this profile
+temporarily pins Picky and its directly coupled ASN.1 crates to a Git revision. This prevents
+publishing the affected crates until those synchronized releases are available and the Git pins are
+replaced with registry versions.
 
 ## Overview
 

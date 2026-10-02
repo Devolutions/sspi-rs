@@ -42,16 +42,16 @@ dependencies = [
 
 [[package]]
 name = "aes-gcm"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdf011db2e21ce0d575593d749db5554b47fed37aff429e4dc50bc91ac93a028"
+checksum = "7f2b8006a0c83f52b62ba44a97b58bf76fe2f70a329e588f67f89691d93d498f"
 dependencies = [
  "aead",
  "aes",
  "cipher",
  "ctr",
+ "ctutils",
  "ghash",
- "subtle",
 ]
 
 [[package]]
@@ -768,18 +768,15 @@ dependencies = [
  "bitflags 2.13.2",
  "byteorder",
  "concat-kdf",
- "curve25519-dalek",
  "digest 0.11.3",
  "dpapi-core",
  "dpapi-pdu",
  "dpapi-transport",
- "ecdsa",
- "ed25519-dalek",
  "elliptic-curve",
  "getrandom 0.4.3",
  "hmac",
  "kbkdf",
- "num-derive",
+ "num-derive 0.5.1",
  "num-traits",
  "p256",
  "p384",
@@ -790,15 +787,11 @@ dependencies = [
  "picky-asn1-x509 0.15.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "picky-krb",
  "pkcs1",
- "primeorder",
  "rand 0.10.3",
  "rand_core 0.10.1",
  "regex",
  "rsa",
- "rustcrypto-ff",
- "rustcrypto-ff_derive",
- "rustcrypto-group",
- "sha1 0.11.0",
+ "sha1",
  "sha2",
  "sspi",
  "thiserror",
@@ -807,7 +800,6 @@ dependencies = [
  "url",
  "uuid",
  "whoami",
- "x25519-dalek",
 ]
 
 [[package]]
@@ -850,7 +842,7 @@ dependencies = [
  "bitflags 2.13.2",
  "crypto-bigint",
  "dpapi-core",
- "num-derive",
+ "num-derive 0.5.1",
  "num-traits",
  "paste",
  "thiserror",
@@ -1723,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "kdc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "picky-asn1 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1947,6 +1939,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4e98dc3b890f6c23a0f9d3d491a2823d0dea0fa656302a13dd225fa924112a8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2153,7 +2156,7 @@ dependencies = [
  "rustcrypto-ff_derive",
  "rustcrypto-group",
  "serde",
- "sha1 0.11.0",
+ "sha1",
  "sha2",
  "sha3",
  "thiserror",
@@ -2256,7 +2259,7 @@ dependencies = [
  "rand 0.10.3",
  "rand_core 0.10.1",
  "serde",
- "sha1 0.11.0",
+ "sha1",
  "thiserror",
  "uuid",
 ]
@@ -3046,17 +3049,6 @@ dependencies = [
 
 [[package]]
 name = "sha1"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest 0.10.7",
-]
-
-[[package]]
-name = "sha1"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
@@ -3195,7 +3187,7 @@ dependencies = [
  "hmac",
  "md-5",
  "md4",
- "num-derive",
+ "num-derive 0.4.2",
  "num-traits",
  "oid",
  "p256",
@@ -3220,7 +3212,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "serde",
- "sha1 0.11.0",
+ "sha1",
  "sha2",
  "static_assertions",
  "time",
@@ -3250,13 +3242,14 @@ dependencies = [
  "dpapi-transport",
  "embed-resource",
  "ffi-types",
+ "getrandom 0.3.4",
  "libc",
  "num-traits",
  "picky",
  "picky-asn1 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "picky-asn1-der 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "picky-asn1-x509 0.15.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "sha1 0.11.0",
+ "sha1",
  "sha2",
  "sspi",
  "symbol-rename-macro",
@@ -3365,7 +3358,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -3487,9 +3480,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.29.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
@@ -3682,19 +3675,19 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.29.0"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
 dependencies = [
  "bytes",
  "data-encoding",
  "http",
  "httparse",
  "log",
- "rand 0.9.5",
+ "rand 0.10.3",
  "rustls",
  "rustls-pki-types",
- "sha1 0.10.7",
+ "sha1",
  "thiserror",
 ]
 
@@ -4216,7 +4209,7 @@ dependencies = [
  "flate2",
  "iso7816",
  "iso7816-tlv",
- "num-derive",
+ "num-derive 0.4.2",
  "num-traits",
  "picky",
  "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
@@ -4224,7 +4217,7 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "rsa",
- "sha1 0.11.0",
+ "sha1",
  "time",
  "tracing",
  "uuid",
