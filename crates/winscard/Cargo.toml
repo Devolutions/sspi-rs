@@ -19,7 +19,7 @@ name = "winscard"
 bitflags.workspace = true
 iso7816 = "0.1"
 iso7816-tlv = "0.4"
-picky = { workspace = true, features = ["x509"] }
+picky = { workspace = true, features = ["rustcrypto", "x509"] }
 # TODO: Replace these Git pins with the crates.io releases synchronized with the root Picky FIPS dependency.
 picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395" }
 tracing = { workspace = true, features = ["attributes"] }

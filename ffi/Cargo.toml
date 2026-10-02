@@ -46,7 +46,7 @@ tracing = { version = "0.1", default-features = true }
 tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
 
 libc = "0.2"
-sspi = { path = "..", default-features = false, features = ["network_client"] }
+sspi = { path = "..", default-features = false, features = ["credssp", "network_client"] }
 cryptoki = { version = "0.12", optional = true }
 widestring = "1.2"
 
