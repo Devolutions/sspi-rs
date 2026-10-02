@@ -5,6 +5,7 @@ use std::task::{Context, Poll, Waker};
 
 use url::Url;
 
+#[cfg(feature = "credssp")]
 use crate::credssp::ServerError;
 use crate::network_client::{AsyncNetworkClient, NetworkClient, NetworkProtocol};
 use crate::{AcceptSecurityContextResult, Error, InitializeSecurityContextResult};
@@ -156,6 +157,7 @@ where
     }
 }
 
+#[cfg(feature = "credssp")]
 impl<'a, YieldTy, ResumeTy, OutTy> Generator<'a, YieldTy, ResumeTy, Result<OutTy, ServerError>>
 where
     OutTy: Send + 'a,

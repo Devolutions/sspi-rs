@@ -1,11 +1,19 @@
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use crypto_bigint::modular::{BoxedMontyForm, BoxedMontyParams};
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use crypto_bigint::{BoxedUint, Odd, Resize};
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use picky_krb::crypto::CipherSuite;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use rand::rngs::StdRng;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use rand_core::Rng as _;
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
+use crate::Secret;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use crate::kerberos::EncryptionParams;
-use crate::{BufferType, Error, ErrorKind, Result, Secret, SecurityBufferFlags, SecurityBufferRef};
+use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferRef};
 
 /// Writes an error and its full source chain to `w`, separated by `": "`.
 ///
@@ -24,10 +32,12 @@ pub(crate) fn write_error_chain(w: &mut impl std::fmt::Write, e: &dyn std::error
 }
 
 #[cfg_attr(not(target_os = "windows"), allow(unused))]
+#[cfg(feature = "negotiate")]
 pub(crate) fn is_azure_ad_domain(domain: &str) -> bool {
     domain == crate::pku2u::AZURE_AD_DOMAIN
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {
     let key_size = cipher.cipher().key_size();
     let mut key = vec![0; key_size];
@@ -36,6 +46,7 @@ pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdR
     key
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
 
@@ -211,6 +222,7 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 pub(crate) fn get_encryption_key(enc_params: &EncryptionParams) -> Result<&Secret<Vec<u8>>> {
     // the sub-session key is always preferred over the session key
     if let Some(key) = enc_params.sub_session_key.as_ref() {
@@ -316,6 +328,7 @@ pub(crate) fn extract_encrypted_data(buffers: &[SecurityBufferRef<'_>]) -> Resul
     Ok(encrypted)
 }
 
+#[cfg(feature = "kerberos")]
 pub(crate) fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
     let divider = target_name.find('/').ok_or_else(|| {
         Error::new(
@@ -338,24 +351,27 @@ pub(crate) fn parse_target_name(target_name: &str) -> Result<(&str, &str)> {
     Ok((service_name, service_principal_name))
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 pub fn modpow(public_key: &BoxedUint, private_key: &BoxedUint, p: Odd<BoxedUint>) -> BoxedUint {
     let p = BoxedMontyParams::new_vartime(p);
     pow_mod_params(public_key, private_key, &p)
 }
 
 // Copied from `rsa` crate: https://github.com/RustCrypto/RSA/blob/eb1cca7b7ea42445dc874c1c1ce38873e4adade7/src/algorithms/rsa.rs#L232-L241
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 fn pow_mod_params(base: &BoxedUint, exp: &BoxedUint, n_params: &BoxedMontyParams) -> BoxedUint {
     let base = reduce_vartime(base, n_params);
     base.pow(exp).retrieve()
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 fn reduce_vartime(n: &BoxedUint, p: &BoxedMontyParams) -> BoxedMontyForm {
     let modulus = p.modulus().as_nz_ref().clone();
     let n_reduced = n.rem_vartime(&modulus).resize_unchecked(p.bits_precision());
     BoxedMontyForm::new(n_reduced, p)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "kerberos"))]
 mod tests {
     use super::parse_target_name;
 

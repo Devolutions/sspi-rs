@@ -68,8 +68,6 @@ pub(super) mod danger {
 
         fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
             vec![
-                SignatureScheme::RSA_PKCS1_SHA1,
-                SignatureScheme::ECDSA_SHA1_Legacy,
                 SignatureScheme::RSA_PKCS1_SHA256,
                 SignatureScheme::ECDSA_NISTP256_SHA256,
                 SignatureScheme::RSA_PKCS1_SHA384,

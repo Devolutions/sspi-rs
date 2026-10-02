@@ -1,10 +1,13 @@
+#[cfg(feature = "ntlm")]
 mod rc4;
 
 use std::io;
 
 use hmac::KeyInit;
+#[cfg(feature = "ntlm")]
 use md4::Md4;
 use md5::{Digest as _, Md5};
+#[cfg(feature = "ntlm")]
 pub(crate) use rc4::Rc4;
 use sha2::Sha256;
 
@@ -14,6 +17,7 @@ pub(crate) const HASH_SIZE: usize = 16;
 
 const SHA256_SIZE: usize = 32;
 
+#[cfg(feature = "ntlm")]
 pub(crate) fn compute_md4(data: &[u8]) -> [u8; HASH_SIZE] {
     use md4::Digest as _;
 
