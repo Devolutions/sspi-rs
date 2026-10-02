@@ -1,18 +1,16 @@
 use hmac::digest::common::getrandom::SysRng;
 use picky_krb::data_types::Ticket;
-use picky_krb::messages::{IAKerbCookie, KdcRep, TgsRep, TgsReq};
+use picky_krb::messages::{KdcRep, TgsRep, TgsReq};
 use rand::prelude::StdRng;
 use rand_core::{Rng, SeedableRng};
 
-use crate::channel_bindings::ChannelBindings;
-use crate::kerberos::EncryptionParams;
 use crate::kerberos::client::extractors::extract_session_key_from_tgs_rep;
 use crate::kerberos::client::generators::{
-    GenerateAuthenticatorOptions, GenerateTgsReqOptions, generate_authenticator, generate_tgs_req,
+    GenerateAuthenticatorOptions, GenerateTgsReqOptions, generate_authenticator_at, generate_tgs_req,
 };
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::client::referral_target_realm;
-use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
+use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result, Secret};
 
 const MAX_REFERRAL_HOPS: usize = 10;
 
@@ -30,7 +28,6 @@ enum TgsExchangeState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TgsExchange {
     state: TgsExchangeState,
-    iakerb: bool,
     realm: String,
     ticket: Option<Ticket>,
     tgt_session_key: Secret<Vec<u8>>,
@@ -42,7 +39,6 @@ pub struct TgsExchange {
 
 impl TgsExchange {
     pub(crate) fn new(
-        iakerb: bool,
         realm: String,
         ticket: Ticket,
         tgt_session_key: Secret<Vec<u8>>,
@@ -52,7 +48,6 @@ impl TgsExchange {
     ) -> Self {
         Self {
             state: TgsExchangeState::TgsRequest,
-            iakerb,
             realm,
             ticket: Some(ticket),
             tgt_session_key,
@@ -65,12 +60,9 @@ impl TgsExchange {
 
     pub(crate) fn step<'a>(
         &'a mut self,
-        channel_bindings: Option<&ChannelBindings>,
-        enc_params: &EncryptionParams,
+        client: &mut Kerberos,
         service_principal: &str,
         response: &[u8],
-        iakerb_cookie: &mut IAKerbCookie,
-        iakerb_gss_transcript: &mut Vec<u8>,
     ) -> Result<TgsExchangeOutput<'a>> {
         // Cross-realm referral chasing (RFC 4120 §3.3.3.2 / MS-KILE).
         //
@@ -97,14 +89,18 @@ impl TgsExchange {
                 TgsExchangeState::TgsRequest => {
                     let mut rand = StdRng::try_from_rng(&mut SysRng)?;
 
-                    let mut authenticator = generate_authenticator(GenerateAuthenticatorOptions {
-                        kdc_rep: &self.auth_rep,
-                        seq_num: Some(rand.next_u32()),
-                        sub_key: None,
-                        checksum: None,
-                        channel_bindings,
-                        extensions: Vec::new(),
-                    })?;
+                    let now = client.current_kdc_time()?;
+                    let mut authenticator = generate_authenticator_at(
+                        GenerateAuthenticatorOptions {
+                            kdc_rep: &self.auth_rep,
+                            seq_num: Some(rand.next_u32()),
+                            sub_key: None,
+                            checksum: None,
+                            channel_bindings: client.channel_bindings.as_ref(),
+                            extensions: Vec::new(),
+                        },
+                        now,
+                    )?;
 
                     let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
                         realm: &self.realm,
@@ -116,7 +112,7 @@ impl TgsExchange {
                             .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket is missing"))?,
                         authenticator: &mut authenticator,
                         additional_tickets: self.additional_tickets.take(),
-                        enc_params,
+                        enc_params: &client.encryption_params,
                         context_requirements: self.context_requirements,
                     })?;
 
@@ -129,10 +125,16 @@ impl TgsExchange {
                         return Err(Error::new(ErrorKind::InternalError, "the KDC reply message is absent"));
                     }
 
-                    let tgs_rep = decode_kdc_reply(response, self.iakerb, iakerb_cookie, iakerb_gss_transcript)?;
+                    let tgs_rep = decode_kdc_reply(
+                        response,
+                        client.is_iakerb(),
+                        &mut client.iakerb_cookie,
+                        &mut client.iakerb_gss_transcript,
+                    )?;
                     let tgs_rep = tgs_rep.inspect_err(|err| error!(?err, "TGS exchange error"))?;
 
-                    let session_key = extract_session_key_from_tgs_rep(&tgs_rep, &self.tgt_session_key, enc_params)?;
+                    let session_key =
+                        extract_session_key_from_tgs_rep(&tgs_rep, &self.tgt_session_key, &client.encryption_params)?;
 
                     // A referral TGT is identified by an `sname` of the form `krbtgt/<NEXT_REALM>`.
                     let Some(next_realm) = referral_target_realm(&tgs_rep.0.ticket.0.0.sname.0) else {

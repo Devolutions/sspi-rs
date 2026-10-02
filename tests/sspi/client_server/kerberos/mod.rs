@@ -409,12 +409,12 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
         let mut network_client = NetworkClientMock { kdc };
 
         let client_config = KerberosConfig {
-            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
             client_computer_name: CLIENT_COMPUTER_NAME.into(),
         };
         let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
         let server_config = KerberosConfig {
-            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
             client_computer_name: SERVER_COMPUTER_NAME.into(),
         };
         let server_properties = ServerProperties {
@@ -529,7 +529,7 @@ fn kerberos_skew_retry_is_bounded_and_does_not_retry_other_errors() {
         let network_client = NetworkClientMock { kdc };
         let mut client = SspiContext::Kerberos(
             Kerberos::new_client_from_config(KerberosConfig {
-                kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
                 client_computer_name: CLIENT_COMPUTER_NAME.into(),
             })
             .unwrap(),

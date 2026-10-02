@@ -231,6 +231,8 @@ pub(crate) async fn accept_security_context(
                 }
             }
 
+            negotiate.state = NegotiateState::Ok;
+
             SecurityStatus::Ok
         }
         NegotiateState::Ok => {

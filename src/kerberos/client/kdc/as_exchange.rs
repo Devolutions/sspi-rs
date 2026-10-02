@@ -33,7 +33,6 @@ enum AsExchangeState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AsExchange {
     state: AsExchangeState,
-    iakerb: bool,
     kdc_req_body: KdcReqBody,
     retried_skew: bool,
     // Instead of storing the `AsReqPaDataOptions` directly, we store its individual components (fields below).
@@ -49,7 +48,6 @@ pub struct AsExchange {
 
 impl AsExchange {
     pub(crate) fn new(
-        iakerb: bool,
         kdc_req_body: KdcReqBody,
         password: Secret<String>,
         salt: Vec<u8>,
@@ -58,7 +56,6 @@ impl AsExchange {
     ) -> Self {
         Self {
             state: AsExchangeState::Initial,
-            iakerb,
             kdc_req_body,
             retried_skew: false,
             password,
@@ -91,7 +88,7 @@ impl AsExchange {
                 AsExchangeState::PreauthRequiredErrorResponse => {
                     let as_rep: KrbResult<AsRep> = decode_kdc_reply(
                         response,
-                        self.iakerb,
+                        client.is_iakerb(),
                         &mut client.iakerb_cookie,
                         &mut client.iakerb_gss_transcript,
                     )?;
@@ -133,7 +130,7 @@ impl AsExchange {
 
                     let as_rep: KrbResult<AsRep> = decode_kdc_reply(
                         response,
-                        self.iakerb,
+                        client.is_iakerb(),
                         &mut client.iakerb_cookie,
                         &mut client.iakerb_gss_transcript,
                     )?;

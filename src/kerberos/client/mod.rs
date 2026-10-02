@@ -258,7 +258,6 @@ pub async fn initialize_security_context<'a>(
                         }
 
                         let as_exchange = AsExchange::new(
-                            client.is_iakerb(),
                             kdc_req_body,
                             credentials.extract_password(),
                             salt,
@@ -404,7 +403,6 @@ pub async fn initialize_security_context<'a>(
 
                         client.state = KerberosState::Client(Box::new(KerberosClientState::TgsExchange {
                             tgs_exchange: TgsExchange::new(
-                                client.is_iakerb(),
                                 as_rep.0.crealm.to_string(),
                                 as_rep.0.ticket.0.clone(),
                                 session_key,
@@ -441,14 +439,7 @@ pub async fn initialize_security_context<'a>(
                                     .map(|security_buffer| security_buffer.buffer.as_slice())
                                     .unwrap_or_default();
 
-                                match tgs_exchange.step(
-                                    client.channel_bindings.as_ref(),
-                                    &client.encryption_params,
-                                    service_principal,
-                                    input_token,
-                                    &mut client.iakerb_cookie,
-                                    &mut client.iakerb_gss_transcript,
-                                )? {
+                                match tgs_exchange.step(client, service_principal, input_token)? {
                                     TgsExchangeOutput::SendRequest((tgs_req, _realm)) => {
                                         let output_token =
                                             SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -482,14 +473,7 @@ pub async fn initialize_security_context<'a>(
                                 let mut response = Vec::new();
 
                                 loop {
-                                    match tgs_exchange.step(
-                                        client.channel_bindings.as_ref(),
-                                        &client.encryption_params,
-                                        service_principal,
-                                        &response,
-                                        &mut client.iakerb_cookie,
-                                        &mut client.iakerb_gss_transcript,
-                                    )? {
+                                    match tgs_exchange.step(client, service_principal, &response)? {
                                         TgsExchangeOutput::SendRequest((tgs_req, realm)) => {
                                             response = client
                                                 .send_for_realm(yield_point, realm, &serialize_message(&tgs_req)?)
