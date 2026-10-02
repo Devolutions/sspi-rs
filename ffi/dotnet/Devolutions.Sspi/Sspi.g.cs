@@ -1394,7 +1394,7 @@ namespace Devolutions.Sspi
     {
         /// <summary>
         ///  If [SecHandle] is used as a context handle, this field contains the security package ID of the security context.
-        ///  If [SecHandle] is used as a credentials handle, this field contains the credentials handle pointer address.
+        ///  If [SecHandle] is used as a credentials handle, this field contains an opaque credentials handle ID.
         /// </summary>
         public ulong dw_lower;
         /// <summary>
