@@ -13,6 +13,7 @@ use windows::Win32::Security::Cryptography::{
     NCRYPT_KEY_HANDLE, NCRYPT_PAD_PKCS1_FLAG, NCryptFreeObject, NCryptSignHash,
 };
 
+#[cfg(feature = "credssp")]
 use crate::credssp::NStatusCode;
 use crate::pku2u::Pku2uPrivateKey;
 use crate::{Error, ErrorKind, Result};
@@ -267,10 +268,21 @@ pub(crate) fn extract_client_p2p_cert_and_key() -> Result<(Certificate, Pku2uPri
         )
     };
 
-    let cert_store = cert_store.map_err(|error| Error {
-        error_type: ErrorKind::InternalError,
-        description: "Cannot initialize certificate store".into(),
-        nstatus: NStatusCode::try_from(error.code()).ok(),
+    let cert_store = cert_store.map_err(|error| {
+        #[cfg(feature = "credssp")]
+        let error = Error {
+            error_type: ErrorKind::InternalError,
+            description: "Cannot initialize certificate store".into(),
+            nstatus: NStatusCode::try_from(error.code()).ok(),
+        };
+
+        #[cfg(not(feature = "credssp"))]
+        let error = Error::new(
+            ErrorKind::InternalError,
+            format!("Cannot initialize certificate store: {error}"),
+        );
+
+        error
     })?;
 
     // SAFETY: `cert_store` is not null. We've checked this above.

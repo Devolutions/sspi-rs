@@ -5,7 +5,9 @@ use url::Url;
 
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::ServerProperties;
+#[cfg(feature = "negotiate")]
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
+#[cfg(feature = "negotiate")]
 use crate::{Kerberos, Result};
 
 /// Kerberos client configuration.
@@ -30,6 +32,7 @@ pub struct KerberosConfig {
     pub client_computer_name: String,
 }
 
+#[cfg(feature = "negotiate")]
 impl ProtocolConfig for KerberosConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
@@ -78,6 +81,7 @@ pub struct KerberosServerConfig {
     pub server_properties: ServerProperties,
 }
 
+#[cfg(feature = "negotiate")]
 impl ProtocolConfig for KerberosServerConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Kerberos(Kerberos::new_server_from_config(

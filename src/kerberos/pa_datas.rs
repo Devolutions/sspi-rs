@@ -2,6 +2,8 @@ use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use time::OffsetDateTime;
 
+#[cfg(feature = "scard")]
+use crate::check_if_empty;
 use crate::kerberos::client::extractors::{extract_session_key_from_as_rep, extract_session_key_from_as_rep_with_key};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions, GenerateKeytabPaDataOptions,
@@ -9,6 +11,8 @@ use crate::kerberos::client::generators::{
     generate_pa_datas_for_as_req_with_key_at as generate_keytab_based_at,
 };
 use crate::kerberos::encryption_params::EncryptionParams;
+#[cfg(feature = "scard")]
+use crate::check_if_empty;
 #[cfg(feature = "scard")]
 use crate::pk_init::{
     GenerateAsPaDataOptions as SmartCardPaDataOptions, generate_pa_datas_for_as_req_at as generate_private_key_based_at,
@@ -100,7 +104,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 use crate::pku2u::{
                     extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data,
                 };
-                use crate::{Error, ErrorKind, check_if_empty, pku2u};
+                use crate::{Error, ErrorKind, pku2u};
 
                 let dh_rep_info = match extract_pa_pk_as_rep(as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,

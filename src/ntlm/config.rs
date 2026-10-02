@@ -1,4 +1,6 @@
+#[cfg(feature = "negotiate")]
 use crate::negotiate::ProtocolConfig;
+#[cfg(feature = "negotiate")]
 use crate::{NegotiatedProtocol, Ntlm, Result};
 
 #[derive(Debug, Clone, Default)]
@@ -17,6 +19,7 @@ impl NtlmConfig {
     }
 }
 
+#[cfg(feature = "negotiate")]
 impl ProtocolConfig for NtlmConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Ntlm(Ntlm::with_config(Clone::clone(self))))
