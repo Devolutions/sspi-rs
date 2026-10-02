@@ -22,8 +22,8 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
-    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
+    KdcResolution, Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol,
+    SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use time::OffsetDateTime;
 use url::Url;
@@ -330,13 +330,13 @@ fn kerberos_auth() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
@@ -409,12 +409,12 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
         let mut network_client = NetworkClientMock { kdc };
 
         let client_config = KerberosConfig {
-            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
             client_computer_name: CLIENT_COMPUTER_NAME.into(),
         };
         let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
         let server_config = KerberosConfig {
-            kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
             client_computer_name: SERVER_COMPUTER_NAME.into(),
         };
         let server_properties = ServerProperties {
@@ -529,7 +529,7 @@ fn kerberos_skew_retry_is_bounded_and_does_not_retry_other_errors() {
         let network_client = NetworkClientMock { kdc };
         let mut client = SspiContext::Kerberos(
             Kerberos::new_client_from_config(KerberosConfig {
-                kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
                 client_computer_name: CLIENT_COMPUTER_NAME.into(),
             })
             .unwrap(),
@@ -593,7 +593,7 @@ fn spnego_kerberos_u2u() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
@@ -606,7 +606,7 @@ fn spnego_kerberos_u2u() {
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
@@ -658,7 +658,7 @@ fn spnego_kerberos_u2u() {
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
-        3,
+        4,
         SpnegoKerberosContextValidator,
     );
 }
@@ -703,7 +703,7 @@ fn run_spnego(
     let mut network_client = get_network_client(kdc);
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let mut spnego_client = SspiContext::Negotiate(
@@ -716,7 +716,7 @@ fn run_spnego(
     );
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {
@@ -935,7 +935,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
@@ -948,7 +948,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {

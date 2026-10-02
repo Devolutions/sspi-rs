@@ -207,6 +207,14 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
         KDC_ERR_REVOCATION_STATUS_UNAVAILABLE => (ErrorKind::InternalError, "revoked status unavailable".into()),
         KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "client name mismatch".into()),
         KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
+        KRB_AP_ERR_IAKERB_KDC_NOT_FOUND => (
+            ErrorKind::KdcInvalidRequest,
+            "The IAKERB proxy could not find a KDC.".into(),
+        ),
+        KRB_AP_ERR_IAKERB_KDC_NO_RESPONSE => (
+            ErrorKind::KdcInvalidRequest,
+            "The KDC did not respond to the IAKERB proxy.".into(),
+        ),
         code => (ErrorKind::Unknown, format!("unknown Kerberos error: {code}")),
     }
 }

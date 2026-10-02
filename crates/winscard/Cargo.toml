@@ -19,7 +19,7 @@ name = "winscard"
 bitflags = "2.11"
 iso7816 = "0.1"
 iso7816-tlv = "0.4"
-picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"] }
+picky = { version = "=7.0.0-rc.27", default-features = false, features = ["x509"] }
 picky-asn1-x509 = "0.15"
 tracing = { version = "0.1", default-features = false, features = ["attributes"] }
 time = { version = "0.3", default-features = false, features = [

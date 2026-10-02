@@ -3,6 +3,7 @@ use std::io::Read;
 use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_der::application_tag::ApplicationTag;
+use picky_krb::constants::error_codes::KDC_ERR_PREAUTH_REQUIRED;
 use picky_krb::constants::key_usages::{AP_REP_ENC, AS_REP_ENC, KRB_PRIV_ENC_PART, TGS_REP_ENC_SESSION_KEY};
 use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
 use picky_krb::crypto::CipherSuite;
@@ -22,6 +23,11 @@ use crate::{Error, ErrorKind, Result, Secret};
 /// > PA-ENC-TIMESTAMP pre-authentication value.
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
     trace!(?error, "KRB_ERROR");
+
+    // Check if the error code is KDC_ERR_PREAUTH_REQUIRED. If not, propagate the KDC error.
+    if error.0.error_code.0 != KDC_ERR_PREAUTH_REQUIRED {
+        return Err(error.clone().into());
+    }
 
     if let Some(e_data) = error.0.e_data.0.as_ref() {
         let pa_datas: Asn1SequenceOf<PaData> = picky_asn1_der::from_bytes(&e_data.0.0)?;
