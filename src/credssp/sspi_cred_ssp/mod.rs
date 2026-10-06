@@ -11,9 +11,9 @@ use rustls::client::ClientConfig;
 use rustls::{ClientConnection, Connection};
 
 use self::tls_connection::{TlsConnection, danger};
-use super::ts_request::NONCE_SIZE;
 use super::{CredSspContext, CredSspMode, EndpointType, SspiContext, TsRequest};
 use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, DecryptionResultBuffers};
+use crate::credssp::ts_request::NONCE_SIZE;
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };

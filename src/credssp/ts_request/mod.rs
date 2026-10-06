@@ -4,9 +4,10 @@ mod test;
 use core::fmt;
 use std::io::{self, Read};
 
-use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1, OctetStringAsn1};
-use picky_krb::constants::cred_ssp::TS_PASSWORD_CREDS;
-use picky_krb::credssp::{TsCredentials, TsPasswordCreds};
+use picky_asn1::wrapper::{
+    ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1, OctetStringAsn1,
+};
+use serde::{Deserialize, Serialize};
 use widestring::Utf16String;
 
 use super::CredSspMode;
@@ -17,6 +18,21 @@ pub(super) const TS_REQUEST_VERSION: u32 = 6;
 
 pub(super) const NONCE_SIZE: usize = 32;
 const NONCE_FIELD_LEN: u16 = 36;
+const TS_PASSWORD_CREDS: u8 = 1;
+const TS_SMART_CARD_CREDS: u8 = 2;
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+struct TsPasswordCreds {
+    domain_name: ExplicitContextTag0<OctetStringAsn1>,
+    user_name: ExplicitContextTag1<OctetStringAsn1>,
+    password: ExplicitContextTag2<OctetStringAsn1>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+struct TsCredentials {
+    cred_type: ExplicitContextTag0<IntegerAsn1>,
+    credentials: ExplicitContextTag1<OctetStringAsn1>,
+}
 
 /// Used for communication in the CredSSP [client](struct.CredSspServer.html)
 /// and [server](struct.CredSspServer.html). It's a top-most structure that
@@ -257,8 +273,31 @@ impl TsRequest {
 #[cfg(feature = "scard")]
 fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -> Result<Vec<u8>> {
     use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
-    use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
-    use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
+
+    const AT_KEYEXCHANGE: u8 = 1;
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+    struct TsCspDataDetail {
+        key_spec: ExplicitContextTag0<IntegerAsn1>,
+        #[serde(default)]
+        card_name: Optional<Option<ExplicitContextTag1<OctetStringAsn1>>>,
+        #[serde(default)]
+        reader_name: Optional<Option<ExplicitContextTag2<OctetStringAsn1>>>,
+        #[serde(default)]
+        container_name: Optional<Option<ExplicitContextTag3<OctetStringAsn1>>>,
+        #[serde(default)]
+        csp_name: Optional<Option<ExplicitContextTag4<OctetStringAsn1>>>,
+    }
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+    struct TsSmartCardCreds {
+        pin: ExplicitContextTag0<OctetStringAsn1>,
+        csp_data: ExplicitContextTag1<TsCspDataDetail>,
+        #[serde(default)]
+        user_hint: Optional<Option<ExplicitContextTag2<OctetStringAsn1>>>,
+        #[serde(default)]
+        domain_hint: Optional<Option<ExplicitContextTag3<OctetStringAsn1>>>,
+    }
 
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes_le())),
@@ -297,10 +336,8 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
             (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
         }
         #[cfg(feature = "scard")]
-        CredentialsBuffers::SmartCard(creds) => (
-            picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
-            write_smart_card_credentials(creds)?,
-        ),
+        CredentialsBuffers::SmartCard(creds) => (TS_SMART_CARD_CREDS, write_smart_card_credentials(creds)?),
+        #[cfg(feature = "kerberos")]
         CredentialsBuffers::Keytab(_) => {
             return Err(Error::new(
                 ErrorKind::UnsupportedPreAuth,
@@ -366,7 +403,7 @@ pub fn read_ts_credentials(mut buffer: impl Read) -> Result<CredentialsBuffers> 
         Some(&TS_PASSWORD_CREDS) => Ok(CredentialsBuffers::AuthIdentity(read_password_credentials(
             &ts_credentials.credentials.0.0,
         )?)),
-        Some(&picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS) => Err(Error::new(
+        Some(&TS_SMART_CARD_CREDS) => Err(Error::new(
             ErrorKind::UnsupportedFunction,
             "Reading of the TsSmartCard credentials is not supported yet",
         )),

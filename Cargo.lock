@@ -42,16 +42,16 @@ dependencies = [
 
 [[package]]
 name = "aes-gcm"
-version = "0.11.1"
+version = "0.11.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f2b8006a0c83f52b62ba44a97b58bf76fe2f70a329e588f67f89691d93d498f"
+checksum = "da8c919c118108f144adecad74b425b804ad075580d605d9b33c2d6d1c62a2f8"
 dependencies = [
  "aead",
  "aes",
  "cipher",
  "ctr",
- "ctutils",
  "ghash",
+ "subtle",
 ]
 
 [[package]]
@@ -226,6 +226,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "bcrypt-pbkdf"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144e573728da132683b9488acd528274c790e07fc06ff81ee29f9d8f8b1041e0"
+dependencies = [
+ "blowfish",
+ "pbkdf2",
+ "sha2",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -321,6 +332,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "710f1dd022ef4e93f8a438b4ba958de7f64308434fa6a87104481645cc30068b"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "blowfish"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62ce3946557b35e71d1bbe07ec385073ce9eda05043f95de134eb578fcf1a298"
+dependencies = [
+ "byteorder",
+ "cipher",
 ]
 
 [[package]]
@@ -2128,29 +2149,39 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "picky"
 version = "7.0.0-rc.25"
-source = "git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395#4de0135c528b60500d21451111b5f35d72671395"
+source = "git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit#f5b1ba9c60e8a6b3e6154fff3aaf4d38c42428f2"
 dependencies = [
+ "aes",
+ "aes-gcm",
+ "aes-kw",
  "aws-lc-rs",
  "base64 0.22.1",
+ "bcrypt-pbkdf",
+ "cbc",
  "crypto-bigint",
  "crypto-common 0.2.2",
+ "ctr",
  "curve25519-dalek",
+ "des",
  "digest 0.11.3",
  "ecdsa",
  "ed25519-dalek",
  "hex",
+ "hmac",
  "inout",
  "md-5",
  "p256",
  "p384",
  "p521",
- "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
- "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
- "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "pbkdf2",
+ "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
+ "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
+ "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "pkcs1",
  "primeorder",
  "rand 0.10.3",
  "rand_core 0.10.1",
+ "rc2",
  "rsa",
  "rustcrypto-ff",
  "rustcrypto-ff_derive",
@@ -2179,7 +2210,7 @@ dependencies = [
 [[package]]
 name = "picky-asn1"
 version = "0.10.1"
-source = "git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395#4de0135c528b60500d21451111b5f35d72671395"
+source = "git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit#f5b1ba9c60e8a6b3e6154fff3aaf4d38c42428f2"
 dependencies = [
  "oid",
  "serde",
@@ -2201,9 +2232,9 @@ dependencies = [
 [[package]]
 name = "picky-asn1-der"
 version = "0.5.7"
-source = "git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395#4de0135c528b60500d21451111b5f35d72671395"
+source = "git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit#f5b1ba9c60e8a6b3e6154fff3aaf4d38c42428f2"
 dependencies = [
- "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "serde",
  "serde_bytes",
 ]
@@ -2225,13 +2256,13 @@ dependencies = [
 [[package]]
 name = "picky-asn1-x509"
 version = "0.15.5"
-source = "git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395#4de0135c528b60500d21451111b5f35d72671395"
+source = "git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit#f5b1ba9c60e8a6b3e6154fff3aaf4d38c42428f2"
 dependencies = [
  "base64 0.23.1",
  "crypto-bigint",
  "oid",
- "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
- "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
+ "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "serde",
  "zeroize",
 ]
@@ -2627,6 +2658,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
 dependencies = [
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rc2"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceda21af1ae61033b63175653a1af86cae399d79cd03ca80ba347eb3a6c4a7fe"
+dependencies = [
+ "cipher",
 ]
 
 [[package]]
@@ -3246,9 +3286,9 @@ dependencies = [
  "libc",
  "num-traits",
  "picky",
- "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "picky-asn1 0.10.1 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "picky-asn1-der 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
- "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "sha1",
  "sha2",
  "sspi",
@@ -4212,8 +4252,8 @@ dependencies = [
  "num-derive 0.4.2",
  "num-traits",
  "picky",
- "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
- "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?rev=4de0135c528b60500d21451111b5f35d72671395)",
+ "picky-asn1-der 0.5.7 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
+ "picky-asn1-x509 0.15.5 (git+https://github.com/Devolutions/picky-rs?branch=copilot%2Fpicky-fips-audit)",
  "proptest",
  "rand 0.10.3",
  "rsa",

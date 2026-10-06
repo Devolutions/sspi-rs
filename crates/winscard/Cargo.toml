@@ -21,7 +21,7 @@ iso7816 = "0.1"
 iso7816-tlv = "0.4"
 picky = { workspace = true, features = ["rustcrypto", "x509"] }
 # TODO: Replace these Git pins with the crates.io releases synchronized with the root Picky FIPS dependency.
-picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395" }
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.15.5" }
 tracing = { workspace = true, features = ["attributes"] }
 time = { workspace = true, features = [
     "formatting",
@@ -31,7 +31,7 @@ flate2 = { version = "1.1", default-features = false }
 rsa = { workspace = true, features = ["hazmat"] }
 sha1.workspace = true
 base64 = { workspace = true , optional = true }
-picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395", optional = true }
+picky-asn1-der = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.5.7", optional = true }
 num-derive.workspace = true
 num-traits.workspace = true
 crypto-bigint.workspace = true

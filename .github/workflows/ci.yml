@@ -146,7 +146,7 @@ jobs:
       - name: Check individual SSP features
         shell: pwsh
         run: |
-          foreach ($feature in @('ntlm', 'kerberos', 'pku2u', 'negotiate', 'credssp')) {
+          foreach ($feature in @('ntlm', 'kerberos', 'pku2u', 'negotiate', 'credssp-types', 'credssp')) {
             cargo check -p sspi --no-default-features --features $feature
             if ($LASTEXITCODE -ne 0) { throw "feature '$feature' failed to compile" }
           }

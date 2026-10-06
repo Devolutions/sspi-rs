@@ -31,8 +31,8 @@ ffi-types = { workspace = true, features = ["sspi"] }
 
 picky = { workspace = true, features = ["x509"], optional = true }
 picky-asn1-der = "0.5"
-picky-asn1 = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395", optional = true }
-picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395", optional = true }
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.10.1", optional = true }
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.15.5", optional = true }
 
 uuid = { version = "1.23", default-features = false, features = ["v4"] }
 winscard = { workspace = true, features = ["std"], optional = true }

@@ -16,6 +16,8 @@ preserves the existing protocol surface and enables these positive protocol feat
 - `pku2u` enables PKU2U and its shared Kerberos message/crypto support.
 - `negotiate` enables SPNEGO over NTLM, Kerberos, and PKU2U.
 - `credssp` enables CredSSP over Negotiate.
+- `credssp-types` exposes crypto-neutral CredSSP `TSRequest` framing and delegated password
+  credential encoding without enabling an authentication mechanism.
 
 The optional component features retain their existing roles: `network_client` adds the built-in
 network client, `dns_resolver` adds KDC DNS discovery, `scard` adds smart-card logon, and `tsssp`
@@ -34,8 +36,9 @@ The `sspi` crate provides a deliberately narrow FIPS provider profile:
 cargo build -p sspi --no-default-features --features fips
 ```
 
-This profile selects the rustls AWS-LC FIPS provider and Picky's `fips-aws-lc` backend. It does not
-compile the in-crate NTLM, Kerberos, PKU2U, Negotiate, CredSSP, smartcard, or TSSSP surfaces. The
+This profile selects the rustls AWS-LC FIPS provider and Picky's `fips-aws-lc` backend. It exposes
+crypto-neutral CredSSP `TSRequest` framing through `credssp-types`, but it does not compile the
+in-crate NTLM, Kerberos, PKU2U, Negotiate, CredSSP authentication, smartcard, or TSSSP surfaces. The
 documented `-p sspi` command builds only the `sspi` package; it does not build the separate DPAPI
 workspace crates. Those protocols require cryptography outside the validated provider boundary and
 remain available through the positive features above. `fips` is mutually exclusive with `all-ssps`,
@@ -47,7 +50,8 @@ target platform, build procedure, operational environment, and applicable certif
 be validated for each deployment.
 
 The Picky release containing `fips-aws-lc` is not yet available on crates.io, so this profile
-temporarily pins Picky and its directly coupled ASN.1 crates to a Git revision. This prevents
+temporarily uses Picky and its directly coupled ASN.1 crates from the `copilot/picky-fips-audit`
+Git branch. The lockfile records the exact resolved commit. This prevents
 publishing the affected crates until those synchronized releases are available and the Git pins are
 replaced with registry versions.
 

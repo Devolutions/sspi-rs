@@ -91,7 +91,7 @@ num-derive = "0.4"
 num-traits = { version = "0.2", default-features = false }
 
 # TODO: Replace this Git pin with the crates.io release that publishes `fips-aws-lc`.
-picky = { git = "https://github.com/Devolutions/picky-rs", rev = "4de0135c528b60500d21451111b5f35d72671395", default-features = false }
+picky = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=7.0.0-rc.25", default-features = false }
 picky-asn1 = "0.10"
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
@@ -153,10 +153,12 @@ kerberos = [
 ]
 pku2u = ["kerberos"]
 negotiate = ["ntlm", "kerberos", "pku2u"]
-credssp = ["negotiate"]
+credssp-types = []
+credssp = ["credssp-types", "negotiate"]
 
 # Narrow AWS-LC FIPS provider profile. Protocol implementations are unavailable.
 fips = [
+  "credssp-types",
   "picky/fips-aws-lc",
   "__rustls-used",
   "rustls/fips",
@@ -189,7 +191,7 @@ rand.workspace = true
 rand_core.workspace = true
 getrandom.workspace = true
 cfg-if.workspace = true
-picky = { workspace = true, features = ["x509"] }
+picky = { workspace = true, features = ["x509"], optional = true }
 sha1 = { workspace = true, optional = true }
 sha2.workspace = true
 num-derive.workspace = true
@@ -267,7 +269,6 @@ curve25519-dalek = { version = "=5.0.0-rc.1", optional = true }
 base64.workspace = true
 static_assertions = "1"
 whoami.workspace = true
-picky = { workspace = true, features = ["x509"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 proptest.workspace = true
 cfg-if.workspace = true

@@ -7,7 +7,8 @@
 //!
 //! The default `all-ssps` feature includes every platform-independent SSP. Individual
 //! implementations can be selected with the `ntlm`, `kerberos`, `pku2u`, `negotiate`, and
-//! `credssp` features. A FIPS-only build intentionally exposes just the crypto-provider helper.
+//! `credssp` features. A FIPS-only build exposes the crypto-provider helper and crypto-neutral
+//! CredSSP wire types, but no authentication protocol implementation.
 //!
 //! # Getting started
 //!
@@ -63,7 +64,7 @@ extern crate tracing;
 
 pub mod builders;
 pub mod channel_bindings;
-#[cfg(feature = "credssp")]
+#[cfg(feature = "credssp-types")]
 pub mod credssp;
 pub mod generator;
 #[cfg(feature = "kerberos")]
@@ -181,7 +182,9 @@ pub use self::ntlm::Ntlm;
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 #[cfg(feature = "pku2u")]
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
-pub use self::secret::{Secret, SecretPrivateKey};
+pub use self::secret::Secret;
+#[cfg(feature = "picky")]
+pub use self::secret::SecretPrivateKey;
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
@@ -2285,7 +2288,7 @@ impl From<ErrorKind> for u32 {
 pub struct Error {
     pub error_type: ErrorKind,
     pub description: String,
-    #[cfg(feature = "credssp")]
+    #[cfg(feature = "credssp-types")]
     pub nstatus: Option<credssp::NStatusCode>,
 }
 
@@ -2309,12 +2312,12 @@ impl Error {
         Self {
             error_type,
             description: description.to_string(),
-            #[cfg(feature = "credssp")]
+            #[cfg(feature = "credssp-types")]
             nstatus: None,
         }
     }
 
-    #[cfg(feature = "credssp")]
+    #[cfg(feature = "credssp-types")]
     pub fn new_with_nstatus(
         error_type: ErrorKind,
         description: impl Into<String>,
@@ -2334,7 +2337,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}: {}", self.error_type, self.description)?;
 
-        #[cfg(feature = "credssp")]
+        #[cfg(feature = "credssp-types")]
         {
             if let Some(nstatus) = self.nstatus {
                 write!(f, "; status is {nstatus}")?;
@@ -2520,6 +2523,7 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
+#[cfg(feature = "picky")]
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
         Self::new(ErrorKind::InternalError, format!("RSA key error: {err:?}"))
