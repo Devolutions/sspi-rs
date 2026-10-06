@@ -9,7 +9,7 @@ repository = "https://github.com/devolutions/sspi-rs"
 authors = ["Devolutions Inc. <infos@devolutions.net>"]
 description = "A Rust implementation of the Security Support Provider Interface (SSPI) API"
 keywords = ["ntlm", "auth", "sspi", "windows", "kerberos"]
-rust-version = "1.93"
+rust-version = "1.90"
 
 [workspace]
 resolver = "2"
@@ -77,6 +77,27 @@ suspicious_xor_used_as_pow = "warn"
 unused_result_ok = "warn"
 
 [workspace.dependencies]
+uuid = { version = "1.23", default-features = false }
+tracing = { version = "0.1",  default-features = false }
+bitflags = "2.11"
+rand = "0.10"
+rand_core = "0.10"
+getrandom = "0.3"
+cfg-if = "1"
+time = { version = "0.3", default-features = false }
+sha1 = { version = "0.11", default-features = false }
+sha2 = "0.11"
+num-derive = "0.4"
+num-traits = { version = "0.2", default-features = false }
+
+# TODO: Replace this Git pin with the crates.io release that publishes `fips-aws-lc`.
+picky = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=7.0.0-rc.25", default-features = false }
+picky-asn1 = "0.10"
+picky-asn1-der = "0.5"
+picky-asn1-x509 = "0.15"
+picky-krb = "=0.12.4"
+
+tokio = "1.52"
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.4", path = "crates/winscard" }
 
@@ -86,18 +107,73 @@ dpapi-pdu = { version = "0.1.0", path = "crates/dpapi-pdu" }
 dpapi-transport = { version = "0.1.0", path = "crates/dpapi-transport" }
 dpapi-native-transport = { version = "0.1.0", path = "crates/dpapi-native-transport" }
 
+rsa = { version = "=0.10.0-rc.18", default-features = false }
+base64 = "0.22"
+whoami = "2.1"
+tracing-subscriber = "0.3"
+proptest = "1.6"
+serde = "1"
+byteorder = "1.5"
+crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
+hmac = "0.13"
 
 [features]
-default = ["aws-lc-rs"]
+default = ["aws-lc-rs", "all-ssps"]
+
+# All platform-independent SSP implementations. This retains the existing default behavior.
+all-ssps = ["credssp", "negotiate"]
+
+# Individual platform-independent SSP implementations.
+ntlm = [
+  "picky/rustcrypto",
+  "dep:crypto-mac",
+  "dep:hmac",
+  "dep:md-5",
+  "dep:md4",
+  "dep:sha1",
+]
+kerberos = [
+  "picky/rustcrypto",
+  "dep:crypto-bigint",
+  "dep:curve25519-dalek",
+  "dep:ed25519-dalek",
+  "dep:hmac",
+  "dep:md-5",
+  "dep:p256",
+  "dep:p384",
+  "dep:p521",
+  "dep:picky-krb",
+  "dep:pkcs1",
+  "dep:primeorder",
+  "dep:rsa",
+  "dep:rustcrypto-ff",
+  "dep:rustcrypto-ff_derive",
+  "dep:rustcrypto-group",
+  "dep:sha1",
+]
+pku2u = ["kerberos"]
+negotiate = ["ntlm", "kerberos", "pku2u"]
+credssp-types = []
+credssp = ["credssp-types", "negotiate"]
+
+# Narrow AWS-LC FIPS provider profile. Protocol implementations are unavailable.
+fips = [
+  "credssp-types",
+  "picky/fips-aws-lc",
+  "__rustls-used",
+  "rustls/fips",
+  "rustls/aws-lc-rs",
+  "__install-crypto-provider",
+]
 
 # Enable reqwest for HTTP requests.
-network_client = ["dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "__rustls-used"]
+network_client = ["negotiate", "dep:reqwest", "dep:portpicker", "dep:rustls-native-certs", "__rustls-used"]
 # KDC discovery by querying DNS records.
-dns_resolver = ["dep:hickory-resolver", "dep:hickory-proto","dep:tokio"]
+dns_resolver = ["kerberos", "dep:hickory-resolver", "dep:hickory-proto","dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
-tsssp = ["dep:rustls", "__rustls-used"]
+tsssp = ["credssp", "dep:rustls", "__rustls-used"]
 # Turns on Kerberos smart card logon.
-scard = ["dep:winscard", "dep:cryptoki"]
+scard = ["kerberos", "pku2u", "dep:winscard", "dep:cryptoki"]
 # Use AWS LC as TLS cryptography provider.
 aws-lc-rs = ["rustls?/aws-lc-rs", "__install-crypto-provider"]
 # Use ring as TLS cryptography provider.
@@ -110,37 +186,37 @@ __rustls-used = ["dep:rustls"]
 __install-crypto-provider = []
 
 [dependencies]
-bitflags = "2.11"
-rand = "0.10"
-rand_core = "0.10"
-getrandom = "0.3"
-cfg-if = "1"
-picky = { version = "=7.0.0-rc.26", default-features = false }
-sha1 = { version = "0.11", default-features = false }
-sha2 = "0.11"
-num-derive = "0.5"
-num-traits = { version = "0.2", default-features = true }
-picky-asn1-der = "0.5"
-picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
-uuid = { version = "1.23", default-features = true, features = ["v4"] }
+bitflags.workspace = true
+rand.workspace = true
+rand_core.workspace = true
+getrandom.workspace = true
+cfg-if.workspace = true
+picky = { workspace = true, features = ["x509"], optional = true }
+sha1 = { workspace = true, optional = true }
+sha2.workspace = true
+num-derive.workspace = true
+num-traits = { workspace = true, default-features = true }
+picky-asn1-der.workspace = true
+picky-asn1-x509 = { workspace = true, features = ["pkcs7"] }
+uuid = { workspace = true, features = ["v4"], default-features = true }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
-tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
+tokio = { workspace = true, optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
-rsa = { version = "=0.10.0-rc.18", default-features = false }
-tracing = { version = "0.1", default-features = true }
-serde = "1"
-picky-krb = "0.12"
-picky-asn1 = { version = "0.10", features = ["time_conversion"] }
-byteorder = "1.5"
-crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
-hmac = "0.13"
+rsa = { workspace = true, optional = true }
+tracing = { workspace = true, default-features = true }
+serde.workspace = true
+picky-krb = { workspace = true, optional = true }
+picky-asn1 = { workspace = true, features = ["time_conversion"] }
+byteorder.workspace = true
+crypto-bigint = { workspace = true, optional = true }
+hmac = { workspace = true, optional = true }
 widestring = "1.2"
 
 url = "2.5"
 
-md-5 = "0.11"
-md4 = "0.11"
-crypto-mac = "0.11"
+md-5 = { version = "0.11", optional = true }
+md4 = { version = "0.10", optional = true }
+crypto-mac = { version = "0.11", optional = true }
 oid = "0.2"
 
 reqwest = { version = "0.12", optional = true, default-features = false, features = ["blocking", "rustls-tls-no-provider"] }
@@ -158,39 +234,64 @@ windows-registry = "0.6"
 windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_System", "Win32_NetworkManagement_Dns", "Win32_Security_Cryptography"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-uuid = { version = "1.23", default-features = false, features = ["js"]}
-getrandom = { version = "0.3", features = ["wasm_js"] }
-time = { version = "0.3", default-features = false, features = ["wasm-bindgen"] }
+uuid = { workspace = true, features = ["js"]}
+getrandom = { workspace = true, features = ["wasm_js"] }
+time = { workspace = true, features = ["wasm-bindgen"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cryptoki = { version = "0.12", optional = true }
-time = { version = "0.3", features = ["std"] }
+time = { workspace = true, features = ["std"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 async-dnssd = "0.5"
 futures = "0.3"
-tokio = { version = "1.52", features = ["time", "rt", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["time", "rt", "rt-multi-thread"] }
 
 # Pin transitive dependencies
 # TODO: Remove when stable versions will be released
 # RustCrypto crates
-pkcs1 = "=0.8.0-rc.4"
+pkcs1 = { version = "=0.8.0-rc.4", optional = true }
+p256 = { version = "=0.14.0-rc.14", optional = true }
+primeorder = { version = "=0.14.0-rc.14", optional = true }
+p384 = { version = "=0.14.0-rc.14", optional = true }
+p521 = { version = "=0.14.0-rc.14", optional = true }
+
+# "Zero-knowledge Cryptography in Rust" crates
+rustcrypto-ff = { version = "=0.14.0-rc.1", optional = true }
+rustcrypto-ff_derive = { version = "=0.14.0-rc.0", optional = true }
+rustcrypto-group = { version = "=0.14.0-rc.1", optional = true }
+
+# "dalek cryptography" crates
+ed25519-dalek = { version = "=3.0.0-rc.1", optional = true }
+curve25519-dalek = { version = "=5.0.0-rc.1", optional = true }
 
 [dev-dependencies]
-base64 = "0.23"
+base64.workspace = true
 static_assertions = "1"
-whoami = "2.1"
-picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"] }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-proptest = "1.6"
-cfg-if = "1"
+whoami.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+proptest.workspace = true
+cfg-if.workspace = true
 
 [lints]
 workspace = true
 
 [[example]]
+name = "client"
+required-features = ["ntlm"]
+
+[[example]]
+name = "server"
+required-features = ["ntlm"]
+
+[[example]]
 name = "kerberos"
 required-features = ["network_client"]
+
+[[test]]
+name = "sspi"
+path = "tests/sspi/main.rs"
+required-features = ["all-ssps"]
 
 [profile.ffi-production]
 inherits = "release"

@@ -84,7 +84,10 @@ pub fn validate_signed_data(signed_data: &SignedData, rsa_public_key: &RsaPublic
             "PKU2U SignedData has no messageDigest attribute",
         )
     })?;
-    if message_digests.next().is_some() || message_digest != HashAlgorithm::SHA1.digest(content) {
+    let expected_digest = HashAlgorithm::SHA1
+        .digest(content)
+        .map_err(|error| Error::new(ErrorKind::InvalidToken, format!("PKU2U hashing failed: {error}")))?;
+    if message_digests.next().is_some() || message_digest != expected_digest {
         return Err(Error::new(
             ErrorKind::MessageAltered,
             "PKU2U SignedData messageDigest does not match its encapsulated content",

@@ -5,11 +5,16 @@
 //! The purpose of sspi-rs is to clean the original interface from cluttering and provide users with Rust-friendly SSPs for execution under Linux or any other platform that is
 //! able to compile Rust.
 //!
+//! The default `all-ssps` feature includes every platform-independent SSP. Individual
+//! implementations can be selected with the `ntlm`, `kerberos`, `pku2u`, `negotiate`, and
+//! `credssp` features. A FIPS-only build exposes the crypto-provider helper and crypto-neutral
+//! CredSSP wire types, but no authentication protocol implementation.
+//!
 //! # Getting started
 //!
 //! Here is a quick example how to start working with the crate. This is the first stage of the client-server authentication performed on the client side.
 //!
-//! ```rust
+//! ```ignore
 //! use sspi::Sspi;
 //! use sspi::Username;
 //! use sspi::Ntlm;
@@ -51,33 +56,72 @@
 //! println!("Initialized security context with result status: {:?}", result.status);
 //! ```
 
+#![allow(macro_expanded_macro_exports_accessed_by_absolute_paths)]
+#![cfg_attr(feature = "fips", allow(dead_code, unreachable_pub, unused_imports))]
+
 #[macro_use]
 extern crate tracing;
 
 pub mod builders;
 pub mod channel_bindings;
+#[cfg(feature = "credssp-types")]
 pub mod credssp;
 pub mod generator;
+#[cfg(feature = "kerberos")]
 pub mod kerberos;
+#[cfg(feature = "negotiate")]
 pub mod negotiate;
 pub mod network_client;
+#[cfg(feature = "ntlm")]
 pub mod ntlm;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 mod pk_init;
+#[cfg(feature = "pku2u")]
 pub mod pku2u;
 pub mod utf16string;
 
 mod auth_identity;
 mod ber;
+#[cfg(any(feature = "ntlm", feature = "kerberos", feature = "pku2u"))]
 mod crypto;
 mod dns;
+#[cfg(feature = "kerberos")]
 mod kdc;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 mod krb;
+#[cfg(feature = "__rustls-used")]
 mod rustls;
 mod secret;
 mod security_buffer;
+#[cfg(feature = "scard")]
 mod smartcard;
+#[cfg(any(feature = "ntlm", feature = "kerberos", feature = "pku2u"))]
 mod utils;
 
+#[cfg(all(feature = "fips", feature = "all-ssps"))]
+compile_error!("the fips and all-ssps features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "ntlm"))]
+compile_error!("the fips and ntlm features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "kerberos"))]
+compile_error!("the fips and kerberos features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "pku2u"))]
+compile_error!("the fips and pku2u features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "negotiate"))]
+compile_error!("the fips and negotiate features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "credssp"))]
+compile_error!("the fips and credssp features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "network_client"))]
+compile_error!("the fips and network_client features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "dns_resolver"))]
+compile_error!("the fips and dns_resolver features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "aws-lc-rs"))]
+compile_error!("the fips and aws-lc-rs features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "ring"))]
+compile_error!("the fips and ring features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "scard"))]
+compile_error!("the fips and scard features are mutually exclusive");
+#[cfg(all(feature = "fips", feature = "tsssp"))]
+compile_error!("the fips and tsssp features are mutually exclusive");
 #[cfg(all(feature = "tsssp", not(target_os = "windows")))]
 compile_error!("tsssp feature should be used only on Windows");
 
@@ -93,7 +137,9 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use picky_asn1::restricted_string::CharSetError;
 use picky_asn1_der::Asn1DerError;
 use picky_asn1_x509::Certificate;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use picky_krb::gss_api::GssApiMessageError;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use picky_krb::messages::KrbError;
 #[cfg(feature = "__rustls-used")]
 pub use rustls::install_default_crypto_provider_if_necessary;
@@ -101,12 +147,16 @@ pub use security_buffer::SecurityBufferRef;
 pub use utf16string::{
     NonEmpty, U16CStr, U16CString, U16CStringExt, Utf16Str, Utf16String, Utf16StringExt, ZeroizedUtf16String,
 };
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 use utils::map_keb_error_code_to_sspi_error;
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 pub use utils::modpow;
 
+#[cfg(feature = "kerberos")]
+pub use self::auth_identity::KeytabIdentity;
 pub use self::auth_identity::{
-    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, DownLevelLogonNameParts, KeytabIdentity,
-    UserNameFormat, UserPrincipalNameParts, Username, UsernameParts,
+    AuthIdentity, AuthIdentityBuffers, Credentials, CredentialsBuffers, DownLevelLogonNameParts, UserNameFormat,
+    UserPrincipalNameParts, Username, UsernameParts,
 };
 #[cfg(feature = "scard")]
 pub use self::auth_identity::{CertificateRaw, SmartCardIdentity, SmartCardIdentityBuffers, SmartCardType};
@@ -116,16 +166,25 @@ pub use self::builders::{
 use self::builders::{
     ChangePassword, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
 };
+#[cfg(feature = "kerberos")]
 pub use self::kdc::{detect_kdc_host, detect_kdc_url};
+#[cfg(feature = "kerberos")]
 pub use self::kerberos::config::{KerberosConfig, KerberosServerConfig};
+#[cfg(feature = "kerberos")]
 pub use self::kerberos::{KERBEROS_VERSION, Kerberos, KerberosState};
-#[cfg(feature = "__test-data")]
+#[cfg(all(feature = "__test-data", feature = "negotiate"))]
 pub use self::negotiate::client::FALLBACK_ERROR_KINDS;
+#[cfg(feature = "negotiate")]
 pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
+#[cfg(feature = "ntlm")]
 pub use self::ntlm::Ntlm;
+#[cfg(feature = "ntlm")]
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
+#[cfg(feature = "pku2u")]
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
 pub use self::secret::Secret;
+#[cfg(feature = "picky")]
+pub use self::secret::SecretPrivateKey;
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
@@ -157,11 +216,16 @@ const PACKAGE_ID_NONE: u16 = 0xFFFF;
 /// # MSDN
 ///
 /// * [QuerySecurityPackageInfoW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-querysecuritypackageinfow)
+#[cfg(any(feature = "ntlm", feature = "kerberos", feature = "pku2u"))]
 pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<PackageInfo> {
     match package_type {
+        #[cfg(feature = "ntlm")]
         SecurityPackageType::Ntlm => Ok(ntlm::PACKAGE_INFO.clone()),
+        #[cfg(feature = "kerberos")]
         SecurityPackageType::Kerberos => Ok(kerberos::PACKAGE_INFO.clone()),
+        #[cfg(feature = "negotiate")]
         SecurityPackageType::Negotiate => Ok(negotiate::PACKAGE_INFO.clone()),
+        #[cfg(feature = "pku2u")]
         SecurityPackageType::Pku2u => Ok(pku2u::PACKAGE_INFO.clone()),
         #[cfg(feature = "tsssp")]
         SecurityPackageType::CredSsp => Ok(sspi_cred_ssp::PACKAGE_INFO.clone()),
@@ -193,11 +257,16 @@ pub fn query_security_package_info(package_type: SecurityPackageType) -> Result<
 /// # MSDN
 ///
 /// * [EnumerateSecurityPackagesW function](https://docs.microsoft.com/en-us/windows/win32/api/sspi/nf-sspi-enumeratesecuritypackagesw)
+#[cfg(any(feature = "ntlm", feature = "kerberos", feature = "pku2u"))]
 pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
     Ok(vec![
+        #[cfg(feature = "negotiate")]
         negotiate::PACKAGE_INFO.clone(),
+        #[cfg(feature = "kerberos")]
         kerberos::PACKAGE_INFO.clone(),
+        #[cfg(feature = "pku2u")]
         pku2u::PACKAGE_INFO.clone(),
+        #[cfg(feature = "ntlm")]
         ntlm::PACKAGE_INFO.clone(),
         #[cfg(feature = "tsssp")]
         sspi_cred_ssp::PACKAGE_INFO.clone(),
@@ -211,6 +280,7 @@ pub fn enumerate_security_packages() -> Result<Vec<PackageInfo>> {
 /// # MSDN
 ///
 /// * [SSPI.h](https://docs.microsoft.com/en-us/windows/win32/api/sspi/)
+#[cfg(any(feature = "ntlm", feature = "kerberos", feature = "pku2u"))]
 pub trait Sspi
 where
     Self: Sized + SspiImpl,
@@ -1785,9 +1855,13 @@ pub enum CredentialUse {
 /// Represents the security principal in use.
 #[derive(Debug, Clone)]
 pub enum SecurityPackageType {
+    #[cfg(feature = "ntlm")]
     Ntlm,
+    #[cfg(feature = "kerberos")]
     Kerberos,
+    #[cfg(feature = "negotiate")]
     Negotiate,
+    #[cfg(feature = "pku2u")]
     Pku2u,
     #[cfg(feature = "tsssp")]
     CredSsp,
@@ -1797,9 +1871,13 @@ pub enum SecurityPackageType {
 impl AsRef<str> for SecurityPackageType {
     fn as_ref(&self) -> &str {
         match self {
+            #[cfg(feature = "ntlm")]
             SecurityPackageType::Ntlm => ntlm::PKG_NAME,
+            #[cfg(feature = "kerberos")]
             SecurityPackageType::Kerberos => kerberos::PKG_NAME,
+            #[cfg(feature = "negotiate")]
             SecurityPackageType::Negotiate => negotiate::PKG_NAME,
+            #[cfg(feature = "pku2u")]
             SecurityPackageType::Pku2u => pku2u::PKG_NAME,
             #[cfg(feature = "tsssp")]
             SecurityPackageType::CredSsp => sspi_cred_ssp::PKG_NAME,
@@ -1811,9 +1889,13 @@ impl AsRef<str> for SecurityPackageType {
 impl fmt::Display for SecurityPackageType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "ntlm")]
             SecurityPackageType::Ntlm => write!(f, "{}", ntlm::PKG_NAME),
+            #[cfg(feature = "kerberos")]
             SecurityPackageType::Kerberos => write!(f, "{}", kerberos::PKG_NAME),
+            #[cfg(feature = "negotiate")]
             SecurityPackageType::Negotiate => write!(f, "{}", negotiate::PKG_NAME),
+            #[cfg(feature = "pku2u")]
             SecurityPackageType::Pku2u => write!(f, "{}", pku2u::PKG_NAME),
             #[cfg(feature = "tsssp")]
             SecurityPackageType::CredSsp => write!(f, "{}", sspi_cred_ssp::PKG_NAME),
@@ -1827,9 +1909,13 @@ impl str::FromStr for SecurityPackageType {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
+            #[cfg(feature = "ntlm")]
             ntlm::PKG_NAME => Ok(SecurityPackageType::Ntlm),
+            #[cfg(feature = "kerberos")]
             kerberos::PKG_NAME => Ok(SecurityPackageType::Kerberos),
+            #[cfg(feature = "negotiate")]
             negotiate::PKG_NAME => Ok(SecurityPackageType::Negotiate),
+            #[cfg(feature = "pku2u")]
             pku2u::PKG_NAME => Ok(SecurityPackageType::Pku2u),
             #[cfg(feature = "tsssp")]
             sspi_cred_ssp::PKG_NAME => Ok(SecurityPackageType::CredSsp),
@@ -2202,6 +2288,7 @@ impl From<ErrorKind> for u32 {
 pub struct Error {
     pub error_type: ErrorKind,
     pub description: String,
+    #[cfg(feature = "credssp-types")]
     pub nstatus: Option<credssp::NStatusCode>,
 }
 
@@ -2225,10 +2312,12 @@ impl Error {
         Self {
             error_type,
             description: description.to_string(),
+            #[cfg(feature = "credssp-types")]
             nstatus: None,
         }
     }
 
+    #[cfg(feature = "credssp-types")]
     pub fn new_with_nstatus(
         error_type: ErrorKind,
         description: impl Into<String>,
@@ -2248,8 +2337,11 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}: {}", self.error_type, self.description)?;
 
-        if let Some(nstatus) = self.nstatus {
-            write!(f, "; status is {nstatus}")?;
+        #[cfg(feature = "credssp-types")]
+        {
+            if let Some(nstatus) = self.nstatus {
+                write!(f, "; status is {nstatus}")?;
+            }
         }
 
         Ok(())
@@ -2262,6 +2354,7 @@ impl From<auth_identity::UsernameError> for Error {
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 impl From<rsa::Error> for Error {
     fn from(value: rsa::Error) -> Self {
         Error::new(
@@ -2277,6 +2370,7 @@ impl From<Asn1DerError> for Error {
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 impl From<KrbError> for Error {
     fn from(krb_error: KrbError) -> Self {
         let (error_kind, mut description) = map_keb_error_code_to_sspi_error(krb_error.0.error_code.0);
@@ -2299,6 +2393,7 @@ impl From<KrbError> for Error {
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 impl From<picky_krb::crypto::KerberosCryptoError> for Error {
     fn from(err: picky_krb::crypto::KerberosCryptoError) -> Self {
         use picky_krb::crypto::KerberosCryptoError;
@@ -2343,6 +2438,7 @@ impl From<picky_krb::crypto::KerberosCryptoError> for Error {
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 impl From<picky_krb::crypto::diffie_hellman::DiffieHellmanError> for Error {
     fn from(error: picky_krb::crypto::diffie_hellman::DiffieHellmanError) -> Self {
         use picky_krb::crypto::diffie_hellman::DiffieHellmanError;
@@ -2360,6 +2456,7 @@ impl From<CharSetError> for Error {
     }
 }
 
+#[cfg(any(feature = "kerberos", feature = "pku2u"))]
 impl From<GssApiMessageError> for Error {
     fn from(err: GssApiMessageError) -> Self {
         match err {
@@ -2426,6 +2523,7 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
+#[cfg(feature = "picky")]
 impl From<picky::key::KeyError> for Error {
     fn from(err: picky::key::KeyError) -> Self {
         Self::new(ErrorKind::InternalError, format!("RSA key error: {err:?}"))

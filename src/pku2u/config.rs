@@ -6,9 +6,12 @@ use picky::key::PrivateKey;
 use picky::signature::SignatureAlgorithm;
 use picky_asn1_x509::Certificate;
 
+#[cfg(feature = "negotiate")]
+use crate::Pku2u;
+#[cfg(feature = "negotiate")]
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
 use crate::secret::SecretPrivateKey;
-use crate::{Error, ErrorKind, Pku2u, Result};
+use crate::{Error, ErrorKind, Result};
 
 type SignFn = dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync;
 
@@ -116,6 +119,7 @@ impl Pku2uConfig {
     }
 }
 
+#[cfg(feature = "negotiate")]
 impl ProtocolConfig for Pku2uConfig {
     fn new_instance(&self) -> Result<NegotiatedProtocol> {
         Ok(NegotiatedProtocol::Pku2u(Pku2u::new_client_from_config(Clone::clone(

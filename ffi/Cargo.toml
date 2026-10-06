@@ -29,10 +29,10 @@ sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 ffi-types = { workspace = true, features = ["sspi"] }
 
-picky = { version = "=7.0.0-rc.26", default-features = false, features = ["x509"], optional = true }
+picky = { workspace = true, features = ["x509"], optional = true }
 picky-asn1-der = "0.5"
-picky-asn1 = { version = "0.10", optional = true }
-picky-asn1-x509 = { version = "0.15", optional = true }
+picky-asn1 = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.10.1", optional = true }
+picky-asn1-x509 = { git = "https://github.com/Devolutions/picky-rs", branch = "copilot/picky-fips-audit", version = "=0.15.5", optional = true }
 
 uuid = { version = "1.23", default-features = false, features = ["v4"] }
 winscard = { workspace = true, features = ["std"], optional = true }
@@ -46,7 +46,7 @@ tracing = { version = "0.1", default-features = true }
 tracing-subscriber = { version = "0.3", features = ["std", "fmt", "local-time", "env-filter"] }
 
 libc = "0.2"
-sspi = { path = "..", default-features = false, features = ["network_client"] }
+sspi = { path = "..", default-features = false, features = ["credssp", "network_client"] }
 cryptoki = { version = "0.12", optional = true }
 widestring = "1.2"
 

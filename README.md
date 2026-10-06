@@ -6,6 +6,55 @@
 
 The purpose of sspi-rs is to clean the original interface from cluttering and provide users with Rust-friendly SSPs for execution under *nix or any other platform that is able to compile Rust.
 
+## Cargo features
+
+The default feature set is `all-ssps` plus the normal rustls `aws-lc-rs` provider. `all-ssps`
+preserves the existing protocol surface and enables these positive protocol features:
+
+- `ntlm` enables NTLM.
+- `kerberos` enables Kerberos.
+- `pku2u` enables PKU2U and its shared Kerberos message/crypto support.
+- `negotiate` enables SPNEGO over NTLM, Kerberos, and PKU2U.
+- `credssp` enables CredSSP over Negotiate.
+- `credssp-types` exposes crypto-neutral CredSSP `TSRequest` framing and delegated password
+  credential encoding without enabling an authentication mechanism.
+
+The optional component features retain their existing roles: `network_client` adds the built-in
+network client, `dns_resolver` adds KDC DNS discovery, `scard` adds smart-card logon, and `tsssp`
+adds the Windows native CredSSP replacement. They enable their required protocol features
+automatically. For example, an NTLM-only build is:
+
+```console
+cargo build -p sspi --no-default-features --features ntlm
+```
+
+### Build-time FIPS profile
+
+The `sspi` crate provides a deliberately narrow FIPS provider profile:
+
+```console
+cargo build -p sspi --no-default-features --features fips
+```
+
+This profile selects the rustls AWS-LC FIPS provider and Picky's `fips-aws-lc` backend. It exposes
+crypto-neutral CredSSP `TSRequest` framing through `credssp-types`, but it does not compile the
+in-crate NTLM, Kerberos, PKU2U, Negotiate, CredSSP authentication, smartcard, or TSSSP surfaces. The
+documented `-p sspi` command builds only the `sspi` package; it does not build the separate DPAPI
+workspace crates. Those protocols require cryptography outside the validated provider boundary and
+remain available through the positive features above. `fips` is mutually exclusive with `all-ssps`,
+every individual protocol feature, `network_client`, `dns_resolver`, `scard`, `tsssp`, `aws-lc-rs`,
+and `ring`.
+
+Selecting this feature does not by itself establish deployment compliance. The exact AWS-LC module,
+target platform, build procedure, operational environment, and applicable certificate coverage must
+be validated for each deployment.
+
+The Picky release containing `fips-aws-lc` is not yet available on crates.io, so this profile
+temporarily uses Picky and its directly coupled ASN.1 crates from the `copilot/picky-fips-audit`
+Git branch. The lockfile records the exact resolved commit. This prevents
+publishing the affected crates until those synchronized releases are available and the Git pins are
+replaced with registry versions.
+
 ## Overview
 
 The sspi-rs works in accordance with the MSDN documentation. At the moment, [NT LAN Manager (NTLM)](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/b38c36ed-2804-4868-a9ff-8dd3182128e4) is implemented and available for platform independent execution. It is also possible to create your own SSPs by implementing the [`SspiImpl`]() trait.
