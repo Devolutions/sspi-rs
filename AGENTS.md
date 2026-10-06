@@ -8,15 +8,6 @@
 - Do not create, modify, or delete intent files.
 - If a requested change conflicts with intent, stop and surface the conflict for human resolution.
 
-### Workspace Exclusions
-
-Crates and sub-projects inside the `tools/` directory are excluded from the root workspace.
-They serve as an additional sub-projects for testing and/or debugging.
-
-## Development Environment
-
-Run formatter, linter, and tests after every implemented feature or fixed bug.
-
 ### Key Style Conventions (from `STYLE.md`)
 
 - **Error messages:** lowercase, no trailing punctuation, use `crate_name::Result` (e.g., `anyhow::Result`) not bare `Result`.
@@ -33,6 +24,5 @@ Run formatter, linter, and tests after every implemented feature or fixed bug.
 
 ## Workspace & Change Scope Rules
 
-- Workspace members are declared in root `Cargo.toml`.
 - Keep crate-local changes crate-local when possible.
 - Treat lockfile and cross-crate dependency updates as intentional, reviewable changes.
