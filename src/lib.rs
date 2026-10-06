@@ -125,7 +125,7 @@ pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
-pub use self::secret::Secret;
+pub use self::secret::{Secret, SecretPrivateKey};
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
@@ -2368,6 +2368,7 @@ impl From<GssApiMessageError> for Error {
             GssApiMessageError::InvalidMicFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
             GssApiMessageError::InvalidWrapFiller(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
             GssApiMessageError::Asn1Error(_) => Self::new(ErrorKind::InvalidToken, err.to_string()),
+            GssApiMessageError::InvalidMechanismOid(_, _) => Self::new(ErrorKind::InvalidToken, err.to_string()),
         }
     }
 }
