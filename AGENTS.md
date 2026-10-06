@@ -8,15 +8,6 @@
 - Do not create, modify, or delete intent files.
 - If a requested change conflicts with intent, stop and surface the conflict for human resolution.
 
-### Key Style Conventions (from `STYLE.md`)
-
-- **Error messages:** lowercase, no trailing punctuation, use `crate_name::Result` (e.g., `anyhow::Result`) not bare `Result`.
-- **Log messages:** capitalize first letter, no trailing period, use structured tracing fields (`info!(%server_addr, "Looked up server address")`).
-- **Invariants:** define with `INVARIANT:` prefix in comments; state positively; prefer `<`/`<=` over `>`/`>=`.
-- **Doc comments:** link to spec sections using reference-style links.
-- **Avoid monomorphization:** use `&dyn` inner functions for large generic code; avoid `AsRef` polymorphism.
-- **Inline test modules:** place `#[cfg(test)] mod tests` (and other test-only modules) at the end of their enclosing source file or module, after all production items. Do not interleave them with normal source code.
-
 ### Dependency Policies
 
 - **Do not use `[workspace.dependencies]`** for anything that is not workspace-internal.
