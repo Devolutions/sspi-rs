@@ -1,5 +1,3 @@
-#![cfg(feature = "scard")]
-
 use std::borrow::Cow;
 use std::fmt;
 #[cfg(not(target_arch = "wasm32"))]

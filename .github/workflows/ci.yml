@@ -25,6 +25,22 @@ jobs:
             throw "Bad formatting, please run 'cargo +stable fmt --all'"
           }
 
+  msrv:
+    name: Rust 1.90 compatibility
+    runs-on: ubuntu-latest
+    needs: formatting
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust 1.90
+        run: rustup toolchain install 1.90.0 --profile minimal
+
+      - name: Check default and FIPS profiles
+        run: |
+          cargo +1.90.0 check --locked -p sspi
+          cargo +1.90.0 check --locked -p sspi --no-default-features --features fips
+
   lints:
     name: Lints [${{ matrix.os }}]
     runs-on: ${{ matrix.runner }}
