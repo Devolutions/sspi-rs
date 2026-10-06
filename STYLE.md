@@ -1,0 +1,367 @@
+Our approach to "clean code" is two-fold:
+
+- we avoid blocking PRs on style changes, but
+- at the same time, the codebase is constantly refactored.
+
+It is explicitly OK for a reviewer to flag only some nits in the PR, and then send a follow-up cleanup PR for things which are easier to explain by example, cc'ing the original author.
+Sending small cleanup PRs (like renaming a single local variable) is encouraged.
+These PRs are easy to merge and very welcomed.
+
+When reviewing pull requests prefer extending this document to leaving non-reusable comments on the pull request itself.
+
+# Style
+
+## Error handling
+
+### Return type
+
+Use `crate_name::Result` (e.g.: `anyhow::Result`) rather than just `Result`.
+
+**Rationale:** makes it immediately clear what result that is.
+
+Exception: it’s not necessary when the type alias is clear enough (e.g.: `ConnectionResult`).
+
+### Formatting of error messages
+
+A single sentence which:
+- is short and concise,
+- does not start by a capital letter, and
+- does not contain trailing punctuation.
+
+This is the convention adopted by the Rust project:
+- [Rust API Guidelines][api-guidelines-errors]
+- [std::error::Error][std-error-trait]
+
+Also, use proper abbreviation casing, e.g., IPv4 and IPv6 (not ipv4/ipv6).
+
+```rust
+// GOOD
+"invalid X.509 certificate"
+
+// BAD
+"Invalid X.509 certificate."
+```
+
+**Rationale**: it’s easier to compose with other error messages. 
+
+To illustrate with terminal error reports:
+
+```
+// GOOD
+Error: invalid server license, caused by invalid X.509 certificate, caused by unexpected ASN.1 DER tag: expected SEQUENCE, got CONTEXT-SPECIFIC [19] (primitive)
+
+// BAD
+Error: Invalid server license., Caused by Invalid X.509 certificate., Caused by Unexpected ASN.1 DER tag: expected SEQUENCE, got CONTEXT-SPECIFIC [19] (primitive)
+```
+
+[api-guidelines-errors]: https://rust-lang.github.io/api-guidelines/interoperability.html#error-types-are-meaningful-and-well-behaved-c-good-err
+[std-error-trait]: https://doc.rust-lang.org/stable/std/error/trait.Error.html
+
+### Error types
+
+Library crates expose typed errors (for example, using `thiserror`), not `anyhow`.
+Avoid having an umbrella error type (one error type for the whole library).
+For module-specific errors create a module-level error type and allow the root error type value to be created from it.
+
+## Logging
+
+If any, the human-readable message should start with a capital letter and not end with a period.
+
+```rust
+// GOOD
+info!("Connect to RDP host");
+
+// BAD
+info!("connect to RDP host.");
+```
+
+**Rationale**: consistency.
+Log messages are typically not composed together like error messages, so it’s fine to start with a capital letter.
+
+Use tracing ability to [record structured fields][tracing-fields].
+
+```rust
+// GOOD
+info!(%server_addr, "Looked up server address");
+
+// BAD
+info!("Looked up server address: {server_addr}");
+```
+
+**Rationale**: structured diagnostic information is tracing’s strength.
+It’s possible to retrieve the records emitted by tracing in a structured manner.
+
+Name fields after what already exist consistently as much as possible.
+For example, errors are typically recorded as fields named `error`.
+
+```rust
+// GOOD
+error!(?error, "Active stage failed");
+error!(error = ?e, "Active stage failed");
+error!(%error, "Active stage failed");
+error!(error = format!("{err:#}"), "Active stage failed");
+
+// BAD
+error!(?e, "Active stage failed");
+error!(%err, "Active stage failed");
+```
+
+**Rationale**: consistency.
+We can rely on this to filter and collect diagnostics.
+
+### Log levels
+
+Usually, we do not use the `INFO` log level in library crates.
+Use `WARN` and `ERROR` log level when there is no other way to report the problem to the user.
+
+- `info!`: reserved for **rare lifecycle milestones** a consumer would typically want
+  at default verbosity (e.g. connection or session lifecycle transitions). It should
+  be uncommon in a library, and never used for anything that repeats during normal
+  operation (per copy/paste, per lock/unlock, per frame, etc.).
+- `debug!`: **significant one-off events** — nothing that repeats in abundance, and no
+  "entering function X" tracing.
+- `trace!`: everything else, the fine-grained detail you only want when that is all
+  that is left to understand a problem.
+
+```rust
+// GOOD: a rare lifecycle milestone the consumer wants by default.
+info!(%server_addr, "Connection established");
+
+// BAD: fires on every clipboard lock/unlock — routine mechanics belong at debug!/trace!.
+info!(count = cleared.len(), "Releasing outgoing locks before taking clipboard ownership");
+```
+
+**Rationale**: the binary at the top of the stack decides what to surface to the user;
+a library that emits `info!` for routine operations takes that choice away and spams
+default logs.
+
+[tracing-fields]: https://docs.rs/tracing/latest/tracing/index.html#recording-fields
+
+## Helper functions
+
+Avoid creating single-use helper functions:
+
+```rust
+// GOOD
+let buf = {
+    let mut buf = WriteBuf::new();
+    buf.write_u32(42);
+    buf
+};
+
+// BAD
+let buf = prepare_buf(42);
+
+// Somewhere else
+fn prepare_buf(value: u32) -> WriteBuf {
+    let mut buf = WriteBuf::new();
+    buf.write_u32(value);
+    buf
+}
+```
+
+**Rationale:** single-use functions change frequently, adding or removing parameters adds churn.
+A block serves just as well to delineate a bit of logic, but has access to all the context.
+Re-using originally single-purpose function often leads to bad coupling.
+
+Exception: if you want to make use of `return` or `?`.
+
+## Local helper functions
+
+Put nested helper functions at the end of the enclosing functions (this requires using return statement).
+Don't nest more than one level deep.
+
+```rust
+// GOOD
+fn func() -> u32 {
+    return helper();
+
+    fn helper() -> u32 {
+        /* ... */
+    }
+}
+
+// BAD
+fn func() -> u32 {
+    fn helper() -> u32 {
+        /* ... */
+    }
+
+    helper()
+}
+```
+
+**Rationale:** consistency, improved top-down readability.
+
+## Documentation
+
+### Doc comments should link to reference documents
+
+Add links to specification and/or other relevant documents in doc comments.
+Include verbatim the name of the section or the description of the item from the specification.
+Use reference-style links for readability.
+Do not make the link too long.
+
+**Rationale**: consistency.
+Easy cross-referencing between code and reference documents.
+
+### Inline code comments are proper sentences
+
+Style inline code comments as proper sentences.
+Start with a capital letter, end with a dot.
+
+```rust
+// GOOD
+
+// When building a library, `-` in the artifact name are replaced by `_`.
+let artifact_name = format!("{}.wasm", package.replace('-', "_"));
+
+// BAD
+
+// when building a library, `-` in the artifact name are replaced by `_`
+let artifact_name = format!("{}.wasm", package.replace('-', "_"));
+```
+
+**Rationale:** writing a sentence (or maybe even a paragraph) rather just "a comment" creates a more appropriate frame of mind.
+It tricks you into writing down more of the context you keep in your head while coding.
+
+Exception: no period for brief comments (e.g., `// VER`, `// RSV`, `// ATYP`).
+
+### "Sentence per line" style
+
+For `.md` and `.adoc` files, prefer a sentence-per-line format, don't wrap lines.
+If the line is too long, you want to split the sentence in two.
+
+**Rationale:** much easier to edit the text and read the diff, see [this link][asciidoctor-practices].
+
+[asciidoctor-practices]: https://asciidoctor.org/docs/asciidoc-recommended-practices/#one-sentence-per-line
+
+## Invariants
+
+Recommended reads:
+
+- <https://en.wikipedia.org/wiki/Invariant_(mathematics)#Invariants_in_computer_science>
+- <https://en.wikipedia.org/wiki/Loop_invariant>
+- <https://en.wikipedia.org/wiki/Class_invariant>
+- <https://matklad.github.io/2023/10/06/what-is-an-invariant.html>
+- <https://matklad.github.io/2023/09/13/comparative-analysis.html>
+
+### Write down invariants clearly
+
+Write down invariants using `INVARIANT:` code comments.
+
+```rust
+// GOOD
+
+// INVARIANT: for i in 0..lo: xs[i] < x
+
+// BAD
+
+// for i in 0..lo: xs[i] < x
+```
+
+**Rationale**: invariants should be upheld at all times.
+It’s useful to keep invariants in mind when analyzing the flow of the code.
+It’s easy to look up the local invariants when programming "in the small".
+
+For field invariants, a doc comment should come at the place where they are declared, inside the type definition.
+
+**Rationale**: it’s easy to find about the invariant.
+The invariant will show up in the documentation (typically available by hovering the item in IDEs).
+
+For loop invariants, the comment should come before or at the beginning of the loop.
+
+**Rationale**: improved top-down readability, only read forward, no need to backtrack.
+
+For function output invariants, the comment should be specified in the doc comment.
+(However, consider [enforcing this invariant][parse-dont-validate] using [the type system][type-safety] instead.)
+
+**Rationale**: it’s easy to find about the invariant.
+The invariant will show up in the documentation (typically available by hovering the item in IDEs).
+
+[parse-dont-validate]: https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
+[type-safety]: https://www.parsonsmatt.org/2017/10/11/type_safety_back_and_forth.html
+
+## Context parameters
+
+Some parameters are threaded unchanged through many function calls.
+They determine the "context" of the operation.
+Pass such parameters first, not last.
+If there are several context parameters, consider [packing them into a `struct Ctx` and passing it as `&self`][ra-ctx-struct].
+
+**Rationale:** consistency.
+Context-first works better when non-context parameter is a lambda.
+
+[ra-ctx-struct]: https://github.com/rust-lang/rust-analyzer/blob/76633199f4316b9c659d4ec0c102774d693cd940/crates/ide-db/src/path_transform.rs#L192-L339
+
+# Runtime and compile time performance
+
+## Avoid allocations
+
+Avoid writing code which is slower than it needs to be.
+Don't allocate a `Vec` where an iterator would do, don't allocate strings needlessly.
+
+```rust
+// GOOD
+let second_word = text.split(' ').nth(1)?;
+
+// BAD
+let words: Vec<&str> = text.split(' ').collect();
+let second_word = words.get(1)?;
+```
+
+**Rationale:** not allocating is almost always faster.
+
+## Push allocations to the call site
+
+If allocation is inevitable, let the caller allocate the resource:
+
+```rust
+// GOOD
+fn frobnicate(s: String) {
+    /* snip */
+}
+
+// BAD
+fn frobnicate(s: &str) {
+    let s = s.to_string();
+    /* snip */
+}
+```
+
+**Rationale:** reveals the costs.
+It is also more efficient when the caller already owns the allocation.
+
+## Avoid monomorphization
+
+Avoid making a lot of code type parametric, *especially* on the boundaries between crates.
+
+```rust
+// GOOD
+fn frobnicate(f: impl FnMut()) {
+    frobnicate_impl(&mut f)
+}
+fn frobnicate_impl(f: &mut dyn FnMut()) {
+    /* lots of code */
+}
+
+// BAD
+fn frobnicate(f: impl FnMut()) {
+    /* lots of code */
+}
+```
+
+Avoid `AsRef` polymorphism, it pays back only for widely used libraries:
+
+```rust
+// GOOD
+fn frobnicate(f: &Path) { }
+
+// BAD
+fn frobnicate(f: impl AsRef<Path>) { }
+```
+
+**Rationale:** Rust uses monomorphization to compile generic code, meaning that for each instantiation of a generic functions with concrete types, the function is compiled afresh, *per crate*.
+This allows for fantastic performance, but leads to increased compile times.
+Runtime performance obeys the 80/20 rule (Pareto Principle) — only a small fraction of code is hot.
+Compile time **does not** obey this rule — all code has to be compiled.
