@@ -109,6 +109,8 @@ pub(crate) struct KdcMock {
     validators: Validators,
     clock_offset: Duration,
     reject_valid_preauth_with_skew: bool,
+    /// Whether to omit PA-ETYPE-INFO2 from the AS-REP, as MIT and Heimdal KDCs do.
+    omit_as_rep_etype_info2: bool,
 }
 
 impl KdcMock {
@@ -134,6 +136,7 @@ impl KdcMock {
             validators,
             clock_offset: Duration::ZERO,
             reject_valid_preauth_with_skew: false,
+            omit_as_rep_etype_info2: false,
         }
     }
 
@@ -144,6 +147,12 @@ impl KdcMock {
 
     pub(crate) fn reject_valid_preauth_with_skew(mut self) -> Self {
         self.reject_valid_preauth_with_skew = true;
+        self
+    }
+
+    /// Sends the PA-ETYPE-INFO2 in the pre-authentication error only, not in the AS-REP.
+    pub(crate) fn omit_as_rep_etype_info2(mut self) -> Self {
+        self.omit_as_rep_etype_info2 = true;
         self
     }
 
@@ -431,10 +440,8 @@ impl KdcMock {
             )
             .unwrap();
 
-        Ok(AsRep::from(KdcRep {
-            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
-            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AS_REP_MSG_TYPE])),
-            padata: Optional::from(Some(ExplicitContextTag2::from(Asn1SequenceOf::from(vec![PaData {
+        let etype_info2 = (!self.omit_as_rep_etype_info2).then(|| {
+            ExplicitContextTag2::from(Asn1SequenceOf::from(vec![PaData {
                 padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
                 padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
                     picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
@@ -446,7 +453,13 @@ impl KdcMock {
                     }]))
                     .unwrap(),
                 )),
-            }])))),
+            }]))
+        });
+
+        Ok(AsRep::from(KdcRep {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![AS_REP_MSG_TYPE])),
+            padata: Optional::from(etype_info2),
             crealm: ExplicitContextTag3::from(realm.clone()),
             cname: ExplicitContextTag4::from(username.0.clone()),
             ticket: ExplicitContextTag5::from(Self::make_ticket(

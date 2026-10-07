@@ -43,6 +43,16 @@ impl AsReqPaDataOptions<'_> {
         }
     }
 
+    /// The salt of a password-based pre-authentication.
+    pub(crate) fn salt(&self) -> Option<String> {
+        match self {
+            AsReqPaDataOptions::AuthIdentity(options) => Some(String::from_utf8_lossy(&options.salt).into_owned()),
+            #[cfg(feature = "scard")]
+            AsReqPaDataOptions::SmartCard(_) => None,
+            AsReqPaDataOptions::Keytab(_) => None,
+        }
+    }
+
     pub(crate) fn with_salt(&mut self, salt: Vec<u8>) {
         match self {
             AsReqPaDataOptions::AuthIdentity(options) => options.salt = salt,

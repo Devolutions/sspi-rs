@@ -42,7 +42,7 @@ pub(crate) async fn as_exchange(
     client: &mut Kerberos,
     yield_point: &mut YieldPointLocal,
     kdc_req_body: &KdcReqBody,
-    mut pa_data_options: AsReqPaDataOptions<'_>,
+    pa_data_options: &mut AsReqPaDataOptions<'_>,
 ) -> Result<AsRep> {
     pa_data_options.with_pre_auth(false);
     let pa_datas = pa_data_options.generate(client.current_kdc_time()?)?;

@@ -380,6 +380,88 @@ fn kerberos_auth() {
     );
 }
 
+/// Authenticates the test user against a [KdcMock] configured by `configure_kdc`.
+fn kerberos_auth_with_kdc(configure_kdc: impl FnOnce(KdcMock) -> KdcMock) {
+    let KrbEnvironment {
+        realm,
+        credentials,
+        keys,
+        users,
+        target_name,
+        target_service_name,
+    } = init_krb_environment();
+
+    let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+
+    let kdc = configure_kdc(KdcMock::new(
+        realm,
+        keys,
+        users,
+        Validators {
+            as_req: Box::new(|_as_req| {}),
+            tgs_req: Box::new(|_tgs_req| {}),
+        },
+    ));
+    let mut network_client = NetworkClientMock { kdc };
+
+    let client_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: CLIENT_COMPUTER_NAME.into(),
+    };
+    let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
+
+    let server_config = KerberosConfig {
+        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        client_computer_name: SERVER_COMPUTER_NAME.into(),
+    };
+    let server_properties = ServerProperties {
+        mech_types: MechTypeList::from(Vec::new()),
+        max_time_skew: MAX_TIME_SKEW,
+        ticket_decryption_key: Some(ticket_decryption_key.into()),
+        service_name: target_service_name,
+        additional_service_keys: Vec::new(),
+        user: None,
+        client: None,
+        authenticators_cache: HashSet::new(),
+    };
+    let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
+
+    let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+    let mut client_credentials_handle = Some(credentials.clone());
+    let mut server_credentials_handle = Some(credentials);
+
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+
+    run_kerberos(
+        &mut SspiContext::Kerberos(kerberos_client),
+        &mut client_credentials_handle,
+        client_flags,
+        &target_name,
+        &mut SspiContext::Kerberos(kerberos_server),
+        &mut server_credentials_handle,
+        server_flags,
+        &mut network_client,
+        2,
+        EmptySspiContextValidator,
+    );
+}
+
+/// MIT and Heimdal KDCs send PA-ETYPE-INFO2 only in the pre-authentication error.
+/// The AS-REP key uses the same salt as the pre-authentication key.
+#[test]
+fn kerberos_auth_without_as_rep_etype_info2() {
+    kerberos_auth_with_kdc(KdcMock::omit_as_rep_etype_info2);
+}
+
 #[test]
 fn kerberos_auth_recovers_from_kdc_clock_skew() {
     for clock_offset in [time::Duration::seconds(15), time::Duration::seconds(-15)] {

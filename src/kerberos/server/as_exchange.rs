@@ -83,7 +83,7 @@ pub(crate) async fn request_tgt(
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
 
-    let pa_data_options = match credentials {
+    let mut pa_data_options = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
             let domain = auth_identity.domain.to_string();
             let salt = format!("{domain}{username}").into_bytes();
@@ -110,7 +110,7 @@ pub(crate) async fn request_tgt(
         }
     };
 
-    let as_rep = client::as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
+    let as_rep = client::as_exchange(server, yield_point, &kdc_req_body, &mut pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 
