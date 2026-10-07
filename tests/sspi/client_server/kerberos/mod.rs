@@ -462,6 +462,15 @@ fn kerberos_auth_without_as_rep_etype_info2() {
     kerberos_auth_with_kdc(KdcMock::omit_as_rep_etype_info2);
 }
 
+/// MIT encodes the AS-REP enc-part as EncTGSRepPart, which clients may accept
+/// under [RFC 4120 section 5.4.2: KRB_KDC_REP Definition][kdc-rep].
+///
+/// [kdc-rep]: https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2
+#[test]
+fn kerberos_auth_with_tgs_rep_enc_part_in_as_rep() {
+    kerberos_auth_with_kdc(KdcMock::tgs_rep_enc_part_in_as_rep);
+}
+
 #[test]
 fn kerberos_auth_recovers_from_kdc_clock_skew() {
     for clock_offset in [time::Duration::seconds(15), time::Duration::seconds(-15)] {
