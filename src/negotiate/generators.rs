@@ -13,7 +13,7 @@ use picky_krb::gss_api::{
 use crate::{Error, ErrorKind, Result};
 
 /// Generates supported mechanism type list.
-pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<MechTypeList> {
+pub(super) fn generate_mech_type_list(kerberos: bool, iakerb: bool, ntlm: bool) -> Result<MechTypeList> {
     if !ntlm && !kerberos {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
@@ -21,9 +21,18 @@ pub(super) fn generate_mech_type_list(kerberos: bool, ntlm: bool) -> Result<Mech
         ));
     }
 
+    if iakerb && !kerberos {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "IAKerb requires Kerberos to be enabled",
+        ));
+    }
+
     let mut mech_types = Vec::new();
 
-    if kerberos {
+    if iakerb {
+        mech_types.push(MechType::from(oids::iakerb5()));
+    } else if kerberos {
         mech_types.push(MechType::from(oids::ms_krb5()));
         mech_types.push(MechType::from(oids::krb5()));
         // NEGOEX is not supported.

@@ -9,8 +9,8 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
-    AuthIdentity, Credentials, CredentialsBuffers, KerberosConfig, KerberosServerConfig, NegotiateConfig, Secret,
-    Username,
+    AuthIdentity, Credentials, CredentialsBuffers, KdcResolution, KerberosConfig, KerberosServerConfig,
+    NegotiateConfig, Secret, Username,
 };
 use url::Url;
 
@@ -54,7 +54,7 @@ fn run_credssp(
 ) {
     let mut ts_request = TsRequest::default();
 
-    for _ in 0..4 {
+    for _ in 0..5 {
         ts_request = match client
             .process(mem::take(&mut ts_request))
             .resolve_with_client(network_client)
@@ -73,7 +73,7 @@ fn run_credssp(
         };
     }
 
-    panic!("CredSSP authentication should not exceed 4 steps")
+    panic!("CredSSP authentication should not exceed 5 steps")
 }
 
 #[test]
@@ -130,12 +130,12 @@ fn credssp_kerberos() {
     let mut network_client = NetworkClientMock { kdc };
 
     let client_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: CLIENT_COMPUTER_NAME.into(),
     };
 
     let server_config = KerberosConfig {
-        kdc_url: Some(Url::parse(KDC_URL).unwrap()),
+        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
         client_computer_name: SERVER_COMPUTER_NAME.into(),
     };
     let server_properties = ServerProperties {

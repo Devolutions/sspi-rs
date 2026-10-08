@@ -588,7 +588,7 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
     server.dh_parameters.base = g;
     server.dh_parameters.modulus = p.clone();
     server.dh_parameters.q = q;
-    server.dh_parameters.private_key = server_private_key.clone();
+    server.dh_parameters.private_key = Secret::new(server_private_key.clone());
     server.dh_parameters.other_public_key = Some(client_public_value.clone());
     server.dh_parameters.client_nonce = Some(
         client_nonce

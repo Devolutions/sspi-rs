@@ -652,7 +652,7 @@ pub(crate) fn generate_authenticator_at(
         sub_key,
         checksum,
         channel_bindings,
-        ..
+        extensions,
     } = options;
 
     let mut microseconds = current_date.microsecond();
@@ -689,6 +689,15 @@ pub(crate) fn generate_authenticator_at(
             // 4..19 - Channel binding information (19 inclusive).
             channel_binding_buf.copy_from_slice(&compute_md5_channel_bindings_hash(channel_bindings)?);
         }
+
+        for extension in extensions {
+            // Although RFC 6542 specifies big-endian encoding for the extension type and length,
+            // Windows implementation uses little-endian encoding.
+            checksum_value.extend_from_slice(&extension.extension_type.to_le_bytes());
+            checksum_value.extend_from_slice(&u32::try_from(extension.extension_value.len())?.to_le_bytes());
+            checksum_value.extend_from_slice(&extension.extension_value);
+        }
+
         Optional::from(Some(ExplicitContextTag3::from(Checksum {
             cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(checksum_type)),
             checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum_value)),

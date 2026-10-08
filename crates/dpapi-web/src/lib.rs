@@ -16,7 +16,7 @@ use std::rc::Rc;
 
 use anyhow::Context;
 use dpapi::{CryptProtectSecretArgs, CryptUnprotectSecretArgs};
-use sspi::KerberosConfig;
+use sspi::{KdcResolution, KerberosConfig};
 use url::Url;
 use wasm_bindgen::prelude::*;
 
@@ -169,7 +169,7 @@ impl DpapiConfig {
         let kerberos_config = Url::parse(kdc_proxy_url.unwrap_or_default().as_str())
             .ok()
             .map(|url| KerberosConfig {
-                kdc_url: Some(url),
+                kdc_resolution: KdcResolution::KdcUrl(Some(url)),
                 client_computer_name: computer_name.clone(),
             });
 
