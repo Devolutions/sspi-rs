@@ -241,13 +241,21 @@ pub async fn initialize_security_context<'a>(
                 }
             };
 
-            let as_rep = as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
+            let mut pa_data_options = pa_data_options;
+            let as_rep = as_exchange(client, yield_point, &kdc_req_body, &mut pa_data_options).await?;
 
             debug!("AS exchange finished successfully.");
 
             client.realm = Some(as_rep.0.crealm.0.to_string());
 
             let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+            // MIT and Heimdal KDCs omit PA-ETYPE-INFO2 from the AS-REP.
+            // The AS-REP key uses the same salt as the pre-authentication key.
+            let salt = if salt.is_empty() {
+                pa_data_options.salt().unwrap_or_default()
+            } else {
+                salt
+            };
 
             let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
 

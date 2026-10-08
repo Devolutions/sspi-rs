@@ -52,14 +52,14 @@ pub async fn change_password<'a>(
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
 
-    let pa_data_options = AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
+    let mut pa_data_options = AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
         password: password.as_ref(),
         salt: salt.into_bytes(),
         enc_params: client.encryption_params.clone(),
         with_pre_auth: false,
     });
 
-    let as_rep = client::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
+    let as_rep = client::as_exchange(client, yield_point, &kdc_req_body, &mut pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 
