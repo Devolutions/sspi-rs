@@ -217,11 +217,15 @@ impl Username {
     /// Attempts to guess the right name format for the account name/domain combo
     ///
     /// If no netbios domain name is provided, or if it is an empty string, the username will
-    /// be parsed as either a user principal name or a down-level logon name.
+    /// be parsed as either a user principal name or a down-level logon name. The same applies when
+    /// the netbios domain name is the local machine qualifier (`.`) and the account name is already
+    /// qualified, as in `AzureAD\user@example.com` (#766).
     ///
     /// It falls back to a down-level logon name when the format can’t be guessed.
     pub fn new(account_name: &str, netbios_domain_name: Option<&str>) -> Result<Self, UsernameError> {
         match netbios_domain_name {
+            // NOTE: `.` is the local machine qualifier in front of an already-qualified account name.
+            Some(".") if account_name.contains('\\') => Self::parse(account_name),
             Some(netbios_domain_name) if !netbios_domain_name.is_empty() => {
                 Self::new_down_level_logon_name(account_name, netbios_domain_name)
             }
@@ -238,7 +242,16 @@ impl Username {
     /// everything after it is the account name, so `MicrosoftAccount\user@example.com` parses as
     /// NetBIOS domain `MicrosoftAccount` with account name `user@example.com` — matching how
     /// Windows itself reads that qualification.
+    ///
+    /// A local machine qualifier (`.\`) in front of an already-qualified name is dropped, so
+    /// `.\AzureAD\user@example.com` parses the same as `AzureAD\user@example.com` (#766). A `.\`
+    /// in front of an unqualified account name is kept as its NetBIOS domain.
     pub fn parse(value: &str) -> Result<Self, UsernameError> {
+        let value = match value.strip_prefix(".\\") {
+            Some(qualified_name) if qualified_name.contains('\\') => qualified_name,
+            _ => value,
+        };
+
         match (value.split_once('\\'), value.rsplit_once('@')) {
             (None, None) => Ok(Self {
                 value: value.to_owned(),
@@ -807,7 +820,11 @@ mod tests {
             let res = Username::parse(&value);
             prop_assume!(res.is_ok());
             let initial_username = res.unwrap();
-            assert_eq!(initial_username.inner(), value);
+
+            // A local machine qualifier in front of a qualified name is dropped (#766).
+            assert!(
+                initial_username.inner() == value || value.strip_prefix(".\\") == Some(initial_username.inner())
+            );
 
             // The "domain-ish" component, whatever its format-specific meaning is.
             let domain = match initial_username.parts() {
@@ -955,6 +972,43 @@ mod tests {
         let bare = Username::parse("me@example.com").expect("bare form");
         assert_eq!(bare.format(), UserNameFormat::UserPrincipalName);
         assert_eq!(bare.account_name(), "me");
+    }
+
+    /// #766: mstsc may prefix an already-qualified name with the local machine qualifier, as in
+    /// `.\AzureAD\user@example.com`. The `.\` is dropped, and the name is read as the qualified
+    /// name it precedes.
+    #[test]
+    fn local_qualifier_before_a_qualified_name_is_dropped() {
+        let expected = Username::parse("AzureAD\\user@example.com").expect("qualified form");
+
+        let local_qualified = Username::parse(".\\AzureAD\\user@example.com").expect("local-qualified form");
+        assert_eq!(local_qualified, expected);
+        assert_eq!(
+            local_qualified.parts(),
+            UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                account_name: "user@example.com",
+                netbios_domain: Some("AzureAD"),
+            })
+        );
+        check_round_trip_property(&local_qualified);
+
+        // The same identity supplied as separate username + domain fields.
+        let split = Username::new("AzureAD\\user@example.com", Some(".")).expect("split form");
+        assert_eq!(split, expected);
+
+        let buffers = AuthIdentityBuffers::from_utf8("AzureAD\\user@example.com", ".", "");
+        let identity = AuthIdentity::try_from(&buffers).expect("buffers form");
+        assert_eq!(identity.username, expected);
+
+        // A local account name keeps its `.` NetBIOS domain.
+        let local_account = Username::parse(".\\user").expect("local account");
+        assert_eq!(
+            local_account.parts(),
+            UsernameParts::DownLevelLogonName(DownLevelLogonNameParts {
+                account_name: "user",
+                netbios_domain: Some("."),
+            })
+        );
     }
 
     #[test]
