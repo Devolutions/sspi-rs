@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.23.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.0...sspi-v0.23.1)] - 2026-10-08
+
+### <!-- 4 -->Bug Fixes
+
+- Drop local qualifier before a qualified name ([#767](https://github.com/Devolutions/sspi-rs/issues/767)) ([d87a57a704](https://github.com/Devolutions/sspi-rs/commit/d87a57a7042cbefd1f794a9c3657b33d3cee8037)) 
+
+
+
 ## [[0.23.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.1...sspi-v0.23.0)] - 2026-10-01
 
 ### <!-- 1 -->Features
