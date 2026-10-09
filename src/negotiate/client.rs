@@ -49,7 +49,19 @@ pub(crate) async fn initialize_security_context<'a>(
         negotiate.check_target_name_for_ntlm_downgrade(target_name);
     }
 
-    if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
+    let null_session = builder.context_requirements.contains(ClientRequestFlags::NULL_SESSION);
+    if null_session {
+        if !negotiate.can_downgrade_ntlm() {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "NULL sessions require NTLM, but NTLM is disabled",
+            ));
+        }
+        if !negotiate.is_protocol_ntlm() {
+            negotiate.fallback_to_ntlm();
+        }
+        negotiate.auth_identity = None;
+    } else if let Some(Some(CredentialsBuffers::AuthIdentity(identity))) = builder.credentials_handle {
         let auth_identity =
             AuthIdentity::try_from(&*identity).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
         let account_name = auth_identity.username.account_name();
@@ -222,6 +234,10 @@ pub(crate) async fn initialize_security_context<'a>(
                 .protocol
                 .initialize_security_context(negotiate.auth_identity.as_ref(), yield_point, builder)
                 .await?;
+
+            if result.flags.contains(ClientResponseFlags::NULL_SESSION) {
+                negotiate.mic_needed = false;
+            }
 
             if result.status == SecurityStatus::Ok {
                 if negotiate.mic_needed {

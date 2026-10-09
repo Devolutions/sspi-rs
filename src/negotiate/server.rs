@@ -36,6 +36,7 @@ pub(crate) async fn accept_security_context(
 
     let input_token = SecurityBuffer::find_buffer_mut(input, BufferType::Token)?;
 
+    let mut response_flags = ServerResponseFlags::empty();
     let status = match negotiate.state {
         NegotiateState::Initial => {
             let (mech_token, mech_types) = decode_initial_neg_init(&input_token.buffer)?;
@@ -84,6 +85,10 @@ pub(crate) async fn accept_security_context(
                         .protocol
                         .accept_security_context(yield_point, &mut builder)
                         .await?;
+                    response_flags |= result.flags;
+                    if result.flags.contains(ServerResponseFlags::NULL_SESSION) {
+                        negotiate.mic_needed = false;
+                    }
 
                     let neg_result =
                         if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
@@ -153,6 +158,10 @@ pub(crate) async fn accept_security_context(
                 .protocol
                 .accept_security_context(yield_point, &mut builder)
                 .await?;
+            response_flags |= result.flags;
+            if result.flags.contains(ServerResponseFlags::NULL_SESSION) {
+                negotiate.mic_needed = false;
+            }
 
             if result.status == SecurityStatus::Ok || result.status == SecurityStatus::CompleteNeeded {
                 let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
@@ -239,7 +248,7 @@ pub(crate) async fn accept_security_context(
 
     Ok(AcceptSecurityContextResult {
         status,
-        flags: ServerResponseFlags::empty(),
+        flags: response_flags,
         expiry: None,
     })
 }

@@ -301,6 +301,40 @@ fn write_authenticate_changes_context_state_on_success() {
 }
 
 #[test]
+fn write_anonymous_authenticate_uses_the_null_session_wire_format() {
+    const ANONYMOUS_PAYLOAD_OFFSET: usize = 72;
+    let mut context = Ntlm::new();
+    context.set_version(NTLM_VERSION);
+    context.state = NtlmState::Authenticate;
+    context.null_session = true;
+    context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
+    context.challenge_message = Some(ChallengeMessage::new(
+        vec![0x04, 0x05, 0x06],
+        Vec::new(),
+        [0x00; CHALLENGE_SIZE],
+        0,
+    ));
+
+    let mut buffer = Vec::new();
+    write_anonymous_authenticate(&mut context, &mut buffer).unwrap();
+
+    assert_eq!(buffer.len(), ANONYMOUS_PAYLOAD_OFFSET + 1);
+    assert_eq!(&buffer[12..20], &[1, 0, 1, 0, 72, 0, 0, 0]);
+    assert_eq!(&buffer[20..24], &[0; 4]); // Empty NT challenge response.
+    assert_eq!(&buffer[28..32], &[0; 4]); // Empty domain.
+    assert_eq!(&buffer[36..40], &[0; 4]); // Empty username.
+    assert_eq!(buffer[ANONYMOUS_PAYLOAD_OFFSET], 0); // Z(1) LM response.
+    assert!(context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS));
+    assert!(!context.flags.intersects(
+        NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH
+    ));
+    assert!(context.authenticate_message.is_none());
+    assert!(context.session_key.is_none());
+}
+
+#[test]
 fn write_authenticate_correct_writes_domain_name() {
     let expected = [0x0c, 0x00, 0x0c, 0x00, 0x58, 0x00, 0x00, 0x00];
     let expected_buffer = [0x44, 0x00, 0x6f, 0x00, 0x6d, 0x00, 0x61, 0x00, 0x69, 0x00, 0x6e, 0x00];

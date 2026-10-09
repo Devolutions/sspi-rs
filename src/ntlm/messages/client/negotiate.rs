@@ -88,13 +88,16 @@ fn get_flags(context: &Ntlm) -> NegotiateFlags {
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
 
-    if context.sealing {
+    if context.null_session {
+        flags.remove(NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN);
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS;
+    } else if context.sealing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_LM_KEY;
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL;
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     }
 
-    if context.signing {
+    if !context.null_session && context.signing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
     }
 
