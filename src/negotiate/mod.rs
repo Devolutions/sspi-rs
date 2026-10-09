@@ -311,6 +311,16 @@ impl Negotiate {
         self.protocol.protocol_name()
     }
 
+    fn ensure_named_authentication(&self) -> Result<()> {
+        if matches!(&self.protocol, NegotiatedProtocol::Ntlm(ntlm) if ntlm.is_null_session()) {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "NULL sessions cannot receive named credentials",
+            ));
+        }
+        Ok(())
+    }
+
     fn set_auth_identity(&mut self) -> Result<()> {
         let NegotiateMode::Server(auth_data) = &self.mode else {
             return Err(Error::new(
@@ -620,6 +630,7 @@ impl<'a> Negotiate {
 impl SspiEx for Negotiate {
     #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip_all)]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
+        self.ensure_named_authentication()?;
         self.auth_identity = Some(identity.clone().try_into().unwrap());
 
         match &mut self.protocol {
@@ -644,6 +655,7 @@ impl SspiEx for Negotiate {
     }
 
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> Result<()> {
+        self.ensure_named_authentication()?;
         if let Some(first) = identities.first() {
             self.auth_identity = Some(first.clone().try_into().map_err(|_| {
                 Error::new(

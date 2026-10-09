@@ -19,7 +19,8 @@ use crate::{Result, SecurityStatus, Utf16StringExt};
 const MIC_SIZE: u8 = 16;
 const BASE_OFFSET: u8 = 64;
 // NTLM_VERSION_SIZE is 8, which fits in u8
-const AUTH_MESSAGE_OFFSET: u8 = BASE_OFFSET + 8 + MIC_SIZE; // MIC is always used in NTLMv2
+const AUTH_MESSAGE_OFFSET_WITHOUT_MIC: u8 = BASE_OFFSET + 8;
+const AUTH_MESSAGE_OFFSET_WITH_MIC: u8 = AUTH_MESSAGE_OFFSET_WITHOUT_MIC + MIC_SIZE;
 
 struct AuthenticateMessageFields {
     workstation: MessageFields,
@@ -37,9 +38,10 @@ impl AuthenticateMessageFields {
         nt_challenge_response: &[u8],
         negotiate_flags: NegotiateFlags,
         encrypted_random_session_key_buffer: &[u8],
+        workstation: Vec<u8>,
         offset: u32,
     ) -> Result<Self> {
-        let mut workstation = MessageFields::new();
+        let mut workstation = MessageFields::with_buffer(workstation);
         let mut domain_name = MessageFields::with_buffer(identity.domain.to_bytes_le());
         let mut encrypted_random_session_key = MessageFields::new();
         let mut user_name = MessageFields::with_buffer(identity.user.to_bytes_le());
@@ -49,8 +51,6 @@ impl AuthenticateMessageFields {
         if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
             encrypted_random_session_key.buffer = encrypted_random_session_key_buffer.to_vec();
         }
-
-        // will not set workstation because it is not used anywhere
 
         domain_name.buffer_offset = offset;
 
@@ -68,6 +68,12 @@ impl AuthenticateMessageFields {
 
         let nt_challenge_response_len: u32 = nt_challenge_response.buffer.len().try_into()?;
         encrypted_random_session_key.buffer_offset = nt_challenge_response.buffer_offset + nt_challenge_response_len;
+
+        // MS-NLMP 3.3.1 and 3.3.2 require the anonymous NT response
+        // descriptor (including its offset) to be all zero.
+        if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS) {
+            nt_challenge_response.buffer_offset = 0;
+        }
 
         Ok(Self {
             domain_name,
@@ -88,14 +94,10 @@ impl AuthenticateMessageFields {
 pub(crate) fn write_authenticate(
     context: &mut Ntlm,
     credentials: &AuthIdentityBuffers,
-    mut transport: impl io::Write,
+    transport: impl io::Write,
 ) -> Result<SecurityStatus> {
     check_state(context.state)?;
 
-    let negotiate_message = context
-        .negotiate_message
-        .as_ref()
-        .expect("negotiate message must be set on negotiate phase");
     let challenge_message = context
         .challenge_message
         .as_ref()
@@ -138,53 +140,144 @@ pub(crate) fn write_authenticate(
     let mut encrypted_session_key = [0x00; ENCRYPTED_RANDOM_SESSION_KEY_SIZE];
     encrypted_session_key.clone_from_slice(encrypted_session_key_vec.as_ref());
 
+    write_authenticate_message(
+        context,
+        credentials,
+        &lm_challenge_response,
+        &nt_challenge_response,
+        &encrypted_session_key,
+        Some((session_key, target_info, client_challenge)),
+        transport,
+    )
+}
+
+/// Writes the special AUTHENTICATE_MESSAGE required by MS-NLMP for an
+/// anonymous NULL session. No credential-derived material or session key is
+/// created or retained for this path.
+pub(crate) fn write_anonymous_authenticate(context: &mut Ntlm, transport: impl io::Write) -> Result<SecurityStatus> {
+    check_state(context.state)?;
+
+    let identity = AuthIdentityBuffers::default();
+    context.flags = get_flags(context, &identity);
+    write_authenticate_message(context, &identity, &[0], &[], &[], None, transport)
+}
+
+fn write_authenticate_message(
+    context: &mut Ntlm,
+    credentials: &AuthIdentityBuffers,
+    lm_challenge_response: &[u8],
+    nt_challenge_response: &[u8],
+    encrypted_session_key: &[u8],
+    security: Option<([u8; SESSION_KEY_SIZE], Vec<u8>, [u8; 8])>,
+    mut transport: impl io::Write,
+) -> Result<SecurityStatus> {
+    let include_mic = security.is_some();
+    let payload_offset = if include_mic {
+        AUTH_MESSAGE_OFFSET_WITH_MIC
+    } else {
+        AUTH_MESSAGE_OFFSET_WITHOUT_MIC
+    };
+    let negotiate_message = context
+        .negotiate_message
+        .as_ref()
+        .expect("negotiate message must be set on negotiate phase");
+    let challenge_message = context
+        .challenge_message
+        .as_ref()
+        .expect("challenge message must be set on challenge phase");
+
+    // VERSION is advertised by this client. For anonymous authentication,
+    // include the configured NetBIOS machine name as required by 3.1.5.1.2.
+    let workstation = if context.null_session {
+        context
+            .config
+            .client_computer_name
+            .as_deref()
+            .unwrap_or_default()
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let message_fields = AuthenticateMessageFields::new(
         credentials,
-        lm_challenge_response.as_ref(),
-        nt_challenge_response.as_ref(),
+        lm_challenge_response,
+        nt_challenge_response,
         context.flags,
-        encrypted_session_key.as_ref(),
-        AUTH_MESSAGE_OFFSET.into(),
+        encrypted_session_key,
+        workstation,
+        payload_offset.into(),
     )?;
 
     let mut buffer = Vec::with_capacity(message_fields.data_len()?);
 
-    write_header(context.flags, context.version.as_ref(), &message_fields, &mut buffer)?;
+    write_header(
+        context.flags,
+        context.version.as_ref(),
+        &message_fields,
+        include_mic,
+        &mut buffer,
+    )?;
     write_payload(&message_fields, &mut buffer)?;
 
     let message = buffer.clone();
 
     let mut buffer = io::Cursor::new(buffer);
-    let mic = write_mic(
-        negotiate_message.message.as_ref(),
-        challenge_message.message.as_ref(),
-        message.as_ref(),
-        session_key.as_ref(),
-        AUTH_MESSAGE_OFFSET,
-        &mut buffer,
-    )?;
+    let mic = if let Some((session_key, _, _)) = &security {
+        Some(write_mic(
+            negotiate_message.message.as_ref(),
+            challenge_message.message.as_ref(),
+            message.as_ref(),
+            session_key.as_ref(),
+            payload_offset,
+            &mut buffer,
+        )?)
+    } else {
+        None
+    };
 
     transport.write_all(buffer.into_inner().as_slice())?;
     transport.flush()?;
 
-    context.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
-    context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
-    context.send_sealing_key = Some(Rc4::new(
-        generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
-    ));
-    context.recv_sealing_key = Some(Rc4::new(
-        generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
-    ));
-    context.session_key = Some(session_key);
+    if let Some((session_key, _, _)) = &security {
+        context.send_signing_key = generate_signing_key(session_key.as_ref(), CLIENT_SIGN_MAGIC);
+        context.recv_signing_key = generate_signing_key(session_key.as_ref(), SERVER_SIGN_MAGIC);
+        context.send_sealing_key = Some(Rc4::new(
+            generate_signing_key(session_key.as_ref(), CLIENT_SEAL_MAGIC).as_ref(),
+        ));
+        context.recv_sealing_key = Some(Rc4::new(
+            generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
+        ));
+        context.session_key = Some(*session_key);
+    }
 
-    context.authenticate_message = Some(AuthenticateMessage::new(
-        message,
-        Some(mic),
-        target_info,
-        client_challenge,
-        Some(encrypted_session_key),
-    ));
-    context.state = NtlmState::Final;
+    let (target_info, client_challenge) = security
+        .as_ref()
+        .map(|(_, target_info, client_challenge)| (target_info.clone(), *client_challenge))
+        .unwrap_or_default();
+
+    context.authenticate_message = security.as_ref().map(|_| {
+        AuthenticateMessage::new(
+            message,
+            mic,
+            target_info,
+            client_challenge,
+            Some(
+                encrypted_session_key
+                    .try_into()
+                    .expect("encrypted session key has a validated fixed length"),
+            ),
+        )
+    });
+    if security.is_none() {
+        context.finish_null_session();
+    } else {
+        context.state = NtlmState::Final;
+    }
 
     Ok(SecurityStatus::Ok)
 }
@@ -220,11 +313,19 @@ fn get_flags(context: &Ntlm, identity: &AuthIdentityBuffers) -> NegotiateFlags {
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
 
-    if context.sealing {
+    if context.null_session {
+        flags.remove(
+            NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN
+                | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH
+                | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
+                | NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN,
+        );
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS;
+    } else if context.sealing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL;
     }
 
-    if context.signing {
+    if !context.null_session && context.signing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
     }
 
@@ -235,6 +336,7 @@ fn write_header(
     negotiate_flags: NegotiateFlags,
     version: &[u8],
     message_fields: &AuthenticateMessageFields,
+    include_mic: bool,
     mut buffer: impl io::Write,
 ) -> io::Result<()> {
     buffer.write_all(NTLM_SIGNATURE)?; // signature 8 bytes
@@ -248,11 +350,10 @@ fn write_header(
     buffer.write_u32::<LittleEndian>(negotiate_flags.bits())?; // NegotiateFlags (4 bytes)
     buffer.write_all(version)?;
 
-    // use_mic always true, when ntlm_v2 is true
-    // For now, just write zeros to the stream,
-    // and write to this position an authenticate_message,
-    // when will calc the authenticate_message
-    buffer.write_all(&[0x00; MESSAGE_INTEGRITY_CHECK_SIZE])?;
+    if include_mic {
+        // Reserve the MIC field; write_mic fills it after the entire message is available.
+        buffer.write_all(&[0x00; MESSAGE_INTEGRITY_CHECK_SIZE])?;
+    }
 
     Ok(())
 }

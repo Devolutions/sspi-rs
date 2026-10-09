@@ -1417,6 +1417,12 @@ bitflags! {
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
         const INTEGRITY = 0x0001_0000;
         const IDENTIFY = 0x0002_0000;
+        /// Explicitly requests anonymous NTLM NULL-session authentication.
+        ///
+        /// This is never enabled by default. NULL sessions represent the anonymous account and provide no usable
+        /// session key, integrity, or confidentiality and must also be
+        /// explicitly allowed by the acceptor with
+        /// [`ServerRequestFlags::ALLOW_NULL_SESSION`].
         const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
         const MANUAL_CRED_VALIDATION = 0x0008_0000;
@@ -1465,6 +1471,13 @@ bitflags! {
         const INTEGRITY = 0x0002_0000;
         const LICENSING = 0x0004_0000;
         const IDENTIFY = 0x0008_0000;
+        /// Explicitly allows anonymous NTLM NULL-session authentication.
+        ///
+        /// This dangerous compatibility option is disabled by default. It
+        /// should only be enabled for services that intentionally grant
+        /// limited access to unauthenticated callers. It must remain set on
+        /// every accept call. NULL sessions are rejected if authentication,
+        /// integrity, confidentiality, or session-key requirements are set.
         const ALLOW_NULL_SESSION = 0x0010_0000;
         const ALLOW_NON_USER_LOGONS = 0x0020_0000;
         const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
@@ -1515,6 +1528,7 @@ bitflags! {
         /// Sign messages and verify signatures by using the `encrypt_message` and `make_signature` (TBI) functions.
         const INTEGRITY = 0x0001_0000;
         const IDENTIFY = 0x0002_0000;
+        /// The context was established as an anonymous NULL session.
         const NULL_SESSION = 0x0004_0000;
         /// Schannel must not authenticate the server automatically.
         const MANUAL_CRED_VALIDATION = 0x0008_0000;
@@ -1562,6 +1576,7 @@ bitflags! {
         const INTEGRITY = 0x0002_0000;
         const LICENSING = 0x0004_0000;
         const IDENTIFY = 0x0008_0000;
+        /// The context was established as an anonymous NULL session.
         const NULL_SESSION = 0x0010_0000;
         const ALLOW_NON_USER_LOGONS = 0x0020_0000;
         const ALLOW_CONTEXT_REPLAY = 0x0040_0000;
