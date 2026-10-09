@@ -745,3 +745,148 @@ fn complete_authenticate_fails_when_no_candidate_matches() {
     let err = complete_authenticate(&mut context).unwrap_err();
     assert_eq!(err.error_type, ErrorKind::LogonDenied);
 }
+
+// Independent wire fixture: do not use the client writer to verify the
+// acceptor's MS-NLMP 3.2.5.1.2 anonymous-detection rules.
+fn anonymous_authenticate_fixture(anonymous_flag: bool, empty_lm: bool, domain: bool, padding: usize) -> Vec<u8> {
+    let mut message = vec![0; 64 + padding];
+    message[..8].copy_from_slice(b"NTLMSSP\0");
+    message[8..12].copy_from_slice(&3u32.to_le_bytes());
+    let flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
+        | if anonymous_flag {
+            NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS
+        } else {
+            NegotiateFlags::empty()
+        };
+    message[60..64].copy_from_slice(&flags.bits().to_le_bytes());
+    // Place domain before the LM response to exercise payload order too.
+    if domain {
+        message[28..32].copy_from_slice(&[2, 0, 2, 0]);
+        let offset = message.len() as u32;
+        message[32..36].copy_from_slice(&offset.to_le_bytes());
+        message.extend_from_slice(&[b'D', 0]);
+    }
+    if !empty_lm {
+        message[12..16].copy_from_slice(&[1, 0, 1, 0]);
+        let offset = message.len() as u32;
+        message[16..20].copy_from_slice(&offset.to_le_bytes());
+        message.push(0);
+    }
+    message
+}
+
+#[test]
+fn anonymous_authenticate_accepts_spec_variants() {
+    for flag in [false, true] {
+        for empty_lm in [false, true] {
+            for domain in [false, true] {
+                for padding in [0, 16] {
+                    let message = anonymous_authenticate_fixture(flag, empty_lm, domain, padding);
+                    let mut context = Ntlm::new();
+                    context.state = NtlmState::Authenticate;
+                    context.allow_null_session = true;
+                    context.identity = Some(TEST_CREDENTIALS.clone());
+                    assert_eq!(
+                        read_authenticate(&mut context, message.as_slice()).unwrap(),
+                        SecurityStatus::Ok
+                    );
+                    assert!(context.null_session);
+                    assert!(context.identity.is_none());
+                    assert!(context.session_key.is_none());
+                    assert!(context.authenticate_message.is_none());
+                    assert_eq!(context.state, NtlmState::Final);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn anonymous_authenticate_requires_policy_even_without_anonymous_flag() {
+    let message = anonymous_authenticate_fixture(false, true, false, 0);
+    let mut context = Ntlm::new();
+    context.state = NtlmState::Authenticate;
+    assert_eq!(
+        read_authenticate(&mut context, message.as_slice())
+            .unwrap_err()
+            .error_type,
+        ErrorKind::LogonDenied
+    );
+    assert!(!context.null_session);
+}
+
+#[test]
+fn anonymous_authenticate_rejects_invalid_responses_and_payload_bounds() {
+    for (offset, value) in [(64, 1), (16, 0), (16, 255)] {
+        let mut message = anonymous_authenticate_fixture(true, false, false, 0);
+        message[offset] = value;
+        let mut context = Ntlm::new();
+        context.state = NtlmState::Authenticate;
+        context.allow_null_session = true;
+        assert_eq!(
+            read_authenticate(&mut context, message.as_slice())
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+        assert!(!context.null_session);
+    }
+}
+
+#[test]
+fn anonymous_authenticate_validates_key_exchange_field() {
+    for key_len in [0u16, 1, 15, 16, 17] {
+        let mut message = anonymous_authenticate_fixture(true, false, false, 0);
+        let flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
+        message[60..64].copy_from_slice(&flags.bits().to_le_bytes());
+        message[52..54].copy_from_slice(&key_len.to_le_bytes());
+        message[54..56].copy_from_slice(&key_len.to_le_bytes());
+        message[56..60].copy_from_slice(&65u32.to_le_bytes());
+        message.resize(65 + usize::from(key_len), 0);
+        let mut context = Ntlm::new();
+        context.state = NtlmState::Authenticate;
+        context.allow_null_session = true;
+        let result = read_authenticate(&mut context, message.as_slice());
+        if key_len == 16 {
+            assert_eq!(result.unwrap(), SecurityStatus::Ok);
+        } else {
+            assert_eq!(result.unwrap_err().error_type, ErrorKind::InvalidToken);
+        }
+    }
+}
+
+#[test]
+fn authenticate_rejects_missing_mic_when_av_flags_require_it() {
+    // This independent captured NTLMv2 message requires MIC. Remove it and
+    // move all payload descriptors back, preserving the response AV flags.
+    let mut message = LOCAL_AUTHENTICATE_MESSAGE.to_vec();
+    message.drain(72..88);
+    for descriptor in [12, 20, 28, 36, 44, 52] {
+        let offset = u32::from_le_bytes(message[descriptor + 4..descriptor + 8].try_into().unwrap());
+        message[descriptor + 4..descriptor + 8].copy_from_slice(&(offset - 16).to_le_bytes());
+    }
+    let mut context = Ntlm::new();
+    context.state = NtlmState::Authenticate;
+    assert_eq!(
+        read_authenticate(&mut context, message.as_slice())
+            .unwrap_err()
+            .error_type,
+        ErrorKind::InvalidToken
+    );
+}
+
+#[test]
+fn challenge_sets_required_always_sign_flag() {
+    let mut context = Ntlm::new();
+    context.state = NtlmState::Challenge;
+    context.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS;
+    let mut message = Vec::new();
+    write_challenge(&mut context, &mut message).unwrap();
+    let flags = NegotiateFlags::from_bits_retain(u32::from_le_bytes(message[20..24].try_into().unwrap()));
+    assert!(flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN));
+    assert!(!flags.intersects(
+        NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH
+    ));
+}

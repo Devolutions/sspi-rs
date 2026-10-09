@@ -50,6 +50,14 @@ pub(crate) async fn initialize_security_context<'a>(
     }
 
     let null_session = builder.context_requirements.contains(ClientRequestFlags::NULL_SESSION);
+    if negotiate.state != NegotiateState::Initial
+        && null_session != matches!(&negotiate.protocol, NegotiatedProtocol::Ntlm(ntlm) if ntlm.is_null_session())
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            "NULL-session mode cannot change during negotiation",
+        ));
+    }
     if null_session {
         if !negotiate.can_downgrade_ntlm() {
             return Err(Error::new(
@@ -73,7 +81,7 @@ pub(crate) async fn initialize_security_context<'a>(
     }
 
     #[cfg(feature = "scard")]
-    if let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
+    if !null_session && let Some(Some(CredentialsBuffers::SmartCard(identity))) = builder.credentials_handle {
         use crate::NegotiatedProtocol;
 
         if let NegotiatedProtocol::Ntlm(_) = &negotiate.protocol {
@@ -209,6 +217,12 @@ pub(crate) async fn initialize_security_context<'a>(
 
             if let Some(selected_mech) = supported_mech.0 {
                 let selected_mech = &selected_mech.0;
+                if null_session && *selected_mech != picky::oids::ntlm_ssp() {
+                    return Err(Error::new(
+                        ErrorKind::InvalidToken,
+                        "NULL sessions require the advertised NTLM mechanism",
+                    ));
+                }
                 let mech_type: String = (&selected_mech.0).into();
                 debug!("The remote server has selected {mech_type} mechanism id.");
 

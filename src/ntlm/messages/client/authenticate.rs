@@ -38,9 +38,10 @@ impl AuthenticateMessageFields {
         nt_challenge_response: &[u8],
         negotiate_flags: NegotiateFlags,
         encrypted_random_session_key_buffer: &[u8],
+        workstation: Vec<u8>,
         offset: u32,
     ) -> Result<Self> {
-        let mut workstation = MessageFields::new();
+        let mut workstation = MessageFields::with_buffer(workstation);
         let mut domain_name = MessageFields::with_buffer(identity.domain.to_bytes_le());
         let mut encrypted_random_session_key = MessageFields::new();
         let mut user_name = MessageFields::with_buffer(identity.user.to_bytes_le());
@@ -50,8 +51,6 @@ impl AuthenticateMessageFields {
         if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
             encrypted_random_session_key.buffer = encrypted_random_session_key_buffer.to_vec();
         }
-
-        // will not set workstation because it is not used anywhere
 
         domain_name.buffer_offset = offset;
 
@@ -69,6 +68,12 @@ impl AuthenticateMessageFields {
 
         let nt_challenge_response_len: u32 = nt_challenge_response.buffer.len().try_into()?;
         encrypted_random_session_key.buffer_offset = nt_challenge_response.buffer_offset + nt_challenge_response_len;
+
+        // MS-NLMP 3.3.1 and 3.3.2 require the anonymous NT response
+        // descriptor (including its offset) to be all zero.
+        if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS) {
+            nt_challenge_response.buffer_offset = 0;
+        }
 
         Ok(Self {
             domain_name,
@@ -181,12 +186,30 @@ fn write_authenticate_message(
         .as_ref()
         .expect("challenge message must be set on challenge phase");
 
+    // VERSION is advertised by this client. For anonymous authentication,
+    // include the configured NetBIOS machine name as required by 3.1.5.1.2.
+    let workstation = if context.null_session {
+        context
+            .config
+            .client_computer_name
+            .as_deref()
+            .unwrap_or_default()
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let message_fields = AuthenticateMessageFields::new(
         credentials,
         lm_challenge_response,
         nt_challenge_response,
         context.flags,
         encrypted_session_key,
+        workstation,
         payload_offset.into(),
     )?;
 
@@ -250,7 +273,11 @@ fn write_authenticate_message(
             ),
         )
     });
-    context.state = NtlmState::Final;
+    if security.is_none() {
+        context.finish_null_session();
+    } else {
+        context.state = NtlmState::Final;
+    }
 
     Ok(SecurityStatus::Ok)
 }

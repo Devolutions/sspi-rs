@@ -320,7 +320,7 @@ fn write_anonymous_authenticate_uses_the_null_session_wire_format() {
 
     assert_eq!(buffer.len(), ANONYMOUS_PAYLOAD_OFFSET + 1);
     assert_eq!(&buffer[12..20], &[1, 0, 1, 0, 72, 0, 0, 0]);
-    assert_eq!(&buffer[20..24], &[0; 4]); // Empty NT challenge response.
+    assert_eq!(&buffer[20..28], &[0; 8]); // Length, maximum length, and offset are zero.
     assert_eq!(&buffer[28..32], &[0; 4]); // Empty domain.
     assert_eq!(&buffer[36..40], &[0; 4]); // Empty username.
     assert_eq!(buffer[ANONYMOUS_PAYLOAD_OFFSET], 0); // Z(1) LM response.
@@ -426,4 +426,46 @@ fn write_authenticate_fails_on_incorrect_state() {
 
     let mut buff = Vec::new();
     assert!(write_authenticate(&mut context, &TEST_CREDENTIALS, &mut buff).is_err());
+}
+
+#[test]
+fn anonymous_negotiate_sets_always_sign_without_session_security() {
+    let mut context = Ntlm::new();
+    context.state = NtlmState::Negotiate;
+    context.null_session = true;
+    let mut message = Vec::new();
+    write_negotiate(&mut context, &mut message).unwrap();
+    let flags = NegotiateFlags::from_bits_retain(u32::from_le_bytes(message[12..16].try_into().unwrap()));
+    assert!(flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN));
+    assert!(flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS));
+    assert!(!flags.intersects(
+        NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL
+            | NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH
+    ));
+}
+
+#[test]
+fn anonymous_version_messages_place_workstation_in_authenticate() {
+    let mut context = Ntlm::with_config(NtlmConfig {
+        client_computer_name: Some("CLIENT.example.com".into()),
+    });
+    context.state = NtlmState::Negotiate;
+    context.null_session = true;
+    let mut negotiate = Vec::new();
+    write_negotiate(&mut context, &mut negotiate).unwrap();
+    assert_eq!(&negotiate[16..20], &[0; 4]); // DomainNameLen / MaxLen.
+    assert_eq!(&negotiate[24..28], &[0; 4]); // WorkstationLen / MaxLen (3.1.5.1.1).
+    context.state = NtlmState::Authenticate;
+    context.challenge_message = Some(ChallengeMessage::new(vec![], vec![], [0; CHALLENGE_SIZE], 0));
+    let mut authenticate = Vec::new();
+    write_anonymous_authenticate(&mut context, &mut authenticate).unwrap();
+    assert_eq!(&authenticate[20..28], &[0; 8]);
+    assert_eq!(&authenticate[44..52], &[12, 0, 12, 0, 72, 0, 0, 0]);
+    assert_eq!(
+        &authenticate[72..84],
+        &[b'C', 0, b'L', 0, b'I', 0, b'E', 0, b'N', 0, b'T', 0]
+    );
+    assert_eq!(&authenticate[12..20], &[1, 0, 1, 0, 84, 0, 0, 0]);
+    assert_eq!(authenticate[84], 0);
 }

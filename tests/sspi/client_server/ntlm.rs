@@ -231,31 +231,10 @@ fn ntlm_without_target_name() {
 
 #[test]
 fn ntlm_null_session_requires_explicit_two_sided_opt_in() {
-    let (mut client, server) =
+    let (mut client, mut server) =
         run_anonymous_credentials(ClientRequestFlags::NULL_SESSION, ServerRequestFlags::ALLOW_NULL_SESSION).unwrap();
-
-    assert_eq!(
-        client.query_context_session_key().unwrap_err().error_type,
-        ErrorKind::UnsupportedFunction
-    );
-    assert_eq!(
-        server.query_context_session_key().unwrap_err().error_type,
-        ErrorKind::UnsupportedFunction
-    );
-
-    let mut token = [0; 16];
-    let mut data = b"NULL sessions have no message security".to_vec();
-    let mut message = [
-        SecurityBufferRef::token_buf(&mut token),
-        SecurityBufferRef::data_buf(&mut data),
-    ];
-    assert_eq!(
-        client
-            .encrypt_message(EncryptionFlags::empty(), &mut message)
-            .unwrap_err()
-            .error_type,
-        ErrorKind::UnsupportedFunction
-    );
+    super::test_null_session_security(&mut client);
+    super::test_null_session_security(&mut server);
 }
 
 #[test]
@@ -268,4 +247,29 @@ fn ntlm_null_session_is_rejected_by_default() {
         run_anonymous_credentials(ClientRequestFlags::empty(), ServerRequestFlags::ALLOW_NULL_SESSION).unwrap_err(),
         ErrorKind::InvalidToken
     );
+}
+
+#[test]
+fn ntlm_null_session_rejects_required_security() {
+    for requirement in [
+        ClientRequestFlags::INTEGRITY,
+        ClientRequestFlags::CONFIDENTIALITY,
+        ClientRequestFlags::REPLAY_DETECT,
+        ClientRequestFlags::SEQUENCE_DETECT,
+        ClientRequestFlags::MUTUAL_AUTH,
+        ClientRequestFlags::DELEGATE,
+        ClientRequestFlags::USE_SESSION_KEY,
+        ClientRequestFlags::USE_DCE_STYLE,
+        ClientRequestFlags::CONFIDENTIALITY_ONLY,
+        ClientRequestFlags::FORWARD_CREDENTIALS,
+    ] {
+        assert_eq!(
+            run_anonymous_credentials(
+                ClientRequestFlags::NULL_SESSION | requirement,
+                ServerRequestFlags::ALLOW_NULL_SESSION
+            )
+            .unwrap_err(),
+            ErrorKind::InvalidParameter
+        );
+    }
 }

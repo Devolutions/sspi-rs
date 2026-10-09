@@ -96,3 +96,59 @@ fn test_rpc_request_encryption(client: &mut SspiContext, server: &mut SspiContex
     assert_eq!(message[1].data(), plaintext);
     assert_eq!(trailer[..], message[2].data()[..]);
 }
+
+fn test_null_session_security(context: &mut SspiContext) {
+    use sspi::{AuthIdentity, Credentials, ErrorKind, Secret, SspiEx, Username};
+    assert_eq!(
+        context.query_context_names().unwrap().username.inner(),
+        "NT AUTHORITY\\ANONYMOUS LOGON"
+    );
+    assert_eq!(
+        context.query_context_session_key().unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    let named = Credentials::AuthIdentity(AuthIdentity {
+        username: Username::parse("named-user").unwrap(),
+        password: Secret::from("password".to_owned()),
+    });
+    assert_eq!(
+        context.custom_set_auth_identity(named.clone()).unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        context.custom_set_auth_identities(vec![named]).unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        context.query_context_names().unwrap().username.inner(),
+        "NT AUTHORITY\\ANONYMOUS LOGON"
+    );
+    let mut token = [0x55; 16];
+    let mut data = b"anonymous contexts cannot protect this data".to_vec();
+    let original_data = data.clone();
+    let mut message = [
+        SecurityBufferRef::token_buf(&mut token),
+        SecurityBufferRef::data_buf(&mut data),
+    ];
+    assert_eq!(
+        context
+            .encrypt_message(EncryptionFlags::empty(), &mut message)
+            .unwrap_err()
+            .error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        context.decrypt_message(&mut message).unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        context.make_signature(0, &mut message, 0).unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        context.verify_signature(&mut message, 0).unwrap_err().error_type,
+        ErrorKind::UnsupportedFunction
+    );
+    assert_eq!(message[0].data(), &[0x55; 16]);
+    assert_eq!(message[1].data(), original_data);
+}

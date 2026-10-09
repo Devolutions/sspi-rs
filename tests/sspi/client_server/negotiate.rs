@@ -120,6 +120,13 @@ fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mi
 }
 
 fn run_spnego_null_session(server_flags: ServerRequestFlags) -> Result<(SspiContext, SspiContext), ErrorKind> {
+    run_spnego_null_session_steps(&[ClientRequestFlags::NULL_SESSION; 3], &[server_flags; 3])
+}
+
+fn run_spnego_null_session_steps(
+    client_flags: &[ClientRequestFlags; 3],
+    server_flags: &[ServerRequestFlags; 3],
+) -> Result<(SspiContext, SspiContext), ErrorKind> {
     let ntlm_config = NtlmConfig {
         client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
@@ -157,22 +164,24 @@ fn run_spnego_null_session(server_flags: ServerRequestFlags) -> Result<(SspiCont
 
     let mut server_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
     let mut client_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-    for _ in 0..3 {
+    for step in 0..3 {
         let mut client_builder = client
             .initialize_security_context()
             .with_credentials_handle(&mut client_credentials_handle)
-            .with_context_requirements(ClientRequestFlags::NULL_SESSION)
+            .with_context_requirements(client_flags[step])
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut server_token)
             .with_output(&mut client_token);
         client_builder.target_name = Some(TARGET_NAME);
-        let client_result = client.initialize_security_context_sync(&mut client_builder).unwrap();
+        let client_result = client
+            .initialize_security_context_sync(&mut client_builder)
+            .map_err(|error| error.error_type)?;
         server_token[0].buffer.clear();
 
         let server_builder = server
             .accept_security_context()
             .with_credentials_handle(&mut server_credentials_handle)
-            .with_context_requirements(server_flags)
+            .with_context_requirements(server_flags[step])
             .with_target_data_representation(DataRepresentation::Native)
             .with_input(&mut client_token)
             .with_output(&mut server_token);
@@ -210,15 +219,9 @@ fn spnego_ntlm_without_target_name() {
 
 #[test]
 fn spnego_ntlm_null_session_is_explicitly_opted_in() {
-    let (client, server) = run_spnego_null_session(ServerRequestFlags::ALLOW_NULL_SESSION).unwrap();
-    assert_eq!(
-        client.query_context_session_key().unwrap_err().error_type,
-        ErrorKind::UnsupportedFunction
-    );
-    assert_eq!(
-        server.query_context_session_key().unwrap_err().error_type,
-        ErrorKind::UnsupportedFunction
-    );
+    let (mut client, mut server) = run_spnego_null_session(ServerRequestFlags::ALLOW_NULL_SESSION).unwrap();
+    super::test_null_session_security(&mut client);
+    super::test_null_session_security(&mut server);
 }
 
 #[test]
@@ -227,4 +230,48 @@ fn spnego_ntlm_null_session_is_rejected_by_default() {
         run_spnego_null_session(ServerRequestFlags::empty()).unwrap_err(),
         ErrorKind::LogonDenied
     );
+}
+
+#[test]
+fn spnego_null_session_cannot_bypass_acceptor_security_policy() {
+    for requirement in [
+        ServerRequestFlags::INTEGRITY,
+        ServerRequestFlags::CONFIDENTIALITY,
+        ServerRequestFlags::REPLAY_DETECT,
+        ServerRequestFlags::SEQUENCE_DETECT,
+        ServerRequestFlags::MUTUAL_AUTH,
+        ServerRequestFlags::DELEGATE,
+        ServerRequestFlags::USE_SESSION_KEY,
+        ServerRequestFlags::USE_DCE_STYLE,
+    ] {
+        assert_eq!(
+            run_spnego_null_session(ServerRequestFlags::ALLOW_NULL_SESSION | requirement).unwrap_err(),
+            ErrorKind::LogonDenied
+        );
+    }
+}
+
+#[test]
+fn spnego_null_session_checks_requirements_on_subsequent_calls() {
+    let allowed = ServerRequestFlags::ALLOW_NULL_SESSION;
+    for changed in [
+        ClientRequestFlags::empty(),
+        ClientRequestFlags::NULL_SESSION | ClientRequestFlags::INTEGRITY,
+    ] {
+        assert_eq!(
+            run_spnego_null_session_steps(&[ClientRequestFlags::NULL_SESSION, changed, changed], &[allowed; 3])
+                .unwrap_err(),
+            ErrorKind::InvalidParameter
+        );
+    }
+    for changed in [
+        ServerRequestFlags::empty(),
+        allowed | ServerRequestFlags::CONFIDENTIALITY,
+    ] {
+        assert_eq!(
+            run_spnego_null_session_steps(&[ClientRequestFlags::NULL_SESSION; 3], &[allowed, changed, changed])
+                .unwrap_err(),
+            ErrorKind::LogonDenied
+        );
+    }
 }

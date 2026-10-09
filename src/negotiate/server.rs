@@ -87,6 +87,7 @@ pub(crate) async fn accept_security_context(
                         .await?;
                     response_flags |= result.flags;
                     if result.flags.contains(ServerResponseFlags::NULL_SESSION) {
+                        negotiate.auth_identity = None;
                         negotiate.mic_needed = false;
                     }
 
@@ -160,6 +161,7 @@ pub(crate) async fn accept_security_context(
                 .await?;
             response_flags |= result.flags;
             if result.flags.contains(ServerResponseFlags::NULL_SESSION) {
+                negotiate.auth_identity = None;
                 negotiate.mic_needed = false;
             }
 
