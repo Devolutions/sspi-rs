@@ -33,7 +33,14 @@ pub(crate) fn validate_mic_token(
     let token = MicToken::decode(raw_token)?;
     let token_flags = token.flags;
 
-    if token.seq_num != expected_seq_number {
+    // Only the acceptor enforces the sequence number of the initiator's MIC token.
+    // RFC 1964 §1.2.1 / RFC 4121 make sequence-number checking optional and tied to
+    // the `SEQUENCE_DETECT`/`REPLAY_DETECT` flags negotiated at context establishment.
+    // This client does not negotiate those flags.
+    // Additionally, Windows acceptors sign the SPNEGO mechListMIC with sequence number 0
+    // regardless of the AP-REP sequence number, so enforcing this on the initiator side
+    // breaks interop with Windows implementation.
+    if !is_client && token.seq_num != expected_seq_number {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             format!(
