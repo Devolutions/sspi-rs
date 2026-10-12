@@ -313,9 +313,10 @@ impl Pku2u {
         crate::kerberos::utils::generate_mic_token(self.is_client(), sequence_number, data.to_vec(), key, &aes_size)
     }
 
-    fn verify_mic(&self, sequence_number: u64, token: &[u8], data: &[u8]) -> Result<()> {
+    fn verify_mic(&self, sequence_number: u64, token: &[u8], data: &[u8], enforce_sequence_number: bool) -> Result<()> {
         crate::kerberos::utils::validate_mic_token(
             self.is_client(),
+            enforce_sequence_number,
             sequence_number,
             token,
             &self.encryption_params,
@@ -972,7 +973,7 @@ impl Sspi for Pku2u {
             acc.extend_from_slice(buffer.data());
             acc
         });
-        self.verify_mic(sequence_number.into(), &token, &data)?;
+        self.verify_mic(sequence_number.into(), &token, &data, true)?;
 
         Ok(0)
     }
@@ -1498,7 +1499,9 @@ impl SspiEx for Pku2u {
     }
 
     fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
-        self.verify_mic(self.remote_gss_seq_number.into(), token, data)?;
+        // The sequence number verification is only enforced for the acceptor side.
+        let enforce_sequence_number = !self.is_client();
+        self.verify_mic(self.remote_gss_seq_number.into(), token, data, enforce_sequence_number)?;
         self.remote_gss_seq_number = self.remote_gss_seq_number.wrapping_add(1);
         Ok(())
     }
@@ -1734,8 +1737,7 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         );
     }
 
-    #[test]
-    fn stream_buffer_decryption() {
+    fn minimal_pku2u_pair() -> (Pku2u, Pku2u) {
         let session_key = vec![
             137, 60, 120, 245, 164, 179, 76, 200, 242, 96, 57, 174, 111, 209, 90, 76, 58, 117, 55, 138, 81, 75, 110,
             235, 80, 228, 14, 238, 76, 128, 139, 81,
@@ -1746,13 +1748,12 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         ];
 
         let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
-
         let (p2p_certificate, private_key) = test_p2p_identity();
 
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
         rng.fill_bytes(&mut negoex_random);
 
-        let mut pku2u_server = Pku2u {
+        let server = Pku2u {
             mode: Pku2uMode::Server,
             config: Pku2uConfig {
                 p2p_certificate: p2p_certificate.clone(),
@@ -1793,14 +1794,14 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
         let mut negoex_random = [0; RANDOM_ARRAY_SIZE];
         rng.try_fill_bytes(&mut negoex_random).unwrap();
 
-        let mut pku2u_client = Pku2u {
+        let client = Pku2u {
             mode: Pku2uMode::Client,
             config: Pku2uConfig {
                 p2p_certificate: p2p_certificate.clone(),
                 private_key: private_key.into(),
                 client_hostname: "hostname".into(),
                 additional_credentials: Vec::new(),
-                trusted_client_certificates: vec![p2p_certificate.clone()],
+                trusted_client_certificates: vec![p2p_certificate],
                 trusted_server_certificates: Vec::new(),
             },
             state: Pku2uState::Final,
@@ -1830,6 +1831,32 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             negoex_random,
             ticket_encryption_key: None,
         };
+
+        (client, server)
+    }
+
+    #[test]
+    fn verify_signature_rejects_invalid_sequence_number() {
+        let (mut client, mut server) = minimal_pku2u_pair();
+
+        let mut signature = vec![0; 64];
+        let mut signed_data = b"signed Pku2u message".to_vec();
+        let mut message = [
+            SecurityBufferRef::token_buf(&mut signature),
+            SecurityBufferRef::data_buf(&mut signed_data),
+        ];
+
+        server.make_signature(0, &mut message, 42).unwrap();
+
+        assert_eq!(
+            client.verify_signature(&mut message, 7).unwrap_err().error_type,
+            ErrorKind::InvalidToken
+        );
+    }
+
+    #[test]
+    fn stream_buffer_decryption() {
+        let (mut pku2u_client, mut pku2u_server) = minimal_pku2u_pair();
 
         assert_eq!(PKG_NAME, "pku2u");
         assert_eq!(PACKAGE_INFO.rpc_id, 31);
