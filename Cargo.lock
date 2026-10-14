@@ -2049,9 +2049,9 @@ dependencies = [
 
 [[package]]
 name = "picky-krb"
-version = "0.12.5"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e416cdfdfd3f05cddfa7bced8896fd760597616602a87b060776bedf4ce3cde5"
+checksum = "4a272e7c4191fbb5ea7e0b34f47208804d47a6f748344351ba9229b0e5a604ed"
 dependencies = [
  "aes",
  "block-padding",
