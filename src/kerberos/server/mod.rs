@@ -8,7 +8,10 @@ use std::time::Duration;
 use cache::AuthenticatorCacheRecord;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
-use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+use picky_asn1::wrapper::{
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1,
+    Optional,
+};
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
@@ -16,6 +19,7 @@ use picky_krb::gss_api::MechTypeList;
 use picky_krb::messages::{ApRep, ApReq, TgtReq};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
+use serde::Deserialize;
 use time::OffsetDateTime;
 
 use self::cache::AuthenticatorsCache;
@@ -140,6 +144,44 @@ impl ServerProperties {
     }
 }
 
+/// `TGT-REQ` with the optional `server-realm`, which `picky_krb::messages::TgtReq` does not model.
+///
+/// ```not_rust
+/// TGT-REQ ::= SEQUENCE {
+///     pvno[0]         INTEGER,
+///     msg-type[1]     INTEGER,
+///     server-name[2]  PrincipalName OPTIONAL,
+///     server-realm[3] Realm OPTIONAL
+/// }
+/// ```
+///
+/// Windows sends the realm. As in `TgtReq`, the server name is required here.
+/// `decode_krb_message` rejects trailing bytes, so decoding it as a bare `TgtReq` fails with `InvalidData`.
+/// The realm is ignored, the service name identifies the target.
+///
+/// The structure is defined in [draft-ietf-krb-wg-user2user][user2user].
+///
+/// [user2user]: https://datatracker.ietf.org/doc/html/draft-ietf-krb-wg-user2user
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, serde::Serialize))]
+struct TgtReqWithRealm {
+    pvno: ExplicitContextTag0<IntegerAsn1>,
+    msg_type: ExplicitContextTag1<IntegerAsn1>,
+    server_name: ExplicitContextTag2<PrincipalName>,
+    #[serde(default)]
+    _server_realm: Optional<Option<ExplicitContextTag3<KerberosStringAsn1>>>,
+}
+
+impl From<TgtReqWithRealm> for TgtReq {
+    fn from(tgt_req: TgtReqWithRealm) -> Self {
+        Self {
+            pvno: tgt_req.pvno,
+            msg_type: tgt_req.msg_type,
+            server_name: tgt_req.server_name,
+        }
+    }
+}
+
 /// Performs one authentication step.
 ///
 /// The user should call this function until it returns `SecurityStatus::Ok`.
@@ -156,10 +198,12 @@ pub async fn accept_security_context(
 
     if server.state == KerberosState::TgtExchange {
         if let Ok(tgt_req) = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
-            picky_asn1_der::from_bytes::<TgtReq>(&input_token.buffer).map_err(Error::from)
+            picky_asn1_der::from_bytes::<TgtReqWithRealm>(&input_token.buffer).map_err(Error::from)
         } else {
-            decode_krb_message::<TgtReq>(&input_token.buffer, TGT_REQ_TOKEN_ID)
-        } {
+            decode_krb_message::<TgtReqWithRealm>(&input_token.buffer, TGT_REQ_TOKEN_ID)
+        }
+        .map(TgtReq::from)
+        {
             // The first token is TGT_REQ. It means that the client wants to perform Kerberos U2U.
 
             if !builder
@@ -543,4 +587,127 @@ pub async fn accept_security_context(
         flags: ServerResponseFlags::empty(),
         expiry: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
+    use url::Url;
+
+    use super::*;
+    use crate::generator::GeneratorState;
+    use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
+    use crate::kerberos::test_data::{TGT_REQ_TOKEN_WITH_REALM, fake_server};
+    use crate::{AuthIdentity, Credentials, DataRepresentation, Sspi, SspiImpl, Username};
+
+    fn password_user() -> CredentialsBuffers {
+        CredentialsBuffers::try_from(Credentials::AuthIdentity(AuthIdentity {
+            username: Username::new_down_level_logon_name("user", "EXAMPLE").unwrap(),
+            password: "password".to_owned().into(),
+        }))
+        .unwrap()
+    }
+
+    fn tgt_req(name_type: u8, host: &str, realm: Option<&str>) -> TgtReqWithRealm {
+        let component = |value: &str| KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap());
+
+        TgtReqWithRealm {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![16])),
+            server_name: ExplicitContextTag2::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    component("TERMSRV"),
+                    component(host),
+                ])),
+            }),
+            _server_realm: Optional::from(realm.map(|realm| ExplicitContextTag3::from(component(realm)))),
+        }
+    }
+
+    /// Feeds `token` to a U2U acceptor as its first token.
+    ///
+    /// Returns `Ok` when the acceptor got as far as the AS exchange for its own TGT.
+    fn accept_first_token(
+        user: CredentialsBuffers,
+        token: &[u8],
+        context_requirements: ServerRequestFlags,
+    ) -> Result<()> {
+        let mut kerberos = fake_server();
+        kerberos.state = KerberosState::TgtExchange;
+        kerberos.kdc_url = Some(Url::parse("tcp://192.168.1.103:88").unwrap());
+        kerberos.server.as_mut().unwrap().user = Some(user);
+
+        let mut credentials_handle: Option<CredentialsBuffers> = None;
+        let mut input = [SecurityBuffer::new(token.to_vec(), BufferType::Token)];
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let builder = kerberos
+            .accept_security_context()
+            .with_credentials_handle(&mut credentials_handle)
+            .with_context_requirements(context_requirements)
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_input(&mut input)
+            .with_output(&mut output);
+        let mut generator = SspiImpl::accept_security_context_impl(&mut kerberos, builder)?;
+
+        match generator.start() {
+            GeneratorState::Suspended(_) => Ok(()),
+            GeneratorState::Completed(Err(error)) => Err(error),
+            GeneratorState::Completed(Ok(_)) => Err(Error::new(ErrorKind::InternalError, "the exchange completed")),
+        }
+    }
+
+    #[test]
+    fn a_tgt_req_with_a_server_realm_is_accepted() {
+        accept_first_token(
+            password_user(),
+            TGT_REQ_TOKEN_WITH_REALM,
+            ServerRequestFlags::USE_SESSION_KEY,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_tgt_req_without_a_server_realm_is_accepted() {
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_INST, "VM1.example.com", None),
+        )
+        .unwrap();
+
+        accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+    }
+
+    #[test]
+    fn a_dce_style_tgt_req_with_a_server_realm_is_accepted() {
+        let token = picky_asn1_der::to_vec(&tgt_req(NT_SRV_INST, "VM1.example.com", Some("EXAMPLE.COM"))).unwrap();
+
+        accept_first_token(
+            password_user(),
+            &token,
+            ServerRequestFlags::USE_SESSION_KEY | ServerRequestFlags::USE_DCE_STYLE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_server_realm_is_decoded_next_to_the_server_name() {
+        let decoded = decode_krb_message::<TgtReqWithRealm>(TGT_REQ_TOKEN_WITH_REALM, TGT_REQ_TOKEN_ID).unwrap();
+
+        assert_eq!(decoded, tgt_req(NT_SRV_INST, "VM1.example.com", Some("EXAMPLE.COM")));
+    }
+
+    #[test]
+    fn a_tgt_req_without_a_server_name_is_rejected() {
+        // Only `pvno` and `msg-type`.
+        let token = [
+            0x60, 0x1a, 0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02, 0x03, 0x04, 0x00, 0x30, 0x0a,
+            0xa0, 0x03, 0x02, 0x01, 0x05, 0xa1, 0x03, 0x02, 0x01, 0x10,
+        ];
+
+        let error = accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
 }
