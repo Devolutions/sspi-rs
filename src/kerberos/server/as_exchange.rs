@@ -33,7 +33,10 @@ pub(crate) async fn request_tgt(
             )
         })?
         .service_name;
-    if tgt_req.server_name.0 != *service_name {
+    // [6.2.  Principal Names](https://www.rfc-editor.org/rfc/rfc4120#section-6.2)
+    // Only the components identify the service, `name-type` is a hint.
+    // MIT-based clients such as FreeRDP send `NT-SRV-HST` while the acceptor is configured with `NT-SRV-INST`.
+    if tgt_req.server_name.0.name_string.0 != service_name.name_string.0 {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             format!(

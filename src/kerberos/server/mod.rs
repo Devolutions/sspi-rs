@@ -592,6 +592,7 @@ pub async fn accept_security_context(
 #[cfg(test)]
 mod tests {
     use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
+    use picky_krb::constants::types::NT_SRV_HST;
     use url::Url;
 
     use super::*;
@@ -696,6 +697,34 @@ mod tests {
         let decoded = decode_krb_message::<TgtReqWithRealm>(TGT_REQ_TOKEN_WITH_REALM, TGT_REQ_TOKEN_ID).unwrap();
 
         assert_eq!(decoded, tgt_req(NT_SRV_INST, "VM1.example.com", Some("EXAMPLE.COM")));
+    }
+
+    #[test]
+    fn the_name_type_of_the_service_name_is_ignored() {
+        // MIT-based clients use `NT-SRV-HST`, the acceptor is configured with `NT-SRV-INST`.
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_HST, "VM1.example.com", None),
+        )
+        .unwrap();
+
+        accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+    }
+
+    #[test]
+    fn a_tgt_req_for_another_service_is_rejected() {
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_INST, "other.example.com", None),
+        )
+        .unwrap();
+
+        let error = accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+        assert!(error.description.contains("invalid ticket service name"), "{error}");
     }
 
     #[test]
