@@ -859,6 +859,44 @@ fn spnego_kerberos_1() {
     assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
 }
 
+/// The AS exchange must work with a KDC that tags the AS-REP enc-part as EncTGSRepPart, as MIT Kerberos does.
+#[test]
+fn spnego_kerberos_as_rep_enc_part_tagged_as_tgs_rep() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+    let package_list = Some(String::from("kerberos,!ntlm"));
+
+    let (client, _server) = run_spnego(
+        client_flags,
+        server_flags,
+        3,
+        |kdc| {
+            Box::new(NetworkClientMock {
+                kdc: kdc.with_as_rep_enc_part_tagged_as_tgs_rep(),
+            })
+        },
+        package_list.clone(),
+        package_list,
+        SpnegoKerberosContextValidator,
+    );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    assert!(matches!(
+        negotiate.negotiated_protocol(),
+        NegotiatedProtocol::Kerberos(_)
+    ));
+}
+
 #[test]
 fn spnego_kerberos_dce_style() {
     let client_flags = ClientRequestFlags::MUTUAL_AUTH
