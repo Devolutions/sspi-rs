@@ -76,6 +76,7 @@ fn secbuffer_readonly_with_checksum() {
         #[cfg(feature = "scard")]
         dh_parameters: None,
         krb5_user_to_user: false,
+        client_principal: None,
         server: Some(Box::new(test_data::fake_server_properties())),
         remote_seq_number: 0,
         clock_offset: time::Duration::ZERO,
@@ -258,6 +259,7 @@ fn integrity_only_wrap_decryption() {
         #[cfg(feature = "scard")]
         dh_parameters: None,
         krb5_user_to_user: false,
+        client_principal: None,
         server: None,
         remote_seq_number: 0,
         clock_offset: time::Duration::ZERO,

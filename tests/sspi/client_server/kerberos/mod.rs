@@ -711,18 +711,30 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
+    let mut spnego_server = SspiContext::Negotiate(spnego_server);
+
     run_kerberos(
         &mut SspiContext::Negotiate(spnego_client),
         &mut client_credentials_handle,
         client_flags,
         &target_name,
-        &mut SspiContext::Negotiate(spnego_server),
+        &mut spnego_server,
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
         3,
         SpnegoKerberosContextValidator,
     );
+
+    // The principal as the ticket names it.
+    let SspiContext::Negotiate(negotiate) = &spnego_server else {
+        panic!("server must be a Negotiate context");
+    };
+    let client_principal = negotiate
+        .client_principal()
+        .expect("the acceptor must report the client principal");
+    assert_eq!(client_principal.components(), ["pw13"]);
+    assert_eq!(client_principal.realm(), "EXAMPLE.COM");
 }
 
 fn run_spnego(

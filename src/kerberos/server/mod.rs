@@ -155,6 +155,42 @@ impl ServerProperties {
     }
 }
 
+/// The client principal authenticated by a Kerberos acceptor, as named by the ticket.
+///
+/// The [`Username`] from [`Sspi::query_context_names`](crate::Sspi::query_context_names) can lose part of the
+/// principal: it keeps the first name component and lowercases the realm. Consumers that authorize on the principal,
+/// or map it with case-sensitive rules such as MIT Kerberos' `auth_to_local`, need the original.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPrincipal {
+    components: Vec<String>,
+    realm: String,
+}
+
+impl ClientPrincipal {
+    pub(crate) fn from_ticket(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> Self {
+        Self {
+            components: cname
+                .name_string
+                .0
+                .0
+                .iter()
+                .map(|component| component.to_string())
+                .collect(),
+            realm: crealm.0.to_string(),
+        }
+    }
+
+    /// The name components in order: `["alice", "admin"]` for `alice/admin@EXAMPLE.COM`.
+    pub fn components(&self) -> &[String] {
+        &self.components
+    }
+
+    /// The realm, in the ticket's case.
+    pub fn realm(&self) -> &str {
+        &self.realm
+    }
+}
+
 /// `TGT-REQ` with the optional `server-realm`, which `picky_krb::messages::TgtReq` does not model.
 ///
 /// ```not_rust
@@ -446,6 +482,11 @@ pub async fn accept_security_context(
                 debug!("ApReq Ticket and Authenticator are valid!");
 
                 server_data.client = Some(client_upn(&cname.0, &crealm.0)?);
+                // The ticket was issued by the KDC. The authenticator was written by the client.
+                server.client_principal = Some(ClientPrincipal::from_ticket(
+                    &ticket_enc_part.0.cname.0,
+                    &ticket_enc_part.0.crealm.0,
+                ));
 
                 let ap_options_bytes = ap_req.0.ap_options.0.0.as_bytes();
                 // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
@@ -741,6 +782,25 @@ mod tests {
     }
 
     #[test]
+    fn the_client_principal_is_available_only_once_the_context_is_established() {
+        let cname = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
+                IA5String::from_string("alice".to_owned()).unwrap(),
+            )])),
+        };
+        let crealm = KerberosStringAsn1::from(IA5String::from_string("EXAMPLE.COM".to_owned()).unwrap());
+        let mut kerberos = fake_server();
+        kerberos.client_principal = Some(ClientPrincipal::from_ticket(&cname, &crealm));
+
+        kerberos.state = KerberosState::ApExchange;
+        assert!(kerberos.client_principal().is_none());
+
+        kerberos.state = KerberosState::Final;
+        assert_eq!(kerberos.client_principal().unwrap().components(), ["alice"]);
+    }
+
+    #[test]
     fn a_keytab_service_principal_is_sent_to_the_kdc_as_an_nt_principal_with_two_components() {
         let keytab = CredentialsBuffers::Keytab(KeytabIdentity {
             principal: Username::new_down_level_logon_name("TERMSRV/host.example.com", "EXAMPLE.COM").unwrap(),
@@ -755,6 +815,23 @@ mod tests {
         let cname = as_req.0.req_body.0.cname.0.unwrap().0;
         assert_eq!(cname.name_type.0.0, vec![NT_PRINCIPAL]);
         assert_eq!(cname.name_string.0.0.len(), 2);
+    }
+
+    #[test]
+    fn a_client_principal_keeps_every_component_and_the_case_of_the_realm() {
+        let cname = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                KerberosStringAsn1::from(IA5String::from_string("Alice".to_owned()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string("admin".to_owned()).unwrap()),
+            ])),
+        };
+        let crealm = KerberosStringAsn1::from(IA5String::from_string("Example.COM".to_owned()).unwrap());
+
+        let principal = ClientPrincipal::from_ticket(&cname, &crealm);
+
+        assert_eq!(principal.components(), ["Alice", "admin"]);
+        assert_eq!(principal.realm(), "Example.COM");
     }
 
     #[test]

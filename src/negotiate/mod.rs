@@ -19,6 +19,7 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
 use crate::kdc::detect_kdc_url;
+use crate::kerberos::ClientPrincipal;
 use crate::kerberos::client::principal::{get_client_principal_name, get_client_principal_realm};
 use crate::ntlm::NtlmConfig;
 #[allow(unused)]
@@ -564,6 +565,26 @@ impl Negotiate {
         &self.protocol
     }
 
+    /// Returns the client principal authenticated by a Kerberos acceptor, as named by the ticket.
+    ///
+    /// `None` when the negotiated protocol is not Kerberos, and until the `mechListMIC` exchange is complete when
+    /// one is needed. Unlike [`Kerberos::client_principal`](crate::Kerberos::client_principal), it is not available
+    /// for a client that SPNEGO rejected after the Kerberos context was established.
+    ///
+    /// This does not authorize the client: the identities of the acceptor are checked only when a `mechListMIC`
+    /// is exchanged, against a name that keeps the first name component only. Authorize on this value.
+    pub fn client_principal(&self) -> Option<&ClientPrincipal> {
+        let NegotiatedProtocol::Kerberos(kerberos) = &self.protocol else {
+            return None;
+        };
+
+        if self.mic_needed && !self.mic_verified {
+            return None;
+        }
+
+        kerberos.client_principal()
+    }
+
     fn is_protocol_ntlm(&self) -> bool {
         matches!(&self.protocol, NegotiatedProtocol::Ntlm(_))
     }
@@ -918,7 +939,11 @@ impl<'a> Negotiate {
 
 #[cfg(test)]
 mod tests {
+    use picky_asn1::restricted_string::IA5String;
+    use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+    use picky_krb::constants::types::NT_PRINCIPAL;
     use picky_krb::crypto::CipherSuite;
+    use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
 
     use super::*;
     use crate::kerberos::test_data::fake_server;
@@ -961,6 +986,50 @@ mod tests {
             username: Username::new_down_level_logon_name(account_name, "EXAMPLE").unwrap(),
             password: "password".to_owned().into(),
         }
+    }
+
+    fn principal() -> ClientPrincipal {
+        let cname = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
+                IA5String::from_string("user".to_owned()).unwrap(),
+            )])),
+        };
+        let crealm = KerberosStringAsn1::from(IA5String::from_string("EXAMPLE.COM".to_owned()).unwrap());
+
+        ClientPrincipal::from_ticket(&cname, &crealm)
+    }
+
+    fn with_principal(mut negotiate: Negotiate, mic_needed: bool, mic_verified: bool) -> Negotiate {
+        let NegotiatedProtocol::Kerberos(kerberos) = &mut negotiate.protocol else {
+            panic!("a Kerberos acceptor is expected");
+        };
+        kerberos.client_principal = Some(principal());
+        negotiate.mic_needed = mic_needed;
+        negotiate.mic_verified = mic_verified;
+
+        negotiate
+    }
+
+    #[test]
+    fn the_client_principal_is_withheld_until_the_mic_is_verified() {
+        let negotiate = with_principal(kerberos_acceptor(Vec::new(), keytab()), true, false);
+
+        assert!(negotiate.client_principal().is_none());
+    }
+
+    #[test]
+    fn the_client_principal_is_available_once_the_mic_is_verified() {
+        let negotiate = with_principal(kerberos_acceptor(Vec::new(), keytab()), true, true);
+
+        assert_eq!(negotiate.client_principal().unwrap().components(), ["user"]);
+    }
+
+    #[test]
+    fn the_client_principal_is_available_when_no_mic_is_needed() {
+        let negotiate = with_principal(kerberos_acceptor(Vec::new(), keytab()), false, false);
+
+        assert_eq!(negotiate.client_principal().unwrap().realm(), "EXAMPLE.COM");
     }
 
     #[test]
