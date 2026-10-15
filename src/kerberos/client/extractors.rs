@@ -11,6 +11,7 @@ use picky_krb::data_types::{EncApRepPart, EncKrbPrivPart, EtypeInfo2, PaData, Pr
 use picky_krb::messages::{
     ApRep, AsRep, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KrbError, KrbPriv, TgsRep, TgtRep,
 };
+use zeroize::Zeroizing;
 
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{Error, ErrorKind, Result, Secret};
@@ -95,17 +96,22 @@ pub(crate) fn decrypt_as_rep(as_rep: &AsRep, key: &[u8], enc_params: &Encryption
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
         .cipher();
 
-    let enc_data = cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?;
+    let enc_data = Zeroizing::new(cipher.decrypt(key, AS_REP_ENC, &as_rep.0.enc_part.0.cipher.0.0)?);
 
-    // AS-REP specifies EncASRepPart (APPLICATION 25), but MIT uses EncTGSRepPart
-    // (APPLICATION 26) for backwards compatibility, as some other implementations
-    // do. RFC 4120 section 5.4.2 permits accepting both: "In the interest of
-    // compatibility, implementors MAY relax the check on the tag number of the
-    // decrypted ENC-PART."
-    Ok(match picky_asn1_der::from_bytes::<EncAsRepPart>(&enc_data) {
-        Ok(as_rep_enc_part) => as_rep_enc_part.0,
-        Err(_) => picky_asn1_der::from_bytes::<EncTgsRepPart>(&enc_data)?.0,
-    })
+    // MIT Kerberos tags the enc-part EncTGSRepPart (APPLICATION 26) instead of EncASRepPart (APPLICATION 25).
+    // [5.4.2.  KRB_KDC_REP Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2)
+    // Clients may accept either tag, and both wrap the same EncKDCRepPart.
+    let enc_kdc_rep_part = match picky_asn1_der::from_bytes::<EncAsRepPart>(&enc_data) {
+        Ok(enc_part) => enc_part.0,
+        // Report the error for the expected tag.
+        Err(error) => {
+            picky_asn1_der::from_bytes::<EncTgsRepPart>(&enc_data)
+                .map_err(|_| error)?
+                .0
+        }
+    };
+
+    Ok(enc_kdc_rep_part)
 }
 
 /// Extracts a session from the [AsRep].
