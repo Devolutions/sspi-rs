@@ -218,6 +218,8 @@ pub struct Negotiate {
     /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
     /// > then the MIC token exchange is OPTIONAL.
     mic_needed: bool,
+    /// The caller authorizes the clients that Kerberos authenticates, so there is no identity to look for.
+    authorizes_externally: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -275,6 +277,20 @@ impl Negotiate {
         Self::new(config, NegotiateMode::Server(auth_data))
     }
 
+    /// Creates a server that does not authorize the clients it authenticates with Kerberos.
+    ///
+    /// A server created with [`Negotiate::new_server`] and no identities rejects every client at the `mechListMIC`
+    /// exchange, since it looks for the client among the identities.
+    /// This server accepts any principal that presents a valid ticket for the service, including principals of
+    /// other realms, so the caller must authorize [`Negotiate::client_principal`] itself.
+    /// It is meant for an acceptor that holds only a keytab.
+    pub fn new_server_authorizing_externally(config: NegotiateConfig) -> Result<Self> {
+        let mut negotiate = Self::new(config, NegotiateMode::Server(Vec::new()))?;
+        negotiate.authorizes_externally = true;
+
+        Ok(negotiate)
+    }
+
     fn new(config: NegotiateConfig, mode: NegotiateMode) -> Result<Self> {
         let mut protocol = if mode.is_client() {
             config.protocol_config.new_instance()?
@@ -299,6 +315,7 @@ impl Negotiate {
             mech_types: Default::default(),
             mic_verified: false,
             mic_needed: true,
+            authorizes_externally: false,
         })
     }
 
@@ -339,6 +356,11 @@ impl Negotiate {
             .collect();
 
         if candidates.is_empty() {
+            if self.authorizes_externally && self.protocol.is_kerberos() {
+                // This skips the authorization of the client: the caller authorizes it, from `client_principal`.
+                return Ok(());
+            }
+
             return Err(Error::new(
                 ErrorKind::NoCredentials,
                 "user credentials are not found on the server side",
@@ -891,5 +913,90 @@ impl<'a> Negotiate {
                 "cannot change password for this protocol",
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::crypto::CipherSuite;
+
+    use super::*;
+    use crate::kerberos::test_data::fake_server;
+    use crate::{AuthIdentityBuffers, KeytabIdentity, Secret, Username};
+
+    fn kerberos_acceptor(identities: Vec<AuthIdentity>, user: Option<CredentialsBuffers>) -> Negotiate {
+        let mut protocol = fake_server();
+        let server = protocol.server.as_mut().unwrap();
+        server.client = Some(Username::new_down_level_logon_name("user", "EXAMPLE").unwrap());
+        server.user = user;
+
+        Negotiate {
+            state: NegotiateState::default(),
+            protocol: NegotiatedProtocol::Kerberos(protocol),
+            package_list: PackageListConfig {
+                ntlm: true,
+                kerberos: true,
+                pku2u: false,
+            },
+            auth_identity: None,
+            client_computer_name: "acceptor".to_owned(),
+            mode: NegotiateMode::Server(identities),
+            mech_types: Vec::new(),
+            mic_verified: false,
+            mic_needed: true,
+            authorizes_externally: false,
+        }
+    }
+
+    fn keytab() -> Option<CredentialsBuffers> {
+        Some(CredentialsBuffers::Keytab(KeytabIdentity {
+            principal: Username::new_upn("host", "EXAMPLE.COM").unwrap(),
+            key: Secret::from(vec![0; 32]),
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
+        }))
+    }
+
+    fn identity(account_name: &str) -> AuthIdentity {
+        AuthIdentity {
+            username: Username::new_down_level_logon_name(account_name, "EXAMPLE").unwrap(),
+            password: "password".to_owned().into(),
+        }
+    }
+
+    #[test]
+    fn an_acceptor_that_authorizes_externally_does_not_need_an_identity() {
+        let mut negotiate = kerberos_acceptor(Vec::new(), keytab());
+        negotiate.authorizes_externally = true;
+
+        assert!(negotiate.set_auth_identity().is_ok());
+    }
+
+    #[test]
+    fn an_acceptor_without_identities_rejects_the_user() {
+        let password = Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers::default()));
+
+        for user in [None, password, keytab()] {
+            let error = kerberos_acceptor(Vec::new(), user).set_auth_identity().unwrap_err();
+
+            assert_eq!(error.error_type, ErrorKind::NoCredentials);
+        }
+    }
+
+    #[test]
+    fn a_kerberos_acceptor_accepts_a_listed_user() {
+        assert!(
+            kerberos_acceptor(vec![identity("user")], keytab())
+                .set_auth_identity()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_keytab_acceptor_with_identities_rejects_an_unlisted_user() {
+        let error = kerberos_acceptor(vec![identity("someone-else")], keytab())
+            .set_auth_identity()
+            .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::NoCredentials);
     }
 }

@@ -63,6 +63,17 @@ pub struct ServerProperties {
     /// acceptors that key off the whole keytab.
     pub additional_service_keys: Vec<(PrincipalName, Secret<Vec<u8>>)>,
     /// User credentials on whose behalf the TGT ticket will be requested.
+    ///
+    /// Keytab credentials let a keytab-only acceptor complete Kerberos user-to-user authentication.
+    ///
+    /// Create the `Negotiate` server with `Negotiate::new_server_authorizing_externally` so that it does not look
+    /// for the client among identities, and authorize the principal from `Negotiate::client_principal`, which keeps
+    /// every name component and the realm.
+    /// A server with an identities list matches the client against a name that keeps only the first component,
+    /// and only when a `mechListMIC` is exchanged.
+    ///
+    /// A service principal must be given in the down-level form (`TERMSRV/host`), a UPN is sent as an `NT-ENTERPRISE` name.
+    /// The key should be the AES256 key of the principal, the first encryption type the AS-REQ offers.
     pub user: Option<CredentialsBuffers>,
     /// Username of the authenticated client.
     ///
@@ -592,14 +603,16 @@ pub async fn accept_security_context(
 #[cfg(test)]
 mod tests {
     use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
-    use picky_krb::constants::types::NT_SRV_HST;
+    use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_HST};
+    use picky_krb::crypto::CipherSuite;
+    use picky_krb::messages::AsReq;
     use url::Url;
 
     use super::*;
-    use crate::generator::GeneratorState;
+    use crate::generator::{GeneratorState, NetworkRequest};
     use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
     use crate::kerberos::test_data::{TGT_REQ_TOKEN_WITH_REALM, fake_server};
-    use crate::{AuthIdentity, Credentials, DataRepresentation, Sspi, SspiImpl, Username};
+    use crate::{AuthIdentity, Credentials, DataRepresentation, KeytabIdentity, Sspi, SspiImpl, Username};
 
     fn password_user() -> CredentialsBuffers {
         CredentialsBuffers::try_from(Credentials::AuthIdentity(AuthIdentity {
@@ -628,12 +641,12 @@ mod tests {
 
     /// Feeds `token` to a U2U acceptor as its first token.
     ///
-    /// Returns `Ok` when the acceptor got as far as the AS exchange for its own TGT.
+    /// Returns the request for the KDC when the acceptor got as far as the AS exchange for its own TGT.
     fn accept_first_token(
         user: CredentialsBuffers,
         token: &[u8],
         context_requirements: ServerRequestFlags,
-    ) -> Result<()> {
+    ) -> Result<NetworkRequest> {
         let mut kerberos = fake_server();
         kerberos.state = KerberosState::TgtExchange;
         kerberos.kdc_url = Some(Url::parse("tcp://192.168.1.103:88").unwrap());
@@ -652,7 +665,7 @@ mod tests {
         let mut generator = SspiImpl::accept_security_context_impl(&mut kerberos, builder)?;
 
         match generator.start() {
-            GeneratorState::Suspended(_) => Ok(()),
+            GeneratorState::Suspended(request) => Ok(request),
             GeneratorState::Completed(Err(error)) => Err(error),
             GeneratorState::Completed(Ok(_)) => Err(Error::new(ErrorKind::InternalError, "the exchange completed")),
         }
@@ -725,6 +738,36 @@ mod tests {
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
         assert!(error.description.contains("invalid ticket service name"), "{error}");
+    }
+
+    #[test]
+    fn a_keytab_service_principal_is_sent_to_the_kdc_as_an_nt_principal_with_two_components() {
+        let keytab = CredentialsBuffers::Keytab(KeytabIdentity {
+            principal: Username::new_down_level_logon_name("TERMSRV/host.example.com", "EXAMPLE.COM").unwrap(),
+            key: Secret::from(vec![0; 32]),
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
+        });
+        let request =
+            accept_first_token(keytab, TGT_REQ_TOKEN_WITH_REALM, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+
+        // The first four bytes are the length of the message.
+        let as_req: AsReq = picky_asn1_der::from_bytes(&request.data[4..]).unwrap();
+        let cname = as_req.0.req_body.0.cname.0.unwrap().0;
+        assert_eq!(cname.name_type.0.0, vec![NT_PRINCIPAL]);
+        assert_eq!(cname.name_string.0.0.len(), 2);
+    }
+
+    #[test]
+    fn a_keytab_principal_without_a_realm_is_rejected() {
+        let keytab = CredentialsBuffers::Keytab(KeytabIdentity {
+            principal: Username::parse("host").unwrap(),
+            key: Secret::from(vec![0; 32]),
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
+        });
+        let error =
+            accept_first_token(keytab, TGT_REQ_TOKEN_WITH_REALM, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert!(error.description.contains("keytab principal has no realm"), "{error}");
     }
 
     #[test]
