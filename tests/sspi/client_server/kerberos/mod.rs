@@ -671,7 +671,13 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
-        ticket_decryption_key: Some(ticket_decryption_key.into()),
+        // A keytab-only acceptor has no key for its service ticket: U2U uses the session key of its own TGT.
+        ticket_decryption_key: match acceptor_credentials {
+            AcceptorCredentials::Keytab => None,
+            AcceptorCredentials::Password | AcceptorCredentials::PasswordUnlistedUser => {
+                Some(ticket_decryption_key.into())
+            }
+        },
         service_name: target_service_name,
         additional_service_keys: Vec::new(),
         user: Some(server_credentials.clone()),
