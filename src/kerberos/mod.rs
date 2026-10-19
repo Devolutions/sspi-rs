@@ -767,8 +767,18 @@ impl SspiEx for Kerberos {
     }
 
     fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
+        // The sequence number verification is only enforced for the acceptor side.
+        // RFC 1964 §1.2.1 / RFC 4121 make sequence-number checking optional and tied to
+        // the `SEQUENCE_DETECT`/`REPLAY_DETECT` flags negotiated at context establishment.
+        // This client does not negotiate those flags.
+        // Additionally, Windows acceptor signs the SPNEGO mechListMIC with sequence number 0
+        // regardless of the AP-REP sequence number, so enforcing this on the initiator side
+        // breaks interop with the Windows implementation.
+        let enforce_sequence_number = !self.is_client();
+
         utils::validate_mic_token(
             self.is_client(),
+            enforce_sequence_number,
             self.remote_seq_number.into(),
             token,
             &self.encryption_params,

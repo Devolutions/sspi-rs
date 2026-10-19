@@ -3,8 +3,8 @@ use picky_krb::crypto::CipherSuite;
 use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::gss_api::MicToken;
 
-use crate::kerberos::{EncryptionParams, KerberosConfig, KerberosState, test_data};
-use crate::{EncryptionFlags, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi, SspiEx};
+use crate::kerberos::{EncryptionParams, KerberosConfig, KerberosState, test_data, utils};
+use crate::{EncryptionFlags, ErrorKind, Kerberos, SecurityBufferFlags, SecurityBufferRef, Sspi, SspiEx};
 
 #[test]
 fn stream_buffer_decryption() {
@@ -325,4 +325,36 @@ fn aes128_subkey_mic_uses_subkey_size_with_aes256_ticket_enctype() {
     ];
 
     assert_mic_uses_aes_size(CipherSuite::Aes256CtsHmacSha196, AesSize::Aes128, &key);
+}
+
+#[test]
+fn initiator_accepts_mic_token_with_invalid_seq_number() {
+    let mut client = test_data::fake_client();
+    client.remote_seq_number = 10;
+
+    let data = b"SPNEGO mechTypes";
+    let sub_session_key = client.encryption_params.sub_session_key.clone().unwrap();
+    let mic_token = utils::generate_mic_token(false, 0, data.to_vec(), &sub_session_key, &AesSize::Aes256).unwrap();
+
+    client
+        .verify_mic_token(&mic_token, data, crate::private::Sealed)
+        .expect("MIC verification should succeed with seq number 0");
+}
+
+#[test]
+fn acceptor_rejects_mic_token_with_invalid_seq_number() {
+    let mut server = test_data::fake_server();
+    server.remote_seq_number = 10;
+
+    let data = b"SPNEGO mechTypes";
+    let sub_session_key = server.encryption_params.sub_session_key.clone().unwrap();
+    let mic_token = utils::generate_mic_token(true, 0, data.to_vec(), &sub_session_key, &AesSize::Aes256).unwrap();
+
+    assert_eq!(
+        server
+            .verify_mic_token(&mic_token, data, crate::private::Sealed)
+            .unwrap_err()
+            .error_type,
+        ErrorKind::InvalidToken
+    );
 }

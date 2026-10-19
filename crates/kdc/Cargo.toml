@@ -13,7 +13,7 @@ description = "A minimal Rust implementation of the KDC (Key Distribution Center
 picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 picky-asn1-der = "0.5"
 picky-asn1-x509 = "0.15"
-picky-krb = "0.12"
+picky-krb = "0.13"
 tracing = { version = "0.1", default-features = false }
 time = { version = "0.3", default-features = false }
 

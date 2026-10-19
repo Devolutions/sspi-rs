@@ -23,6 +23,7 @@ pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>>
 
 pub(crate) fn validate_mic_token(
     is_client: bool,
+    enforce_seq_number: bool,
     expected_seq_number: u64,
     raw_token: &[u8],
     params: &EncryptionParams,
@@ -33,7 +34,7 @@ pub(crate) fn validate_mic_token(
     let token = MicToken::decode(raw_token)?;
     let token_flags = token.flags;
 
-    if token.seq_num != expected_seq_number {
+    if enforce_seq_number && token.seq_num != expected_seq_number {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             format!(
