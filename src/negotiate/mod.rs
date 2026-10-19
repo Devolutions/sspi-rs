@@ -11,7 +11,7 @@ use std::sync::LazyLock;
 
 pub use config::{NegotiateConfig, ProtocolConfig};
 use picky::oids;
-use picky_krb::gss_api::MechType;
+use picky_krb::gss_api::{MechType, MechTypeList};
 use widestring::Utf16String;
 
 use crate::builders::{EmptyAcceptSecurityContext, FilledAcceptSecurityContext, FilledInitializeSecurityContext};
@@ -20,6 +20,7 @@ use crate::generator::{
 };
 use crate::kdc::detect_kdc_url;
 use crate::kerberos::client::principal::{get_client_principal_name, get_client_principal_realm};
+use crate::kerberos::config::KdcResolution;
 use crate::ntlm::NtlmConfig;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
@@ -352,7 +353,21 @@ impl Negotiate {
     fn negotiate_protocol_by_mech_type(&mut self, mech_type: &MechType, username: Option<&Utf16String>) -> Result<()> {
         let enabled_packages = self.package_list;
 
-        if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() {
+        let offered_mech_types: MechTypeList = picky_asn1_der::from_bytes(&self.mech_types).map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                "failed to decode the client advertised mechTypeList",
+            )
+        })?;
+
+        if !offered_mech_types.0.iter().any(|offered| offered.0 == mech_type.0) {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                "server selected a mechanism that was not offered by the client",
+            ));
+        }
+
+        if mech_type == &oids::ms_krb5() || mech_type == &oids::krb5() || mech_type == &oids::iakerb5() {
             if !enabled_packages.kerberos {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
@@ -366,7 +381,11 @@ impl Negotiate {
             if self.protocol_name() != kerberos::PKG_NAME {
                 let kerberos = Kerberos::new_client_from_config(KerberosConfig {
                     client_computer_name: self.client_computer_name.clone(),
-                    kdc_url: None,
+                    kdc_resolution: if mech_type == &oids::iakerb5() {
+                        KdcResolution::IAKerb
+                    } else {
+                        KdcResolution::KdcUrl(None)
+                    },
                 })?;
                 self.protocol = NegotiatedProtocol::Kerberos(kerberos);
 
@@ -458,7 +477,7 @@ impl Negotiate {
                 debug!("Negotiate: try Kerberos");
 
                 self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                    kdc_url: Some(host),
+                    kdc_resolution: KdcResolution::KdcUrl(Some(host)),
                     client_computer_name: self.client_computer_name.clone(),
                 })?);
             }
@@ -513,7 +532,7 @@ impl Negotiate {
                 if !is_ntlm {
                     let config = KerberosConfig {
                         client_computer_name: client_computer_name.to_owned(),
-                        kdc_url: None,
+                        kdc_resolution: KdcResolution::KdcUrl(None),
                     };
 
                     if is_client {
