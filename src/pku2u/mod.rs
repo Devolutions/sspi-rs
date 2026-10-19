@@ -1499,9 +1499,7 @@ impl SspiEx for Pku2u {
     }
 
     fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
-        // The sequence number verification is only enforced for the acceptor side.
-        let enforce_sequence_number = !self.is_client();
-        self.verify_mic(self.remote_gss_seq_number.into(), token, data, enforce_sequence_number)?;
+        self.verify_mic(self.remote_gss_seq_number.into(), token, data, true)?;
         self.remote_gss_seq_number = self.remote_gss_seq_number.wrapping_add(1);
         Ok(())
     }
@@ -1852,6 +1850,25 @@ xFnLp2UBrhxA9GYrpJ5i0onRmexQnTVSl5DDq07s+3dbr9YAKjrg9IDZYqLbdwP1
             client.verify_signature(&mut message, 7).unwrap_err().error_type,
             ErrorKind::InvalidToken
         );
+    }
+
+    #[test]
+    fn verify_mic_token_rejects_invalid_sequence_number() {
+        let (mut client, mut server) = minimal_pku2u_pair();
+        server.gss_seq_number = 7;
+
+        let mic = server
+            .generate_mic_token(b"SPNEGO mech list", crate::private::Sealed)
+            .unwrap();
+
+        assert_eq!(
+            client
+                .verify_mic_token(&mic, b"SPNEGO mech list", crate::private::Sealed)
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+        assert_eq!(client.remote_gss_seq_number, 0);
     }
 
     #[test]
