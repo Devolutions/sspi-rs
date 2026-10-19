@@ -7,9 +7,12 @@ use rand_core::SeedableRng as _;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::extract_encryption_params_from_as_rep;
 use crate::kerberos::client::generators::{
-    GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req_kdc_body, generate_nonce,
+    GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateKeytabPaDataOptions, generate_as_req_kdc_body,
+    generate_nonce,
 };
-use crate::kerberos::client::principal::{get_client_principal_name_type, get_client_principal_realm};
+use crate::kerberos::client::principal::{
+    ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
+};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::{TGT_SERVICE_NAME, client};
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
@@ -33,7 +36,10 @@ pub(crate) async fn request_tgt(
             )
         })?
         .service_name;
-    if tgt_req.server_name.0 != *service_name {
+    // [6.2.  Principal Names](https://www.rfc-editor.org/rfc/rfc4120#section-6.2)
+    // Only the components identify the service, `name-type` is a hint.
+    // MIT-based clients such as FreeRDP send `NT-SRV-HST` while the acceptor is configured with `NT-SRV-INST`.
+    if tgt_req.server_name.0.name_string.0 != service_name.name_string.0 {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             format!(
@@ -61,11 +67,22 @@ pub(crate) async fn request_tgt(
                 "smart card credentials are not supported in Kerberos application server",
             ));
         }
-        CredentialsBuffers::Keytab(_) => {
-            return Err(Error::new(
-                ErrorKind::UnsupportedPreAuth,
-                "keytab credentials are not supported in Kerberos application server",
-            ));
+        CredentialsBuffers::Keytab(keytab) => {
+            // Same derivation as the Kerberos client.
+            // A down-level name such as `TERMSRV/host.example.com` is sent as an `NT-PRINCIPAL` name
+            // with two components. A UPN is sent as an `NT-ENTERPRISE` name, so write a service
+            // principal in the down-level form.
+            let ClientPrincipalName {
+                name,
+                realm_domain,
+                name_type,
+            } = get_client_principal_name(&keytab.principal);
+            let realm = get_client_principal_realm(name, realm_domain);
+            if realm.is_empty() {
+                return Err(Error::new(ErrorKind::InvalidParameter, "keytab principal has no realm"));
+            }
+
+            (name.to_owned(), String::new(), realm, name_type)
         }
     };
     server.realm = Some(realm.clone());
@@ -102,12 +119,11 @@ pub(crate) async fn request_tgt(
                 "smart card credentials are not supported in Kerberos application server",
             ));
         }
-        CredentialsBuffers::Keytab(_) => {
-            return Err(Error::new(
-                ErrorKind::UnsupportedPreAuth,
-                "keytab credentials are not supported in Kerberos application server",
-            ));
-        }
+        CredentialsBuffers::Keytab(keytab) => AsReqPaDataOptions::Keytab(GenerateKeytabPaDataOptions {
+            key: keytab.key.clone(),
+            key_enctype: keytab.key_enctype.clone(),
+            with_pre_auth: false,
+        }),
     };
 
     let as_rep = client::as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
@@ -121,10 +137,23 @@ pub(crate) async fn request_tgt(
     let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
     server.encryption_params.encryption_type = Some(encryption_type);
 
-    let mut session_key_extractor = AsRepSessionKeyExtractor::AuthIdentity {
-        salt: &salt,
-        password: &password,
-        enc_params: &mut server.encryption_params,
+    let mut session_key_extractor = match credentials {
+        CredentialsBuffers::AuthIdentity(_) => AsRepSessionKeyExtractor::AuthIdentity {
+            salt: &salt,
+            password: &password,
+            enc_params: &server.encryption_params,
+        },
+        CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
+            key: keytab.key.as_ref(),
+            enc_params: &server.encryption_params,
+        },
+        #[cfg(feature = "scard")]
+        CredentialsBuffers::SmartCard(_) => {
+            return Err(Error::new(
+                ErrorKind::UnsupportedPreAuth,
+                "smart card credentials are not supported in Kerberos application server",
+            ));
+        }
     };
 
     let server_props = server.server.as_mut().ok_or_else(|| {

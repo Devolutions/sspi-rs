@@ -22,8 +22,8 @@ use sspi::kerberos::ServerProperties;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
-    Kerberos, KerberosConfig, KerberosServerConfig, Negotiate, NegotiateConfig, NegotiatedProtocol, SecurityBuffer,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
+    Kerberos, KerberosConfig, KerberosServerConfig, KeytabIdentity, Negotiate, NegotiateConfig, NegotiatedProtocol,
+    Secret, SecurityBuffer, SecurityStatus, ServerRequestFlags, Sspi, SspiImpl, Username,
 };
 use time::OffsetDateTime;
 use url::Url;
@@ -558,6 +558,35 @@ fn kerberos_skew_retry_is_bounded_and_does_not_retry_other_errors() {
 
 #[test]
 fn spnego_kerberos_u2u() {
+    run_spnego_kerberos_u2u(AcceptorCredentials::Password);
+}
+
+/// The acceptor holds only a key (as with a keytab) and has no password-based identity. It has to get its own TGT with
+/// an AS exchange that pre-authenticates with that key, and the `mechListMIC` exchange must not need a password
+/// identity.
+#[test]
+fn spnego_kerberos_u2u_keytab_acceptor() {
+    run_spnego_kerberos_u2u(AcceptorCredentials::Keytab);
+}
+
+/// An acceptor with a configured identities list still rejects a user that is not in it.
+#[test]
+#[should_panic(expected = "user credentials are not found on the server side")]
+fn spnego_kerberos_u2u_unlisted_user_is_rejected() {
+    run_spnego_kerberos_u2u(AcceptorCredentials::PasswordUnlistedUser);
+}
+
+#[derive(Clone, Copy)]
+enum AcceptorCredentials {
+    /// Like `Password`, but the identities list holds another user only.
+    PasswordUnlistedUser,
+    /// Password credentials; the user is in the identities list.
+    Password,
+    /// A key (keytab), and a server that leaves the authorization of the client to the caller.
+    Keytab,
+}
+
+fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -568,6 +597,15 @@ fn spnego_kerberos_u2u() {
     } = init_krb_environment();
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
+
+    // The key the KDC derives from the password, as a keytab entry would hold.
+    let user_key = {
+        let user = users.values().next().expect("the environment has one user");
+        CipherSuite::Aes256CtsHmacSha196
+            .cipher()
+            .generate_key_from_password(&user.password, user.salt.as_bytes())
+            .unwrap()
+    };
 
     let identity_1 = credentials.to_auth_identity().unwrap();
     let mut identity_2 = identity_1.clone();
@@ -603,6 +641,27 @@ fn spnego_kerberos_u2u() {
     ))
     .unwrap();
 
+    let (server_credentials, server_identities) = match acceptor_credentials {
+        AcceptorCredentials::Password => (
+            CredentialsBuffers::try_from(credentials.clone()).unwrap(),
+            vec![identity_1, identity_2],
+        ),
+        AcceptorCredentials::PasswordUnlistedUser => (
+            CredentialsBuffers::try_from(credentials.clone()).unwrap(),
+            vec![AuthIdentity {
+                username: Username::new_down_level_logon_name("someone-else", "EXAMPLE").unwrap(),
+                password: "unrelated".to_owned().into(),
+            }],
+        ),
+        AcceptorCredentials::Keytab => (
+            CredentialsBuffers::Keytab(KeytabIdentity {
+                principal: identity_1.username.clone(),
+                key: Secret::from(user_key),
+                key_enctype: CipherSuite::Aes256CtsHmacSha196,
+            }),
+            Vec::new(),
+        ),
+    };
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
     let server_config = KerberosConfig {
@@ -612,10 +671,16 @@ fn spnego_kerberos_u2u() {
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
-        ticket_decryption_key: Some(ticket_decryption_key.into()),
+        // A keytab-only acceptor has no key for its service ticket: U2U uses the session key of its own TGT.
+        ticket_decryption_key: match acceptor_credentials {
+            AcceptorCredentials::Keytab => None,
+            AcceptorCredentials::Password | AcceptorCredentials::PasswordUnlistedUser => {
+                Some(ticket_decryption_key.into())
+            }
+        },
         service_name: target_service_name,
         additional_service_keys: Vec::new(),
-        user: Some(credentials.clone()),
+        user: Some(server_credentials.clone()),
         client: None,
         authenticators_cache: HashSet::new(),
     };
@@ -623,18 +688,21 @@ fn spnego_kerberos_u2u() {
         kerberos_config: server_config,
         server_properties,
     };
-    let spnego_server = Negotiate::new_server(
-        NegotiateConfig::new(
-            Box::new(kerberos_server_config),
-            Some(String::from("kerberos,!ntlm")),
-            SERVER_COMPUTER_NAME.into(),
-        ),
-        vec![identity_1, identity_2],
-    )
+    let negotiate_config = NegotiateConfig::new(
+        Box::new(kerberos_server_config),
+        Some(String::from("kerberos,!ntlm")),
+        SERVER_COMPUTER_NAME.into(),
+    );
+    let spnego_server = match acceptor_credentials {
+        AcceptorCredentials::Keytab => Negotiate::new_server_authorizing_externally(negotiate_config),
+        AcceptorCredentials::Password | AcceptorCredentials::PasswordUnlistedUser => {
+            Negotiate::new_server(negotiate_config, server_identities)
+        }
+    }
     .unwrap();
 
-    let mut client_credentials_handle = Some(credentials.clone());
-    let mut server_credentials_handle = Some(credentials);
+    let mut client_credentials_handle = Some(credentials);
+    let mut server_credentials_handle = Some(server_credentials);
 
     let client_flags = ClientRequestFlags::MUTUAL_AUTH
         | ClientRequestFlags::INTEGRITY
@@ -649,18 +717,30 @@ fn spnego_kerberos_u2u() {
         | ServerRequestFlags::REPLAY_DETECT
         | ServerRequestFlags::CONFIDENTIALITY;
 
+    let mut spnego_server = SspiContext::Negotiate(spnego_server);
+
     run_kerberos(
         &mut SspiContext::Negotiate(spnego_client),
         &mut client_credentials_handle,
         client_flags,
         &target_name,
-        &mut SspiContext::Negotiate(spnego_server),
+        &mut spnego_server,
         &mut server_credentials_handle,
         server_flags,
         &mut network_client,
         3,
         SpnegoKerberosContextValidator,
     );
+
+    // The principal as the ticket names it.
+    let SspiContext::Negotiate(negotiate) = &spnego_server else {
+        panic!("server must be a Negotiate context");
+    };
+    let client_principal = negotiate
+        .client_principal()
+        .expect("the acceptor must report the client principal");
+    assert_eq!(client_principal.components(), ["pw13"]);
+    assert_eq!(client_principal.realm(), "EXAMPLE.COM");
 }
 
 fn run_spnego(
@@ -795,6 +875,44 @@ fn spnego_kerberos_1() {
     let negotiated_protocol = negotiate.negotiated_protocol();
 
     assert!(matches!(negotiated_protocol, NegotiatedProtocol::Kerberos(_)),);
+}
+
+/// The AS exchange must work with a KDC that tags the AS-REP enc-part as EncTGSRepPart, as MIT Kerberos does.
+#[test]
+fn spnego_kerberos_as_rep_enc_part_tagged_as_tgs_rep() {
+    let client_flags = ClientRequestFlags::MUTUAL_AUTH
+        | ClientRequestFlags::INTEGRITY
+        | ClientRequestFlags::SEQUENCE_DETECT
+        | ClientRequestFlags::REPLAY_DETECT
+        | ClientRequestFlags::CONFIDENTIALITY;
+    let server_flags = ServerRequestFlags::MUTUAL_AUTH
+        | ServerRequestFlags::INTEGRITY
+        | ServerRequestFlags::SEQUENCE_DETECT
+        | ServerRequestFlags::REPLAY_DETECT
+        | ServerRequestFlags::CONFIDENTIALITY;
+    let package_list = Some(String::from("kerberos,!ntlm"));
+
+    let (client, _server) = run_spnego(
+        client_flags,
+        server_flags,
+        3,
+        |kdc| {
+            Box::new(NetworkClientMock {
+                kdc: kdc.with_as_rep_enc_part_tagged_as_tgs_rep(),
+            })
+        },
+        package_list.clone(),
+        package_list,
+        SpnegoKerberosContextValidator,
+    );
+
+    let SspiContext::Negotiate(negotiate) = client else {
+        panic!("client must be a Negotiate context");
+    };
+    assert!(matches!(
+        negotiate.negotiated_protocol(),
+        NegotiatedProtocol::Kerberos(_)
+    ));
 }
 
 #[test]

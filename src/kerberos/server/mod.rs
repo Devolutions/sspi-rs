@@ -8,7 +8,10 @@ use std::time::Duration;
 use cache::AuthenticatorCacheRecord;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
-use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, IntegerAsn1};
+use picky_asn1::wrapper::{
+    Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3, IntegerAsn1,
+    Optional,
+};
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
 use picky_krb::constants::types::NT_SRV_INST;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
@@ -16,6 +19,7 @@ use picky_krb::gss_api::MechTypeList;
 use picky_krb::messages::{ApRep, ApReq, TgtReq};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
+use serde::Deserialize;
 use time::OffsetDateTime;
 
 use self::cache::AuthenticatorsCache;
@@ -59,6 +63,17 @@ pub struct ServerProperties {
     /// acceptors that key off the whole keytab.
     pub additional_service_keys: Vec<(PrincipalName, Secret<Vec<u8>>)>,
     /// User credentials on whose behalf the TGT ticket will be requested.
+    ///
+    /// Keytab credentials let a keytab-only acceptor complete Kerberos user-to-user authentication.
+    ///
+    /// Create the `Negotiate` server with `Negotiate::new_server_authorizing_externally` so that it does not look
+    /// for the client among identities, and authorize the principal from `Negotiate::client_principal`, which keeps
+    /// every name component and the realm.
+    /// A server with an identities list matches the client against a name that keeps only the first component,
+    /// and only when a `mechListMIC` is exchanged.
+    ///
+    /// A service principal must be given in the down-level form (`TERMSRV/host`), a UPN is sent as an `NT-ENTERPRISE` name.
+    /// The key should be the AES256 key of the principal, the first encryption type the AS-REQ offers.
     pub user: Option<CredentialsBuffers>,
     /// Username of the authenticated client.
     ///
@@ -140,6 +155,80 @@ impl ServerProperties {
     }
 }
 
+/// The client principal authenticated by a Kerberos acceptor, as named by the ticket.
+///
+/// The [`Username`] from [`Sspi::query_context_names`](crate::Sspi::query_context_names) can lose part of the
+/// principal: it keeps the first name component and lowercases the realm. Consumers that authorize on the principal,
+/// or map it with case-sensitive rules such as MIT Kerberos' `auth_to_local`, need the original.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientPrincipal {
+    components: Vec<String>,
+    realm: String,
+}
+
+impl ClientPrincipal {
+    pub(crate) fn from_ticket(cname: &PrincipalName, crealm: &KerberosStringAsn1) -> Self {
+        Self {
+            components: cname
+                .name_string
+                .0
+                .0
+                .iter()
+                .map(|component| component.to_string())
+                .collect(),
+            realm: crealm.0.to_string(),
+        }
+    }
+
+    /// The name components in order: `["alice", "admin"]` for `alice/admin@EXAMPLE.COM`.
+    pub fn components(&self) -> &[String] {
+        &self.components
+    }
+
+    /// The realm, in the ticket's case.
+    pub fn realm(&self) -> &str {
+        &self.realm
+    }
+}
+
+/// `TGT-REQ` with the optional `server-realm`, which `picky_krb::messages::TgtReq` does not model.
+///
+/// ```not_rust
+/// TGT-REQ ::= SEQUENCE {
+///     pvno[0]         INTEGER,
+///     msg-type[1]     INTEGER,
+///     server-name[2]  PrincipalName OPTIONAL,
+///     server-realm[3] Realm OPTIONAL
+/// }
+/// ```
+///
+/// Windows sends the realm. As in `TgtReq`, the server name is required here.
+/// `decode_krb_message` rejects trailing bytes, so decoding it as a bare `TgtReq` fails with `InvalidData`.
+/// The realm is ignored, the service name identifies the target.
+///
+/// The structure is defined in [draft-ietf-krb-wg-user2user][user2user].
+///
+/// [user2user]: https://datatracker.ietf.org/doc/html/draft-ietf-krb-wg-user2user
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Debug, PartialEq, serde::Serialize))]
+struct TgtReqWithRealm {
+    pvno: ExplicitContextTag0<IntegerAsn1>,
+    msg_type: ExplicitContextTag1<IntegerAsn1>,
+    server_name: ExplicitContextTag2<PrincipalName>,
+    #[serde(default)]
+    _server_realm: Optional<Option<ExplicitContextTag3<KerberosStringAsn1>>>,
+}
+
+impl From<TgtReqWithRealm> for TgtReq {
+    fn from(tgt_req: TgtReqWithRealm) -> Self {
+        Self {
+            pvno: tgt_req.pvno,
+            msg_type: tgt_req.msg_type,
+            server_name: tgt_req.server_name,
+        }
+    }
+}
+
 /// Performs one authentication step.
 ///
 /// The user should call this function until it returns `SecurityStatus::Ok`.
@@ -156,10 +245,12 @@ pub async fn accept_security_context(
 
     if server.state == KerberosState::TgtExchange {
         if let Ok(tgt_req) = if builder.context_requirements.contains(ServerRequestFlags::USE_DCE_STYLE) {
-            picky_asn1_der::from_bytes::<TgtReq>(&input_token.buffer).map_err(Error::from)
+            picky_asn1_der::from_bytes::<TgtReqWithRealm>(&input_token.buffer).map_err(Error::from)
         } else {
-            decode_krb_message::<TgtReq>(&input_token.buffer, TGT_REQ_TOKEN_ID)
-        } {
+            decode_krb_message::<TgtReqWithRealm>(&input_token.buffer, TGT_REQ_TOKEN_ID)
+        }
+        .map(TgtReq::from)
+        {
             // The first token is TGT_REQ. It means that the client wants to perform Kerberos U2U.
 
             if !builder
@@ -391,6 +482,11 @@ pub async fn accept_security_context(
                 debug!("ApReq Ticket and Authenticator are valid!");
 
                 server_data.client = Some(client_upn(&cname.0, &crealm.0)?);
+                // The ticket was issued by the KDC. The authenticator was written by the client.
+                server.client_principal = Some(ClientPrincipal::from_ticket(
+                    &ticket_enc_part.0.cname.0,
+                    &ticket_enc_part.0.crealm.0,
+                ));
 
                 let ap_options_bytes = ap_req.0.ap_options.0.0.as_bytes();
                 // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
@@ -543,4 +639,224 @@ pub async fn accept_security_context(
         flags: ServerResponseFlags::empty(),
         expiry: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
+    use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_HST};
+    use picky_krb::crypto::CipherSuite;
+    use picky_krb::messages::AsReq;
+    use url::Url;
+
+    use super::*;
+    use crate::generator::{GeneratorState, NetworkRequest};
+    use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
+    use crate::kerberos::test_data::{TGT_REQ_TOKEN_WITH_REALM, fake_server};
+    use crate::{AuthIdentity, Credentials, DataRepresentation, KeytabIdentity, Sspi, SspiImpl, Username};
+
+    fn password_user() -> CredentialsBuffers {
+        CredentialsBuffers::try_from(Credentials::AuthIdentity(AuthIdentity {
+            username: Username::new_down_level_logon_name("user", "EXAMPLE").unwrap(),
+            password: "password".to_owned().into(),
+        }))
+        .unwrap()
+    }
+
+    fn tgt_req(name_type: u8, host: &str, realm: Option<&str>) -> TgtReqWithRealm {
+        let component = |value: &str| KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap());
+
+        TgtReqWithRealm {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![16])),
+            server_name: ExplicitContextTag2::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    component("TERMSRV"),
+                    component(host),
+                ])),
+            }),
+            _server_realm: Optional::from(realm.map(|realm| ExplicitContextTag3::from(component(realm)))),
+        }
+    }
+
+    /// Feeds `token` to a U2U acceptor as its first token.
+    ///
+    /// Returns the request for the KDC when the acceptor got as far as the AS exchange for its own TGT.
+    fn accept_first_token(
+        user: CredentialsBuffers,
+        token: &[u8],
+        context_requirements: ServerRequestFlags,
+    ) -> Result<NetworkRequest> {
+        let mut kerberos = fake_server();
+        kerberos.state = KerberosState::TgtExchange;
+        kerberos.kdc_url = Some(Url::parse("tcp://192.168.1.103:88").unwrap());
+        kerberos.server.as_mut().unwrap().user = Some(user);
+
+        let mut credentials_handle: Option<CredentialsBuffers> = None;
+        let mut input = [SecurityBuffer::new(token.to_vec(), BufferType::Token)];
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let builder = kerberos
+            .accept_security_context()
+            .with_credentials_handle(&mut credentials_handle)
+            .with_context_requirements(context_requirements)
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_input(&mut input)
+            .with_output(&mut output);
+        let mut generator = SspiImpl::accept_security_context_impl(&mut kerberos, builder)?;
+
+        match generator.start() {
+            GeneratorState::Suspended(request) => Ok(request),
+            GeneratorState::Completed(Err(error)) => Err(error),
+            GeneratorState::Completed(Ok(_)) => Err(Error::new(ErrorKind::InternalError, "the exchange completed")),
+        }
+    }
+
+    #[test]
+    fn a_tgt_req_with_a_server_realm_is_accepted() {
+        accept_first_token(
+            password_user(),
+            TGT_REQ_TOKEN_WITH_REALM,
+            ServerRequestFlags::USE_SESSION_KEY,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_tgt_req_without_a_server_realm_is_accepted() {
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_INST, "VM1.example.com", None),
+        )
+        .unwrap();
+
+        accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+    }
+
+    #[test]
+    fn a_dce_style_tgt_req_with_a_server_realm_is_accepted() {
+        let token = picky_asn1_der::to_vec(&tgt_req(NT_SRV_INST, "VM1.example.com", Some("EXAMPLE.COM"))).unwrap();
+
+        accept_first_token(
+            password_user(),
+            &token,
+            ServerRequestFlags::USE_SESSION_KEY | ServerRequestFlags::USE_DCE_STYLE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn the_server_realm_is_decoded_next_to_the_server_name() {
+        let decoded = decode_krb_message::<TgtReqWithRealm>(TGT_REQ_TOKEN_WITH_REALM, TGT_REQ_TOKEN_ID).unwrap();
+
+        assert_eq!(decoded, tgt_req(NT_SRV_INST, "VM1.example.com", Some("EXAMPLE.COM")));
+    }
+
+    #[test]
+    fn the_name_type_of_the_service_name_is_ignored() {
+        // MIT-based clients use `NT-SRV-HST`, the acceptor is configured with `NT-SRV-INST`.
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_HST, "VM1.example.com", None),
+        )
+        .unwrap();
+
+        accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+    }
+
+    #[test]
+    fn a_tgt_req_for_another_service_is_rejected() {
+        let token = generate_krb_message(
+            oids::krb5_user_to_user(),
+            TGT_REQ_TOKEN_ID,
+            tgt_req(NT_SRV_INST, "other.example.com", None),
+        )
+        .unwrap();
+
+        let error = accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+        assert!(error.description.contains("invalid ticket service name"), "{error}");
+    }
+
+    #[test]
+    fn the_client_principal_is_available_only_once_the_context_is_established() {
+        let cname = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![KerberosStringAsn1::from(
+                IA5String::from_string("alice".to_owned()).unwrap(),
+            )])),
+        };
+        let crealm = KerberosStringAsn1::from(IA5String::from_string("EXAMPLE.COM".to_owned()).unwrap());
+        let mut kerberos = fake_server();
+        kerberos.client_principal = Some(ClientPrincipal::from_ticket(&cname, &crealm));
+
+        kerberos.state = KerberosState::ApExchange;
+        assert!(kerberos.client_principal().is_none());
+
+        kerberos.state = KerberosState::Final;
+        assert_eq!(kerberos.client_principal().unwrap().components(), ["alice"]);
+    }
+
+    #[test]
+    fn a_keytab_service_principal_is_sent_to_the_kdc_as_an_nt_principal_with_two_components() {
+        let keytab = CredentialsBuffers::Keytab(KeytabIdentity {
+            principal: Username::new_down_level_logon_name("TERMSRV/host.example.com", "EXAMPLE.COM").unwrap(),
+            key: Secret::from(vec![0; 32]),
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
+        });
+        let request =
+            accept_first_token(keytab, TGT_REQ_TOKEN_WITH_REALM, ServerRequestFlags::USE_SESSION_KEY).unwrap();
+
+        // The first four bytes are the length of the message.
+        let as_req: AsReq = picky_asn1_der::from_bytes(&request.data[4..]).unwrap();
+        let cname = as_req.0.req_body.0.cname.0.unwrap().0;
+        assert_eq!(cname.name_type.0.0, vec![NT_PRINCIPAL]);
+        assert_eq!(cname.name_string.0.0.len(), 2);
+    }
+
+    #[test]
+    fn a_client_principal_keeps_every_component_and_the_case_of_the_realm() {
+        let cname = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                KerberosStringAsn1::from(IA5String::from_string("Alice".to_owned()).unwrap()),
+                KerberosStringAsn1::from(IA5String::from_string("admin".to_owned()).unwrap()),
+            ])),
+        };
+        let crealm = KerberosStringAsn1::from(IA5String::from_string("Example.COM".to_owned()).unwrap());
+
+        let principal = ClientPrincipal::from_ticket(&cname, &crealm);
+
+        assert_eq!(principal.components(), ["Alice", "admin"]);
+        assert_eq!(principal.realm(), "Example.COM");
+    }
+
+    #[test]
+    fn a_keytab_principal_without_a_realm_is_rejected() {
+        let keytab = CredentialsBuffers::Keytab(KeytabIdentity {
+            principal: Username::parse("host").unwrap(),
+            key: Secret::from(vec![0; 32]),
+            key_enctype: CipherSuite::Aes256CtsHmacSha196,
+        });
+        let error =
+            accept_first_token(keytab, TGT_REQ_TOKEN_WITH_REALM, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert!(error.description.contains("keytab principal has no realm"), "{error}");
+    }
+
+    #[test]
+    fn a_tgt_req_without_a_server_name_is_rejected() {
+        // Only `pvno` and `msg-type`.
+        let token = [
+            0x60, 0x1a, 0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02, 0x03, 0x04, 0x00, 0x30, 0x0a,
+            0xa0, 0x03, 0x02, 0x01, 0x05, 0xa1, 0x03, 0x02, 0x01, 0x10,
+        ];
+
+        let error = accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
 }

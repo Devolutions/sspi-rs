@@ -27,7 +27,7 @@ use url::Url;
 pub use self::client::initialize_security_context;
 use self::config::KerberosConfig;
 pub use self::encryption_params::EncryptionParams;
-pub use self::server::{ServerProperties, accept_security_context};
+pub use self::server::{ClientPrincipal, ServerProperties, accept_security_context};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{
@@ -99,6 +99,7 @@ pub struct Kerberos {
     #[cfg(feature = "scard")]
     pub(crate) dh_parameters: Option<DhParameters>,
     pub(crate) krb5_user_to_user: bool,
+    pub(crate) client_principal: Option<ClientPrincipal>,
     pub(crate) server: Option<Box<ServerProperties>>,
     pub(crate) remote_seq_number: u32,
     /// KDC time minus local time, learned from a clock-skew error during AS pre-authentication.
@@ -106,6 +107,20 @@ pub struct Kerberos {
 }
 
 impl Kerberos {
+    /// Returns the client principal authenticated by the server side of this context.
+    ///
+    /// `None` on the client side and until the context is established.
+    /// Behind SPNEGO, the context is established before `Negotiate` checks the `mechListMIC` and the identities of the acceptor,
+    /// so read the principal through `Negotiate::client_principal` instead.
+    /// Unlike the `Username` from [`Sspi::query_context_names`], the name components and the realm keep the ticket's case.
+    pub fn client_principal(&self) -> Option<&ClientPrincipal> {
+        if self.state == KerberosState::Final {
+            self.client_principal.as_ref()
+        } else {
+            None
+        }
+    }
+
     pub fn new_client_from_config(config: KerberosConfig) -> Result<Self> {
         let kdc_url = config.kdc_url.clone();
         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
@@ -122,6 +137,7 @@ impl Kerberos {
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
+            client_principal: None,
             server: None,
             remote_seq_number: 0,
             clock_offset: Duration::ZERO,
@@ -144,6 +160,7 @@ impl Kerberos {
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
+            client_principal: None,
             server: Some(Box::new(server_properties)),
             remote_seq_number: 0,
             clock_offset: Duration::ZERO,
@@ -830,6 +847,16 @@ pub mod test_data {
     use crate::kerberos::ServerProperties;
     use crate::{AuthIdentityBuffers, CredentialsBuffers, Kerberos, Secret, Utf16String, ZeroizedUtf16String};
 
+    /// Layout of the U2U `mechToken` that a Windows SSPI initiator or FreeRDP sends, with example names.
+    /// The `TGT-REQ` is for `TERMSRV/VM1.example.com` and has `server-realm [3]`.
+    pub const TGT_REQ_TOKEN_WITH_REALM: &[u8] = &[
+        0x60, 0x50, 0x06, 0x0a, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x12, 0x01, 0x02, 0x02, 0x03, 0x04, 0x00, 0x30, 0x40,
+        0xa0, 0x03, 0x02, 0x01, 0x05, 0xa1, 0x03, 0x02, 0x01, 0x10, 0xa2, 0x25, 0x30, 0x23, 0xa0, 0x03, 0x02, 0x01,
+        0x02, 0xa1, 0x1c, 0x30, 0x1a, 0x1b, 0x07, 0x54, 0x45, 0x52, 0x4d, 0x53, 0x52, 0x56, 0x1b, 0x0f, 0x56, 0x4d,
+        0x31, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0xa3, 0x0d, 0x1b, 0x0b, 0x45,
+        0x58, 0x41, 0x4d, 0x50, 0x4c, 0x45, 0x2e, 0x43, 0x4f, 0x4d,
+    ];
+
     const SESSION_KEY: &[u8] = &[
         21, 56, 207, 133, 152, 47, 177, 117, 223, 235, 169, 237, 173, 202, 11, 254, 142, 185, 237, 5, 97, 79, 112, 46,
         73, 182, 117, 0, 35, 91, 24, 66,
@@ -866,6 +893,7 @@ pub mod test_data {
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
+            client_principal: None,
             server: None,
             remote_seq_number: 0,
             clock_offset: time::Duration::ZERO,
@@ -914,6 +942,7 @@ pub mod test_data {
             #[cfg(feature = "scard")]
             dh_parameters: None,
             krb5_user_to_user: false,
+            client_principal: None,
             server: Some(Box::new(fake_server_properties())),
             remote_seq_number: 0,
             clock_offset: time::Duration::ZERO,

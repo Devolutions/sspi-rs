@@ -109,6 +109,12 @@ pub(crate) struct KdcMock {
     validators: Validators,
     clock_offset: Duration,
     reject_valid_preauth_with_skew: bool,
+    /// Tag the enc-part of AS-REPs with EncTGSRepPart (APPLICATION 26), as MIT Kerberos does.
+    ///
+    /// See [5.4.2.  KRB_KDC_REP Definition][kdc-rep].
+    ///
+    /// [kdc-rep]: https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2
+    as_rep_enc_part_tagged_as_tgs_rep: bool,
 }
 
 impl KdcMock {
@@ -134,6 +140,7 @@ impl KdcMock {
             validators,
             clock_offset: Duration::ZERO,
             reject_valid_preauth_with_skew: false,
+            as_rep_enc_part_tagged_as_tgs_rep: false,
         }
     }
 
@@ -144,6 +151,12 @@ impl KdcMock {
 
     pub(crate) fn reject_valid_preauth_with_skew(mut self) -> Self {
         self.reject_valid_preauth_with_skew = true;
+        self
+    }
+
+    /// Makes the KDC tag the enc-part of its AS-REPs as MIT Kerberos does.
+    pub(crate) fn with_as_rep_enc_part_tagged_as_tgs_rep(mut self) -> Self {
+        self.as_rep_enc_part_tagged_as_tgs_rep = true;
         self
     }
 
@@ -400,7 +413,7 @@ impl KdcMock {
 
         let nonce = rng.try_next_u32().unwrap();
 
-        let as_rep_enc_part = EncAsRepPart::from(EncKdcRepPart {
+        let as_rep_enc_part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key.to_vec())),
@@ -422,13 +435,14 @@ impl KdcMock {
             sname: ExplicitContextTag10::from(sname.clone()),
             caddr: Optional::from(None),
             encrypted_pa_data: Optional::from(None),
-        });
+        };
+        let encoded_as_rep_enc_part = if self.as_rep_enc_part_tagged_as_tgs_rep {
+            picky_asn1_der::to_vec(&EncTgsRepPart::from(as_rep_enc_part)).unwrap()
+        } else {
+            picky_asn1_der::to_vec(&EncAsRepPart::from(as_rep_enc_part)).unwrap()
+        };
         let as_rep_enc_data = cipher
-            .encrypt(
-                &initial_key,
-                AS_REP_ENC,
-                &picky_asn1_der::to_vec(&as_rep_enc_part).unwrap(),
-            )
+            .encrypt(&initial_key, AS_REP_ENC, &encoded_as_rep_enc_part)
             .unwrap();
 
         Ok(AsRep::from(KdcRep {
