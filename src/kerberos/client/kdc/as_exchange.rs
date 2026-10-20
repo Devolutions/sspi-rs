@@ -14,7 +14,7 @@ use crate::{CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
 pub(crate) enum AsExchangeOutput {
     SendRequest(AsReq),
-    Done(AsRep),
+    Done(AsRep, String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,7 +136,12 @@ impl AsExchange {
                     )?;
 
                     match as_rep {
-                        Ok(as_rep) => return Ok(AsExchangeOutput::Done(as_rep)),
+                        Ok(as_rep) => {
+                            return Ok(AsExchangeOutput::Done(
+                                as_rep,
+                                String::from_utf8_lossy(&self.salt).into_owned(),
+                            ));
+                        }
                         Err(err) if !self.retried_skew && err.0.error_code.0 == KRB_AP_ERR_SKEW => {
                             client.clock_offset = clock_offset_from_error(&err, received_at)?;
                             self.retried_skew = true;

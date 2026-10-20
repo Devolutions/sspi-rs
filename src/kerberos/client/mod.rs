@@ -60,6 +60,7 @@ pub enum KerberosClientState {
     },
     BeforeTgsExchange {
         as_rep: AsRep,
+        preauth_salt: String,
         mech_id: ObjectIdentifier,
         tgt_ticket: Option<Ticket>,
     },
@@ -312,10 +313,11 @@ pub async fn initialize_security_context<'a>(
 
                                         Some(SecurityStatus::ContinueNeeded)
                                     }
-                                    AsExchangeOutput::Done(as_rep) => {
+                                    AsExchangeOutput::Done(as_rep, preauth_salt) => {
                                         client.state =
                                             KerberosState::Client(Box::new(KerberosClientState::BeforeTgsExchange {
                                                 as_rep,
+                                                preauth_salt,
                                                 mech_id,
                                                 tgt_ticket,
                                             }));
@@ -327,15 +329,15 @@ pub async fn initialize_security_context<'a>(
                             KdcResolution::KdcUrl(_) => {
                                 let mut as_response = Vec::new();
 
-                                let as_rep = loop {
+                                let (as_rep, preauth_salt) = loop {
                                     let output = as_exchange.step(client, credentials, &as_response)?;
                                     match output {
                                         AsExchangeOutput::SendRequest(as_req) => {
                                             as_response =
                                                 client.send(yield_point, &serialize_message(&as_req)?).await?;
                                         }
-                                        AsExchangeOutput::Done(as_rep) => {
-                                            break as_rep;
+                                        AsExchangeOutput::Done(as_rep, preauth_salt) => {
+                                            break (as_rep, preauth_salt);
                                         }
                                     }
                                 };
@@ -343,6 +345,7 @@ pub async fn initialize_security_context<'a>(
                                 client.state =
                                     KerberosState::Client(Box::new(KerberosClientState::BeforeTgsExchange {
                                         as_rep,
+                                        preauth_salt,
                                         mech_id,
                                         tgt_ticket,
                                     }));
@@ -353,6 +356,7 @@ pub async fn initialize_security_context<'a>(
                     }
                     KerberosClientState::BeforeTgsExchange {
                         as_rep,
+                        preauth_salt,
                         mech_id,
                         tgt_ticket,
                     } => {
@@ -361,6 +365,9 @@ pub async fn initialize_security_context<'a>(
                         client.realm = Some(as_rep.0.crealm.0.to_string());
 
                         let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+                        // Some KDCs omit PA-ETYPE-INFO2 from the AS-REP.
+                        // The AS-REP key uses the same salt as the pre-authentication key.
+                        let salt = if salt.is_empty() { preauth_salt } else { salt };
 
                         let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
 
