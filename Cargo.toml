@@ -135,6 +135,8 @@ byteorder = "1.5"
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
 hmac = "0.13"
 widestring = "1.2"
+# ECDH key agreement for PKINIT with EC smart card certificates.
+p256 = { version = "0.14", default-features = false, features = ["ecdh"] }
 
 url = "2.5"
 

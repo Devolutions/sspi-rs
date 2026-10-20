@@ -2940,6 +2940,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "oid",
+ "p256",
  "picky",
  "picky-asn1",
  "picky-asn1-der",
