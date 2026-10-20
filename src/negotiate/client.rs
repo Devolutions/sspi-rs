@@ -104,7 +104,19 @@ pub(crate) async fn initialize_security_context<'a>(
 
     match negotiate.state {
         NegotiateState::Initial => {
-            if builder
+            if negotiate.is_remote_guard() {
+                if !matches!(&negotiate.protocol, NegotiatedProtocol::Kerberos(kerberos) if kerberos.is_remote_guard())
+                {
+                    return Err(Error::new(
+                        ErrorKind::InternalError,
+                        "remote credential guard context is not using Kerberos",
+                    ));
+                }
+
+                // The peer's mechListMIC protects the mechanism list against a downgrade.
+                negotiate.mic_needed = true;
+                negotiate.mic_verified = false;
+            } else if builder
                 .context_requirements
                 .contains(ClientRequestFlags::USE_SESSION_KEY)
                 || builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE)
@@ -301,6 +313,7 @@ pub(crate) async fn initialize_security_context<'a>(
 
             let mech_list_mic = mech_list_mic.0.map(|token| token.0.0);
             negotiate.verify_mic_token(mech_list_mic.as_deref())?;
+            negotiate.check_remote_guard_mic()?;
 
             let status = if negotiate.mic_verified {
                 negotiate.state = NegotiateState::Ok;

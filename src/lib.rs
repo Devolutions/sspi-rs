@@ -64,7 +64,12 @@ pub mod network_client;
 pub mod ntlm;
 mod pk_init;
 pub mod pku2u;
+pub mod rcg;
 pub mod utf16string;
+
+/// Compatibility re-export; prefer [`rcg`].
+#[doc(no_inline)]
+pub use crate::rcg as remote_guard;
 
 mod auth_identity;
 mod ber;

@@ -38,6 +38,7 @@ use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
 use crate::pku2u::generate_authenticator_extension;
+use crate::rcg::{CapturedTgt, ClientBinding};
 use crate::utils::{generate_random_symmetric_key, parse_target_name};
 use crate::{
     BufferType, ClientRequestFlags, ClientResponseFlags, CredentialsBuffers, Error, ErrorKind,
@@ -106,6 +107,13 @@ pub async fn initialize_security_context<'a>(
     >,
 ) -> Result<InitializeSecurityContextResult> {
     trace!(?builder);
+
+    if client.is_remote_guard() && builder.context_requirements.contains(ClientRequestFlags::USE_DCE_STYLE) {
+        return Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "remote credential guard does not support DCE style authentication",
+        ));
+    }
 
     // When the machine is not domain-joined, Kerberos cannot use the LocalKDC for TGT exchange
     // and attempts to locate an external KDC as a fallback. Since no external KDC is available,
@@ -232,6 +240,12 @@ pub async fn initialize_security_context<'a>(
                         client.realm = Some(realm.clone());
 
                         let mut rand = StdRng::try_from_rng(&mut SysRng)?;
+                        let as_req_requirements = if client.is_remote_guard() {
+                            // Remote Credential Guard needs a forwardable TGT for the redirected logon.
+                            builder.context_requirements | ClientRequestFlags::DELEGATE
+                        } else {
+                            builder.context_requirements
+                        };
                         let options = GenerateAsReqOptions {
                             realm: &realm,
                             username: &username,
@@ -239,7 +253,7 @@ pub async fn initialize_security_context<'a>(
                             snames: &[TGT_SERVICE_NAME, &realm],
                             nonce: generate_nonce(&mut rand),
                             hostname: &client.config.client_computer_name,
-                            context_requirements: builder.context_requirements,
+                            context_requirements: as_req_requirements,
                         };
                         let kdc_req_body = generate_as_req_kdc_body(&options)?;
 
@@ -371,7 +385,7 @@ pub async fn initialize_security_context<'a>(
 
                         let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
 
-                        client.encryption_params.encryption_type = Some(encryption_type);
+                        client.encryption_params.encryption_type = Some(encryption_type.clone());
 
                         let credentials =
                             builder.credentials_handle.as_ref().unwrap().as_ref().ok_or_else(|| {
@@ -396,6 +410,19 @@ pub async fn initialize_security_context<'a>(
                             },
                         };
                         let session_key = session_key_extractor.session_key(&as_rep)?;
+
+                        if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
+                            remote_guard.binding = Some(ClientBinding {
+                                name: as_rep.0.cname.0.clone(),
+                                realm: as_rep.0.crealm.0.to_string(),
+                            });
+                            remote_guard.home_tgt = Some(CapturedTgt::new(
+                                as_rep.0.crealm.0.to_string(),
+                                as_rep.0.ticket.0.clone(),
+                                encryption_type,
+                                session_key.clone(),
+                            )?);
+                        }
 
                         let mut context_requirements = builder.context_requirements;
 
@@ -666,6 +693,18 @@ pub async fn initialize_security_context<'a>(
                             let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
                             let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
                             client.remote_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
+
+                            if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
+                                let result = remote_guard.establish_context(
+                                    ap_rep_enc_part.0.subkey.0.as_ref().map(|subkey| &subkey.0),
+                                    u64::from(client.seq_number) + 1,
+                                    u64::from(client.remote_seq_number),
+                                );
+                                if result.is_err() {
+                                    remote_guard.poison();
+                                }
+                                result?;
+                            }
 
                             client.encryption_params.sub_session_key = Some(sub_session_key);
                         }

@@ -292,20 +292,35 @@ fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -
 
 #[instrument(level = "trace", ret)]
 pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: CredSspMode) -> Result<Vec<u8>> {
-    let (creds_type, encoded_credentials) = match credentials {
-        CredentialsBuffers::AuthIdentity(creds) => {
-            (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
-        }
-        #[cfg(feature = "scard")]
-        CredentialsBuffers::SmartCard(creds) => (
-            picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
-            write_smart_card_credentials(creds)?,
-        ),
-        CredentialsBuffers::Keytab(_) => {
-            return Err(Error::new(
-                ErrorKind::UnsupportedPreAuth,
-                "keytab credentials are not supported in CredSSP",
-            ));
+    if cred_ssp_mode == CredSspMode::RemoteGuard {
+        // Never fall back to delegating the user's credentials.
+        return Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "remote credential guard credentials are built from the authenticated Kerberos context",
+        ));
+    }
+
+    let (creds_type, encoded_credentials) = if cred_ssp_mode == CredSspMode::CredentialLess {
+        (
+            TS_PASSWORD_CREDS,
+            write_password_credentials(&AuthIdentityBuffers::default(), cred_ssp_mode)?,
+        )
+    } else {
+        match credentials {
+            CredentialsBuffers::AuthIdentity(creds) => {
+                (TS_PASSWORD_CREDS, write_password_credentials(creds, cred_ssp_mode)?)
+            }
+            #[cfg(feature = "scard")]
+            CredentialsBuffers::SmartCard(creds) => (
+                picky_krb::constants::cred_ssp::TS_SMART_CARD_CREDS,
+                write_smart_card_credentials(creds)?,
+            ),
+            CredentialsBuffers::Keytab(_) => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedPreAuth,
+                    "keytab credentials are not supported in CredSSP",
+                ));
+            }
         }
     };
 
@@ -323,6 +338,11 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     let identity = match cred_ssp_mode {
         CredSspMode::WithCredentials => credentials,
         CredSspMode::CredentialLess => &empty_identity,
+        CredSspMode::RemoteGuard => {
+            return Err(io::Error::other(
+                "password credentials are never sent in remote credential guard mode",
+            ));
+        }
     };
 
     let ts_credentials_len = sizeof_ts_credentials(identity)?;
