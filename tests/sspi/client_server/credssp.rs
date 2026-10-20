@@ -1278,6 +1278,8 @@ fn check_ntlm_redirection_names(
     session: &mut sspi::rcg::RemoteGuardSession,
     names: Option<&NtlmRedirectionNames>,
 ) {
+    use hmac::{KeyInit as _, Mac as _};
+    use md4::{Digest as _, Md4};
     use sspi::rcg::{Lm20GetNtlm3ChallengeResponseRequest, NtlmCredentialReference};
 
     let credentials: picky_krb::credssp::TsCredentials =
@@ -1288,6 +1290,10 @@ fn check_ntlm_redirection_names(
     let (user, domain) = names
         .map(|names| (names.user.as_str(), names.domain.as_str()))
         .unwrap_or(("pw13", "EXAMPLE"));
+    let user_and_domain = format!("{}{}", user.to_uppercase(), domain.to_uppercase())
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
     let user = user.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
     let domain = domain.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
     let wrong_name = "not-the-bound-name"
@@ -1334,6 +1340,28 @@ fn check_ntlm_redirection_names(
     assert_eq!(&response.ntlm3_response[32..40], &response.challenge_from_client);
     assert_eq!(&response.ntlm3_response[44..60], &server_name);
     assert_eq!(response.lm_session_key.as_ref(), &[0; 8]);
+
+    let identity = peer.credentials.to_auth_identity().unwrap();
+    let password = identity
+        .password
+        .as_ref()
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let mut response_key = hmac::Hmac::<md5::Md5>::new_from_slice(&Md4::digest(&password)).unwrap();
+    response_key.update(&user_and_domain);
+    let response_key = response_key.finalize().into_bytes();
+    let mut proof = hmac::Hmac::<md5::Md5>::new_from_slice(&response_key).unwrap();
+    proof.update(&request.challenge_to_client);
+    proof.update(&response.ntlm3_response[16..]);
+    let expected_proof = proof.finalize().into_bytes();
+    assert_eq!(response.ntlm3_response[..16], expected_proof[..]);
+    let mut session_key = hmac::Hmac::<md5::Md5>::new_from_slice(&response_key).unwrap();
+    session_key.update(&expected_proof);
+    assert_eq!(
+        response.user_session_key.as_ref().as_slice(),
+        session_key.finalize().into_bytes().as_slice()
+    );
     assert!(session.ntlm_available());
 }
 
@@ -1667,6 +1695,38 @@ mod sspi_exchange {
             check_remote_guard_auth_info(&exchange.peer, &mut session, true);
             check_ntlm_redirection_names(&exchange.peer, &mut session, names.as_ref());
             check_live_handoff(&mut exchange.peer, &mut session);
+        }
+    }
+
+    #[test]
+    fn credssp_sspi_remote_guard_ntlm_uses_initialization_handle() {
+        for names in [
+            None,
+            Some(NtlmRedirectionNames {
+                user: "redirected".to_owned(),
+                domain: "SYNTHETIC".to_owned(),
+            }),
+        ] {
+            let mut exchange = Exchange::new(CredSspMode::RemoteGuard, false);
+            let other_identity = Credentials::AuthIdentity(AuthIdentity {
+                username: Username::new("other-user", Some("OTHER")).unwrap(),
+                password: "not-the-authenticated-password".to_owned().into(),
+            });
+            let other_handle = exchange
+                .client
+                .acquire_credentials_handle()
+                .with_credential_use(sspi::CredentialUse::Outbound)
+                .with_auth_data(&other_identity)
+                .execute(&mut exchange.client)
+                .unwrap()
+                .credentials_handle;
+            assert_ne!(exchange.credentials, other_handle);
+
+            exchange.client.enable_remote_guard_ntlm(names.clone()).unwrap();
+            exchange.finish(false);
+            assert!(exchange.peer.binding_verified);
+            let mut session = exchange.client.take_remote_guard_session().unwrap();
+            check_ntlm_redirection_names(&exchange.peer, &mut session, names.as_ref());
         }
     }
 

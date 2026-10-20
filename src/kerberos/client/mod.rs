@@ -412,6 +412,8 @@ pub async fn initialize_security_context<'a>(
                         let session_key = session_key_extractor.session_key(&as_rep)?;
 
                         if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
+                            // Bind NTLM supplementation to the successful AS exchange, not the last acquisition.
+                            client.auth_identity = Some(credentials.clone());
                             remote_guard.binding = Some(ClientBinding {
                                 name: as_rep.0.cname.0.clone(),
                                 realm: as_rep.0.crealm.0.to_string(),
