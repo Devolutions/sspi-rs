@@ -383,6 +383,10 @@ fn kerberos_auth() {
 
 /// Authenticates the test user against a [KdcMock] configured by `configure_kdc`.
 fn kerberos_auth_with_kdc(configure_kdc: impl FnOnce(KdcMock) -> KdcMock) {
+    kerberos_auth_with_environment_and_kdc(init_krb_environment(), configure_kdc);
+}
+
+fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure_kdc: impl FnOnce(KdcMock) -> KdcMock) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -390,7 +394,7 @@ fn kerberos_auth_with_kdc(configure_kdc: impl FnOnce(KdcMock) -> KdcMock) {
         users,
         target_name,
         target_service_name,
-    } = init_krb_environment();
+    } = environment;
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -464,7 +468,7 @@ fn kerberos_auth_without_as_rep_etype_info2() {
 }
 
 /// MIT encodes the AS-REP enc-part as EncTGSRepPart, which clients may accept
-/// under [RFC 4120 section 5.4.2: KRB_KDC_REP Definition][kdc-rep].
+/// under [RFC 4120 section 5.4.2: KRB_KDC_REP definition][kdc-rep].
 ///
 /// [kdc-rep]: https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2
 #[test]
@@ -1096,4 +1100,316 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
         3,
         SpnegoKerberosNtlmFallbackValidator,
     );
+}
+
+mod salt_regressions {
+    use picky_krb::constants::key_usages::KRB_PRIV_ENC_PART;
+    use picky_krb::data_types::EncKrbPrivPart;
+    use picky_krb::messages::{ApMessage, AsReq, KrbPrivMessage, TgtRep, TgtReq};
+    use sspi::builders::ChangePasswordBuilder;
+    use sspi::generator::NetworkRequest;
+
+    use super::kdc::SaltHint;
+    use super::*;
+
+    fn environment_with_preauth_salt(salt: &str) -> KrbEnvironment {
+        let mut environment = init_krb_environment();
+        for user in environment.users.values_mut() {
+            user.salt = salt.to_owned();
+        }
+        environment
+    }
+
+    #[test]
+    fn kerberos_auth_without_as_rep_etype_info2_with_tgs_rep_enc_part_in_as_rep() {
+        kerberos_auth_with_kdc(|kdc| kdc.omit_as_rep_etype_info2().tgs_rep_enc_part_in_as_rep());
+    }
+
+    #[test]
+    fn kerberos_auth_with_explicit_empty_as_rep_salt() {
+        kerberos_auth_with_environment_and_kdc(environment_with_preauth_salt("preauth-only-salt"), |kdc| {
+            kdc.with_as_rep_salt_hint(SaltHint::Explicit(String::new()))
+                .with_as_rep_encryption_salt("")
+        });
+    }
+
+    #[test]
+    fn kerberos_auth_with_missing_as_rep_salt_field() {
+        kerberos_auth_with_environment_and_kdc(environment_with_preauth_salt("preauth-only-salt"), |kdc| {
+            kdc.with_as_rep_salt_hint(SaltHint::MissingField)
+                .with_as_rep_encryption_salt("EXAMPLE.COMpw13")
+        });
+    }
+
+    #[test]
+    fn kerberos_auth_with_custom_as_rep_salt() {
+        kerberos_auth_with_environment_and_kdc(environment_with_preauth_salt("preauth-only-salt"), |kdc| {
+            kdc.with_as_rep_salt_hint(SaltHint::Explicit("reply-only-salt".to_owned()))
+                .with_as_rep_encryption_salt("reply-only-salt")
+        });
+    }
+
+    #[test]
+    fn kerberos_auth_with_missing_preauth_salt_field() {
+        // The down-level credentials request EXAMPLE; the KDC replies in EXAMPLE.COM.
+        kerberos_auth_with_environment_and_kdc(environment_with_preauth_salt("EXAMPLEpw13"), |kdc| {
+            kdc.with_preauth_salt_hint(SaltHint::MissingField)
+                .omit_as_rep_etype_info2()
+        });
+    }
+
+    #[test]
+    fn kerberos_auth_with_explicit_empty_preauth_salt() {
+        kerberos_auth_with_environment_and_kdc(environment_with_preauth_salt(""), |kdc| {
+            kdc.with_preauth_salt_hint(SaltHint::Explicit(String::new()))
+                .omit_as_rep_etype_info2()
+        });
+    }
+
+    struct PasswordChangeRequestInspector {
+        network: NetworkClientMock,
+        service_key: Vec<u8>,
+        as_requests: AtomicUsize,
+        inspected_password_requests: AtomicUsize,
+    }
+
+    const NEW_PASSWORD: &str = "New password with exact bytes!42";
+    const INSPECTED: &str = "password-change-request-inspected";
+
+    impl NetworkClient for PasswordChangeRequestInspector {
+        fn send(&self, request: &NetworkRequest) -> sspi::Result<Vec<u8>> {
+            let data = &request.data[4..];
+            if picky_asn1_der::from_bytes::<AsReq>(data).is_ok() {
+                self.as_requests.fetch_add(1, Ordering::SeqCst);
+                return self.network.send(request);
+            }
+            assert_eq!(self.as_requests.load(Ordering::SeqCst), 2);
+            let message = KrbPrivMessage::deserialize(data).expect("actual outgoing password-change request");
+            let ApMessage::ApReq(ap_req) = message.ap_message else {
+                panic!("password change must carry an AP-REQ");
+            };
+            let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+            let ticket: EncTicketPart = picky_asn1_der::from_bytes(
+                &cipher
+                    .decrypt(
+                        &self.service_key,
+                        TICKET_REP,
+                        &ap_req.0.ticket.0.0.enc_part.0.cipher.0.0,
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            let authenticator: Authenticator = picky_asn1_der::from_bytes(
+                &cipher
+                    .decrypt(
+                        &ticket.0.key.0.key_value.0.0,
+                        AP_REQ_AUTHENTICATOR,
+                        &ap_req.0.authenticator.0.cipher.0.0,
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            let subkey = authenticator
+                .0
+                .subkey
+                .0
+                .expect("password-change authenticator carries a subkey");
+            let private: EncKrbPrivPart = picky_asn1_der::from_bytes(
+                &cipher
+                    .decrypt(
+                        &subkey.0.key_value.0.0,
+                        KRB_PRIV_ENC_PART,
+                        &message.krb_priv.0.enc_part.0.cipher.0.0,
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(private.0.user_data.0.0, NEW_PASSWORD.as_bytes());
+            self.inspected_password_requests.fetch_add(1, Ordering::SeqCst);
+            Err(sspi::Error::new(ErrorKind::InternalError, INSPECTED))
+        }
+    }
+
+    #[test]
+    fn kerberos_change_password_uses_negotiated_salt_without_as_rep_hint() {
+        let mut environment = environment_with_preauth_salt("password-change-negotiated-salt");
+        let service_name = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
+                ["kadmin", "changepw"]
+                    .map(|s| KerberosStringAsn1::from(IA5String::from_string(s.to_owned()).unwrap()))
+                    .to_vec(),
+            )),
+        };
+        let service_key = vec![0x69; 32];
+        environment.keys.insert(UserName(service_name), service_key.clone());
+        let network = PasswordChangeRequestInspector {
+            network: NetworkClientMock {
+                kdc: KdcMock::new(
+                    environment.realm,
+                    environment.keys,
+                    environment.users,
+                    Validators::default(),
+                )
+                .omit_as_rep_etype_info2(),
+            },
+            service_key,
+            as_requests: AtomicUsize::new(0),
+            inspected_password_requests: AtomicUsize::new(0),
+        };
+        let mut client = Kerberos::new_client_from_config(KerberosConfig {
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        })
+        .unwrap();
+        // change_password uses the context's previously resolved realm. Initialize it
+        // through the public context API, stopping at the mocked transport boundary.
+        let mut handle = Some(CredentialsBuffers::try_from(environment.credentials).unwrap());
+        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut initialize = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut handle)
+            .with_context_requirements(ClientRequestFlags::empty())
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(&environment.target_name)
+            .with_input(&mut input)
+            .with_output(&mut setup_output);
+        let setup_error = SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
+            .unwrap()
+            .resolve_with_client(&FailedNetworkClientMock {
+                kind: ErrorKind::NoAuthenticatingAuthority,
+            })
+            .unwrap_err();
+        assert_eq!(setup_error.description, "error from mock network client");
+        assert_eq!(network.as_requests.load(Ordering::SeqCst), 0);
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let change = ChangePasswordBuilder::new()
+            .with_domain_name("EXAMPLE.COM")
+            .with_account_name("pw13")
+            .with_old_password("qweQWE123!@#")
+            .with_new_password(NEW_PASSWORD)
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+        let error = Sspi::change_password(&mut client, change)
+            .unwrap()
+            .resolve_with_client(&network)
+            .unwrap_err();
+        assert_eq!(error.error_type, ErrorKind::InternalError);
+        assert_eq!(error.description, INSPECTED);
+        assert_eq!(network.as_requests.load(Ordering::SeqCst), 2);
+        assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn kerberos_u2u_server_acquires_tgt_with_password_without_as_rep_hint() {
+        let KrbEnvironment {
+            realm,
+            credentials,
+            keys,
+            users,
+            target_name,
+            target_service_name,
+        } = environment_with_preauth_salt("u2u-negotiated-salt");
+        let as_requests = Arc::new(AtomicUsize::new(0));
+        let as_counter = Arc::clone(&as_requests);
+        let mut network = NetworkClientMock {
+            kdc: KdcMock::new(
+                realm,
+                keys,
+                users,
+                Validators {
+                    as_req: Box::new(move |_| {
+                        as_counter.fetch_add(1, Ordering::SeqCst);
+                    }),
+                    tgs_req: Box::new(|request| {
+                        assert_ne!(request.0.req_body.0.kdc_options.0.0.as_bytes()[4] & 0x08, 0);
+                        assert_eq!(request.0.req_body.0.additional_tickets.0.as_ref().unwrap().0.0.len(), 1);
+                    }),
+                },
+            )
+            .omit_as_rep_etype_info2(),
+        };
+        let credentials = CredentialsBuffers::try_from(credentials).unwrap();
+        let config = KerberosConfig {
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        };
+        let mut client = SspiContext::Kerberos(Kerberos::new_client_from_config(config.clone()).unwrap());
+        let mut server = SspiContext::Kerberos(
+            Kerberos::new_server_from_config(
+                config,
+                ServerProperties {
+                    mech_types: MechTypeList::from(Vec::new()),
+                    max_time_skew: MAX_TIME_SKEW,
+                    ticket_decryption_key: None,
+                    service_name: target_service_name,
+                    additional_service_keys: Vec::new(),
+                    user: Some(credentials.clone()),
+                    client: None,
+                    authenticators_cache: HashSet::new(),
+                },
+            )
+            .unwrap(),
+        );
+        let mut client_handle = Some(credentials.clone());
+        let mut server_handle = Some(credentials);
+        let client_flags = ClientRequestFlags::MUTUAL_AUTH
+            | ClientRequestFlags::INTEGRITY
+            | ClientRequestFlags::CONFIDENTIALITY
+            | ClientRequestFlags::USE_SESSION_KEY;
+        let server_flags = ServerRequestFlags::MUTUAL_AUTH
+            | ServerRequestFlags::INTEGRITY
+            | ServerRequestFlags::CONFIDENTIALITY
+            | ServerRequestFlags::USE_SESSION_KEY;
+        let (status, request) = initialize_security_context(
+            &mut client,
+            &mut client_handle,
+            client_flags,
+            &target_name,
+            Vec::new(),
+            &mut network,
+        );
+        assert_eq!(status, SecurityStatus::ContinueNeeded);
+        KrbMessage::<TgtReq>::decode_application_krb_message(&request).expect("initial U2U TGT_REQ");
+        assert_eq!(as_requests.load(Ordering::SeqCst), 0);
+        let (status, response) =
+            accept_security_context(&mut server, &mut server_handle, server_flags, request, &mut network);
+        assert_eq!(status, SecurityStatus::ContinueNeeded);
+        assert_eq!(
+            as_requests.load(Ordering::SeqCst),
+            2,
+            "password-backed acceptor acquires its TGT"
+        );
+        KrbMessage::<TgtRep>::decode_application_krb_message(&response).expect("acceptor emits TGT_REP");
+        let (status, request) = initialize_security_context(
+            &mut client,
+            &mut client_handle,
+            client_flags,
+            &target_name,
+            response,
+            &mut network,
+        );
+        assert_eq!(status, SecurityStatus::ContinueNeeded);
+        let (server_status, response) =
+            accept_security_context(&mut server, &mut server_handle, server_flags, request, &mut network);
+        assert_eq!(server_status, SecurityStatus::Ok);
+        let (status, final_token) = initialize_security_context(
+            &mut client,
+            &mut client_handle,
+            client_flags,
+            &target_name,
+            response,
+            &mut network,
+        );
+        assert_eq!(status, SecurityStatus::Ok);
+        if !final_token.is_empty() {
+            accept_security_context(&mut server, &mut server_handle, server_flags, final_token, &mut network);
+        }
+        assert_eq!(as_requests.load(Ordering::SeqCst), 4);
+        test_encryption(&mut client, &mut server);
+        test_stream_buffer_encryption(&mut client, &mut server);
+        test_rpc_request_encryption(&mut client, &mut server);
+    }
 }

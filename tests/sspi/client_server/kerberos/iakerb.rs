@@ -130,7 +130,7 @@ fn verify_iakerb_checksum(ap_req_token: &[u8], service_key: &[u8], expected_tran
         let (ext_type_bytes, tail) = rest.split_first_chunk::<4>().expect("extension type must be present");
         let (ext_len_bytes, tail) = tail.split_first_chunk::<4>().expect("extension length must be present");
         let ext_type = u32::from_le_bytes(*ext_type_bytes);
-        let ext_len = u32::from_le_bytes(*ext_len_bytes) as usize;
+        let ext_len = usize::try_from(u32::from_le_bytes(*ext_len_bytes)).expect("extension length fits in usize");
         let (value, tail) = tail.split_at(ext_len);
         if ext_type == GSS_EXTS_FINISHED {
             break value;
@@ -154,6 +154,10 @@ fn verify_iakerb_checksum(ap_req_token: &[u8], service_key: &[u8], expected_tran
 
 #[test]
 fn iakerb_auth() {
+    iakerb_auth_with_kdc(|kdc| kdc);
+}
+
+fn iakerb_auth_with_kdc(configure_kdc: fn(KdcMock) -> KdcMock) {
     let KrbEnvironment {
         realm,
         credentials,
@@ -165,7 +169,7 @@ fn iakerb_auth() {
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
-    let kdc = KdcMock::new(
+    let kdc = configure_kdc(KdcMock::new(
         realm,
         keys,
         users,
@@ -194,7 +198,7 @@ fn iakerb_auth() {
                 );
             }),
         },
-    );
+    ));
 
     let client_config = KerberosConfig::new_with_iakerb(CLIENT_COMPUTER_NAME.into());
     let mut kerberos_client = SspiContext::Kerberos(Kerberos::new_client_from_config(client_config).unwrap());
@@ -263,13 +267,14 @@ fn iakerb_auth() {
 
     verify_iakerb_checksum(&ap_req_token, &ticket_decryption_key, &expected_iakerb_gss_transcript);
 
-    let (_, ap_rep_token) = accept_security_context(
+    let (server_status, ap_rep_token) = accept_security_context(
         &mut kerberos_server,
         &mut server_credentials_handle,
         server_flags,
         ap_req_token,
         &mut unused_network_client,
     );
+    assert_eq!(server_status, SecurityStatus::Ok);
 
     let (status, final_token) = initialize_security_context(
         &mut kerberos_client,
@@ -519,4 +524,9 @@ fn spnego_iakerb() {
     test_encryption(&mut spnego_client, &mut kerberos_server);
     test_stream_buffer_encryption(&mut spnego_client, &mut kerberos_server);
     test_rpc_request_encryption(&mut spnego_client, &mut kerberos_server);
+}
+
+#[test]
+fn iakerb_auth_without_as_rep_etype_info2_with_tgs_rep_enc_part_in_as_rep() {
+    iakerb_auth_with_kdc(|kdc| kdc.omit_as_rep_etype_info2().tgs_rep_enc_part_in_as_rep());
 }

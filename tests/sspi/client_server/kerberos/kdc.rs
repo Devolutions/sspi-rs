@@ -54,6 +54,37 @@ pub(crate) struct PasswordCreds {
     pub salt: String,
 }
 
+/// Wire-level salt advertisement, independent of the key used by the mock KDC.
+#[derive(Clone)]
+pub(crate) enum SaltHint {
+    Absent,
+    MissingField,
+    Explicit(String),
+}
+
+impl SaltHint {
+    fn padata(&self) -> Vec<PaData> {
+        let salt = match self {
+            Self::Absent => return Vec::new(),
+            Self::MissingField => None,
+            Self::Explicit(salt) => Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
+                IA5String::from_string(salt.clone()).unwrap(),
+            ))),
+        };
+        vec![PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
+                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
+                    salt: Optional::from(salt),
+                    s2kparams: Optional::from(None),
+                }]))
+                .unwrap(),
+            )),
+        }]
+    }
+}
+
 /// Represents user name in the internal KDC database.
 ///
 /// We created a wrapper type because [PrincipalName] does not
@@ -113,6 +144,9 @@ pub(crate) struct KdcMock {
     omit_as_rep_etype_info2: bool,
     /// Whether the AS-REP enc-part is an EncTGSRepPart, as the MIT KDC encodes it.
     tgs_rep_enc_part_in_as_rep: bool,
+    preauth_salt_hint: Option<SaltHint>,
+    as_rep_salt_hint: Option<SaltHint>,
+    as_rep_encryption_salt: Option<String>,
 }
 
 impl KdcMock {
@@ -140,6 +174,9 @@ impl KdcMock {
             reject_valid_preauth_with_skew: false,
             omit_as_rep_etype_info2: false,
             tgs_rep_enc_part_in_as_rep: false,
+            preauth_salt_hint: None,
+            as_rep_salt_hint: None,
+            as_rep_encryption_salt: None,
         }
     }
 
@@ -165,10 +202,39 @@ impl KdcMock {
         self
     }
 
+    pub(crate) fn with_preauth_salt_hint(mut self, hint: SaltHint) -> Self {
+        self.preauth_salt_hint = Some(hint);
+        self
+    }
+
+    pub(crate) fn with_as_rep_salt_hint(mut self, hint: SaltHint) -> Self {
+        self.as_rep_salt_hint = Some(hint);
+        self
+    }
+
+    pub(crate) fn with_as_rep_encryption_salt(mut self, salt: &str) -> Self {
+        self.as_rep_encryption_salt = Some(salt.to_owned());
+        self
+    }
+
     fn make_err<const ERROR_CODE: u32>(
         sname: PrincipalName,
         realm: Realm,
         salt: Option<String>,
+        clock_offset: Duration,
+    ) -> KrbError {
+        Self::make_err_with_salt_hint::<ERROR_CODE>(
+            sname,
+            realm,
+            &salt.map(SaltHint::Explicit).unwrap_or(SaltHint::Absent),
+            clock_offset,
+        )
+    }
+
+    fn make_err_with_salt_hint<const ERROR_CODE: u32>(
+        sname: PrincipalName,
+        realm: Realm,
+        salt_hint: &SaltHint,
         clock_offset: Duration,
     ) -> KrbError {
         let current_date = OffsetDateTime::now_utc() + clock_offset;
@@ -190,28 +256,15 @@ impl KdcMock {
             sname: ExplicitContextTag10::from(sname),
             e_text: Optional::from(None),
             e_data: Optional::from(Some(ExplicitContextTag12::from(OctetStringAsn1::from(
-                picky_asn1_der::to_vec(&Asn1SequenceOf::from(if let Some(salt) = salt {
-                    vec![
-                        PaData {
-                            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
-                            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-                                picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
-                                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
-                                    salt: Optional::from(Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
-                                        IA5String::from_string(salt).unwrap(),
-                                    )))),
-                                    s2kparams: Optional::from(None),
-                                }]))
-                                .unwrap(),
-                            )),
-                        },
-                        PaData {
+                picky_asn1_der::to_vec(&Asn1SequenceOf::from({
+                    let mut padata = salt_hint.padata();
+                    if !matches!(salt_hint, SaltHint::Absent) {
+                        padata.push(PaData {
                             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ENC_TIMESTAMP.to_vec())),
                             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(Vec::new())),
-                        },
-                    ]
-                } else {
-                    Vec::new()
+                        });
+                    }
+                    padata
                 }))
                 .unwrap(),
             )))),
@@ -224,21 +277,22 @@ impl KdcMock {
         realm: Realm,
         pa_datas: &Asn1SequenceOf<PaData>,
         clock_offset: Duration,
+        salt_hint: &SaltHint,
     ) -> Result<Vec<u8>, KrbError> {
         macro_rules! err_preauth {
             (failed) => {
-                Self::make_err::<{ KDC_ERR_PREAUTH_FAILED }>(
+                Self::make_err_with_salt_hint::<{ KDC_ERR_PREAUTH_FAILED }>(
                     sname.clone(),
                     realm.clone(),
-                    Some(creds.salt.clone()),
+                    salt_hint,
                     clock_offset,
                 )
             };
             (required) => {
-                Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(
+                Self::make_err_with_salt_hint::<{ KDC_ERR_PREAUTH_REQUIRED }>(
                     sname.clone(),
                     realm.clone(),
-                    Some(creds.salt.clone()),
+                    salt_hint,
                     clock_offset,
                 )
             };
@@ -374,6 +428,10 @@ impl KdcMock {
             .users
             .get(&username)
             .expect("user's credentials is not found in KDC database");
+        let preauth_salt_hint = self
+            .preauth_salt_hint
+            .clone()
+            .unwrap_or_else(|| SaltHint::Explicit(creds.salt.clone()));
 
         Self::validate_timestamp(
             creds,
@@ -382,15 +440,16 @@ impl KdcMock {
             &padata
                 .0
                 .ok_or_else(|| {
-                    Self::make_err::<{ KDC_ERR_PREAUTH_REQUIRED }>(
+                    Self::make_err_with_salt_hint::<{ KDC_ERR_PREAUTH_REQUIRED }>(
                         sname.clone(),
                         realm.clone(),
-                        Some(creds.salt.clone()),
+                        &preauth_salt_hint,
                         self.clock_offset,
                     )
                 })?
                 .0,
             self.clock_offset,
+            &preauth_salt_hint,
         )?;
 
         if self.reject_valid_preauth_with_skew {
@@ -409,7 +468,10 @@ impl KdcMock {
         rng.fill_bytes(&mut session_key);
 
         let initial_key = cipher
-            .generate_key_from_password(&creds.password, creds.salt.as_bytes())
+            .generate_key_from_password(
+                &creds.password,
+                self.as_rep_encryption_salt.as_deref().unwrap_or(&creds.salt).as_bytes(),
+            )
             .unwrap();
 
         let auth_time = OffsetDateTime::now_utc();
@@ -449,21 +511,12 @@ impl KdcMock {
         .unwrap();
         let as_rep_enc_data = cipher.encrypt(&initial_key, AS_REP_ENC, &as_rep_enc_part).unwrap();
 
-        let etype_info2 = (!self.omit_as_rep_etype_info2).then(|| {
-            ExplicitContextTag2::from(Asn1SequenceOf::from(vec![PaData {
-                padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
-                padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
-                    picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
-                        etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
-                        salt: Optional::from(Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
-                            IA5String::from_string(creds.salt.clone()).unwrap(),
-                        )))),
-                        s2kparams: Optional::from(None),
-                    }]))
-                    .unwrap(),
-                )),
-            }]))
-        });
+        let reply_hint = self
+            .as_rep_salt_hint
+            .clone()
+            .unwrap_or_else(|| SaltHint::Explicit(creds.salt.clone()));
+        let etype_info2 = (!self.omit_as_rep_etype_info2 && !matches!(reply_hint, SaltHint::Absent))
+            .then(|| ExplicitContextTag2::from(Asn1SequenceOf::from(reply_hint.padata())));
 
         Ok(AsRep::from(KdcRep {
             pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
