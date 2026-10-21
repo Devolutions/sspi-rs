@@ -18,7 +18,7 @@ State rationale, not history.
 
 ## Rust
 
-Write Rust with the `rust-style` skill.
+Write Rust with the `rust-style` skill and tests with the `test-writer` skill.
 Library crates expose typed errors, not `anyhow`; see `STYLE.md` § Error types.
 Think before silencing a lint, then use `#[expect(<lint>, reason = "...")]` so the suppression explains itself and expires when it stops being needed.
 Do not use `[workspace.dependencies]` for anything that is not workspace-internal, because `release-plz` must detect dependency updates.
