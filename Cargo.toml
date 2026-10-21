@@ -76,6 +76,7 @@ rc_mutex = "warn"
 suspicious_xor_used_as_pow = "warn"
 unused_result_ok = "warn"
 
+# Only workspace-internal crates belong here, so release-plz detects external dependency updates.
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.4", path = "crates/winscard" }
