@@ -4,6 +4,8 @@ Reusable agent skills live in `.agents/skills/` and `.github/skills/`; use the m
 Skills listed in `.github/skills-sync.yml` are overwritten weekly from `Devolutions/devolutions-gateway`; change those upstream, and keep repository-local skills in `.github/skills/`.
 `ffi/`, `crates/dpapi-core/`, `crates/ffi-types/` and `crates/winscard/` have their own `AGENTS.md`; read it before changing those crates.
 
+Start a work session with `/contribute`, which picks the delivery flow by scale and the skills each step needs.
+
 ## Intent files
 
 `INTENT.md` and `*.intent.md` files contain human-owned intent for the software.
