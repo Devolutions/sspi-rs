@@ -20,7 +20,7 @@ use rand::rngs::StdRng;
 use rand_core::Rng as _;
 
 use super::wrap::{aes_size, constant_time_eq};
-use crate::{Error, ErrorKind, Result, Secret};
+use crate::{Error, ErrorKind, Secret};
 
 /// Upper bound on keys held by one Remote Credential Guard session.
 pub(crate) const MAX_KEYS: usize = 256;
@@ -64,7 +64,7 @@ impl KeyStore {
         key: Secret<Vec<u8>>,
         role: KeyRole,
         rng: &mut StdRng,
-    ) -> Result<Vec<u8>> {
+    ) -> crate::Result<Vec<u8>> {
         aes_size(&cipher_suite)?;
 
         let key_size = cipher_suite.cipher().key_size();
@@ -123,7 +123,7 @@ impl KeyStore {
     /// TGT keys never resolve by their raw bytes, and no unknown reference is interpreted as a key.
     ///
     /// All entries are compared so that the lookup time does not depend on the matching position.
-    pub(crate) fn get(&self, etype: i32, reference: &[u8], role: KeyRole) -> Result<&StoredKey> {
+    pub(crate) fn get(&self, etype: i32, reference: &[u8], role: KeyRole) -> crate::Result<&StoredKey> {
         let mut found = None;
 
         for entry in &self.entries {

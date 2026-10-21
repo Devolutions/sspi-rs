@@ -80,7 +80,7 @@ const USAGE_AP_REP: i32 = 12;
 
 const AES256_SUITE: CipherSuite = CipherSuite::Aes256CtsHmacSha196;
 
-fn kind<T>(result: Result<T>) -> ErrorKind {
+fn kind<T>(result: crate::Result<T>) -> ErrorKind {
     match result {
         Ok(_) => panic!("the operation unexpectedly succeeded"),
         Err(error) => error.error_type,
@@ -281,7 +281,7 @@ fn server_unseal(seq_number: u64, token: &[u8]) -> Vec<u8> {
         .to_vec()
 }
 
-fn kerberos_encrypt(kerberos: &mut Kerberos, plaintext: &[u8]) -> Result<Vec<u8>> {
+fn kerberos_encrypt(kerberos: &mut Kerberos, plaintext: &[u8]) -> crate::Result<Vec<u8>> {
     let mut token = [0; 1024];
     let mut data = plaintext.to_vec();
     let mut message = [
@@ -296,7 +296,7 @@ fn kerberos_encrypt(kerberos: &mut Kerberos, plaintext: &[u8]) -> Result<Vec<u8>
     Ok(wrapped)
 }
 
-fn kerberos_decrypt(kerberos: &mut Kerberos, token: &[u8]) -> Result<Vec<u8>> {
+fn kerberos_decrypt(kerberos: &mut Kerberos, token: &[u8]) -> crate::Result<Vec<u8>> {
     let (header, body) = token.split_at(SEAL_OVERHEAD);
     let mut header = header.to_vec();
     let mut body = body.to_vec();
@@ -3403,7 +3403,7 @@ impl ReplySpec {
     }
 }
 
-fn process(spec: ReplySpec) -> Result<TgsReply> {
+fn process(spec: ReplySpec) -> crate::Result<TgsReply> {
     process_tgs_rep(
         spec.build(),
         &captured_tgt(SERVICE_TGT_KEY, SERVICE_TGT_MARKER),
@@ -3555,7 +3555,7 @@ impl FakeKdc {
         Self { behavior, requests: 0 }
     }
 
-    fn respond(&mut self, request: &NetworkRequest) -> Result<Vec<u8>> {
+    fn respond(&mut self, request: &NetworkRequest) -> crate::Result<Vec<u8>> {
         assert_eq!(request.url, Url::parse(KDC_URL).unwrap());
         let (length, message) = request.data.split_at(4);
         assert_eq!(
@@ -3692,9 +3692,10 @@ fn krb_error(error_code: u32) -> Vec<u8> {
     .unwrap()
 }
 
-type CredentialsGenerator<'a> = Generator<'a, NetworkRequest, Result<Vec<u8>>, Result<Zeroizing<Vec<u8>>>>;
+type CredentialsGenerator<'a> =
+    Generator<'a, NetworkRequest, crate::Result<Vec<u8>>, crate::Result<Zeroizing<Vec<u8>>>>;
 
-fn build_credentials(kerberos: &mut Kerberos, target: &str, kdc: &mut FakeKdc) -> Result<Zeroizing<Vec<u8>>> {
+fn build_credentials(kerberos: &mut Kerberos, target: &str, kdc: &mut FakeKdc) -> crate::Result<Zeroizing<Vec<u8>>> {
     build_credentials_with_ntlm(kerberos, target, kdc, None)
 }
 
@@ -3703,7 +3704,7 @@ fn build_credentials_with_ntlm(
     target: &str,
     kdc: &mut FakeKdc,
     ntlm: Option<NtlmRedirectionPolicy>,
-) -> Result<Zeroizing<Vec<u8>>> {
+) -> crate::Result<Zeroizing<Vec<u8>>> {
     let target = target.to_owned();
     let mut generator: CredentialsGenerator<'_> = Generator::new(move |mut yield_point| async move {
         kerberos

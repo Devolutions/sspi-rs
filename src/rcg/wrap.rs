@@ -8,11 +8,12 @@
 //! [RFC 4121]: https://www.rfc-editor.org/rfc/rfc4121
 //! [2.2 Message Syntax]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpear/
 
+use picky_krb::constants::key_usages::{ACCEPTOR_SEAL, ACCEPTOR_SIGN, INITIATOR_SEAL, INITIATOR_SIGN};
 use picky_krb::crypto::CipherSuite;
-use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
+use picky_krb::crypto::aes::{AES_BLOCK_SIZE, AES_MAC_SIZE, AesSize, checksum_sha_aes};
 use zeroize::Zeroizing;
 
-use crate::{Error, ErrorKind, Result};
+use crate::{Error, ErrorKind};
 
 const WRAP_TOKEN_ID: [u8; 2] = [0x05, 0x04];
 const MIC_TOKEN_ID: [u8; 2] = [0x04, 0x04];
@@ -31,13 +32,10 @@ const FLAG_ACCEPTOR_SUBKEY: u8 = 0x04;
 /// [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550
 const SEAL_RRC: u16 = 28;
 
-const AES_CONFOUNDER_LEN: usize = 16;
-const AES_HMAC_LEN: usize = 12;
-
 /// Size of a sealed token without any payload: header, confounder, encrypted header copy, and HMAC.
-pub(crate) const SEAL_OVERHEAD: usize = TOKEN_HEADER_LEN + AES_CONFOUNDER_LEN + TOKEN_HEADER_LEN + AES_HMAC_LEN;
+pub(crate) const SEAL_OVERHEAD: usize = TOKEN_HEADER_LEN + AES_BLOCK_SIZE + TOKEN_HEADER_LEN + AES_MAC_SIZE;
 
-const MIC_TOKEN_LEN: usize = TOKEN_HEADER_LEN + AES_HMAC_LEN;
+const MIC_TOKEN_LEN: usize = TOKEN_HEADER_LEN + AES_MAC_SIZE;
 
 /// Upper bound on the size of a Remote Credential Guard wrap token.
 pub const MAX_TOKEN_LEN: usize = 4 * 1024 * 1024;
@@ -50,11 +48,6 @@ pub const MAX_TOKEN_LEN: usize = 4 * 1024 * 1024;
 /// [5.5.1 KRB_AP_REQ Definition]: https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1
 pub(crate) const MAX_SEQUENCE_NUMBER: u64 = 0xFFFF_FFFF;
 
-const KEY_USAGE_ACCEPTOR_SEAL: i32 = 22;
-const KEY_USAGE_ACCEPTOR_SIGN: i32 = 23;
-const KEY_USAGE_INITIATOR_SEAL: i32 = 24;
-const KEY_USAGE_INITIATOR_SIGN: i32 = 25;
-
 /// The party that produced a token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Sender {
@@ -65,15 +58,15 @@ pub(crate) enum Sender {
 impl Sender {
     fn seal_usage(self) -> i32 {
         match self {
-            Sender::Initiator => KEY_USAGE_INITIATOR_SEAL,
-            Sender::Acceptor => KEY_USAGE_ACCEPTOR_SEAL,
+            Sender::Initiator => INITIATOR_SEAL,
+            Sender::Acceptor => ACCEPTOR_SEAL,
         }
     }
 
     fn sign_usage(self) -> i32 {
         match self {
-            Sender::Initiator => KEY_USAGE_INITIATOR_SIGN,
-            Sender::Acceptor => KEY_USAGE_ACCEPTOR_SIGN,
+            Sender::Initiator => INITIATOR_SIGN,
+            Sender::Acceptor => ACCEPTOR_SIGN,
         }
     }
 
@@ -89,7 +82,7 @@ impl Sender {
 }
 
 /// Returns the AES size for the cipher suites accepted by the Remote Credential Guard context.
-pub(crate) fn aes_size(cipher_suite: &CipherSuite) -> Result<AesSize> {
+pub(crate) fn aes_size(cipher_suite: &CipherSuite) -> crate::Result<AesSize> {
     match cipher_suite {
         CipherSuite::Aes256CtsHmacSha196 => Ok(AesSize::Aes256),
         CipherSuite::Aes128CtsHmacSha196 => Ok(AesSize::Aes128),
@@ -111,7 +104,7 @@ fn header(token_id: [u8; 2], flags: u8, ec: u16, rrc: u16, seq_number: u64) -> [
     header
 }
 
-fn check_sequence_number(seq_number: u64) -> Result<()> {
+fn check_sequence_number(seq_number: u64) -> crate::Result<()> {
     if seq_number > MAX_SEQUENCE_NUMBER {
         return Err(Error::new(
             ErrorKind::OutOfSequence,
@@ -144,7 +137,7 @@ pub(crate) fn seal(
     sender: Sender,
     seq_number: u64,
     plaintext: &[u8],
-) -> Result<Vec<u8>> {
+) -> crate::Result<Vec<u8>> {
     aes_size(cipher_suite)?;
     check_sequence_number(seq_number)?;
 
@@ -182,7 +175,7 @@ pub(crate) fn unseal(
     sender: Sender,
     expected_seq_number: u64,
     token: &[u8],
-) -> Result<Zeroizing<Vec<u8>>> {
+) -> crate::Result<Zeroizing<Vec<u8>>> {
     aes_size(cipher_suite)?;
     check_sequence_number(expected_seq_number)?;
 
@@ -272,7 +265,7 @@ pub(crate) fn mic(
     sender: Sender,
     seq_number: u64,
     message: &[u8],
-) -> Result<Vec<u8>> {
+) -> crate::Result<Vec<u8>> {
     let aes_size = aes_size(cipher_suite)?;
     check_sequence_number(seq_number)?;
 
@@ -304,7 +297,7 @@ pub(crate) fn verify_mic(
     expected_seq_number: u64,
     message: &[u8],
     token: &[u8],
-) -> Result<()> {
+) -> crate::Result<()> {
     let aes_size = aes_size(cipher_suite)?;
     check_sequence_number(expected_seq_number)?;
 

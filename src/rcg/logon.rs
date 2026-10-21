@@ -58,7 +58,7 @@ use crate::kerberos::flags::KdcOptions;
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{KERBEROS_VERSION, TGT_SERVICE_NAME};
 use crate::utils::parse_target_name;
-use crate::{Error, ErrorKind, Kerberos, KerberosState, Result, Secret};
+use crate::{Error, ErrorKind, Kerberos, KerberosState, Secret};
 
 /// `KerbTicketLogon` value of `KERB_LOGON_SUBMIT_TYPE`.
 pub(crate) const KERB_TICKET_LOGON_MESSAGE_TYPE: u32 = 10;
@@ -90,18 +90,18 @@ const HMAC_SHA1_96_AES128: u8 = 15;
 /// [RFC 3962]: https://www.rfc-editor.org/rfc/rfc3962
 const HMAC_SHA1_96_AES256: u8 = 16;
 
-fn kerberos_string(value: &str) -> Result<KerberosStringAsn1> {
+fn kerberos_string(value: &str) -> crate::Result<KerberosStringAsn1> {
     Ok(KerberosStringAsn1::from(IA5String::from_string(value.to_owned())?))
 }
 
-fn principal_name(name_type: u8, names: &[&str]) -> Result<PrincipalName> {
+fn principal_name(name_type: u8, names: &[&str]) -> crate::Result<PrincipalName> {
     Ok(PrincipalName {
         name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
         name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
             names
                 .iter()
                 .map(|name| kerberos_string(name))
-                .collect::<Result<Vec<_>>>()?,
+                .collect::<crate::Result<Vec<_>>>()?,
         )),
     })
 }
@@ -110,7 +110,7 @@ fn kerberos_time(time: OffsetDateTime) -> KerberosTime {
     KerberosTime::from(GeneralizedTime::from(time))
 }
 
-fn checksum_type(cipher_suite: &CipherSuite) -> Result<u8> {
+fn checksum_type(cipher_suite: &CipherSuite) -> crate::Result<u8> {
     match cipher_suite {
         CipherSuite::Aes256CtsHmacSha196 => Ok(HMAC_SHA1_96_AES256),
         CipherSuite::Aes128CtsHmacSha196 => Ok(HMAC_SHA1_96_AES128),
@@ -148,7 +148,7 @@ pub(super) struct TgsRequestOptions<'a> {
 /// request offers only AES256 and AES128.
 ///
 /// [3.3.1 Generation of KRB_TGS_REQ Message]: https://www.rfc-editor.org/rfc/rfc4120#section-3.3.1
-pub(super) fn build_tgs_req(options: TgsRequestOptions<'_>) -> Result<TgsReq> {
+pub(super) fn build_tgs_req(options: TgsRequestOptions<'_>) -> crate::Result<TgsReq> {
     let TgsRequestOptions {
         tgt,
         client,
@@ -257,7 +257,7 @@ pub(super) fn process_tgs_rep(
     client: &ClientBinding,
     requested_sname: &PrincipalName,
     nonce: u32,
-) -> Result<TgsReply> {
+) -> crate::Result<TgsReply> {
     let tgs_rep = tgs_rep.0;
 
     if !tgs_rep
@@ -345,7 +345,7 @@ pub(super) fn build_krb_cred(
     key_handle: &[u8],
     service_ticket: &TgsReply,
     now: OffsetDateTime,
-) -> Result<Vec<u8>> {
+) -> crate::Result<Vec<u8>> {
     let part = &forwarded_tgt.part;
     let microseconds = now.microsecond();
 
@@ -401,7 +401,7 @@ pub(super) fn build_krb_cred(
 /// The layout is the 64-bit Windows layout: `MessageType`, `Flags`, `ServiceTicketLength`,
 /// `TicketGrantingTicketLength` (little-endian `ULONG`s), then the `ServiceTicket` and `TicketGrantingTicket`
 /// pointers encoded as 64-bit offsets from the start of the structure, followed by the two buffers.
-pub(super) fn build_kerb_ticket_logon(service_ticket: &[u8], ticket_granting_ticket: &[u8]) -> Result<Vec<u8>> {
+pub(super) fn build_kerb_ticket_logon(service_ticket: &[u8], ticket_granting_ticket: &[u8]) -> crate::Result<Vec<u8>> {
     let length_error = || Error::new(ErrorKind::InvalidParameter, "ticket is too large for KERB_TICKET_LOGON");
 
     let service_ticket_len = u32::try_from(service_ticket.len()).map_err(|_| length_error())?;
@@ -432,7 +432,7 @@ pub(super) fn build_kerb_ticket_logon(service_ticket: &[u8], ticket_granting_tic
 pub(super) fn build_ts_credentials(
     kerb_ticket_logon: &[u8],
     ntlm_supplemental_credential: Option<&[u8]>,
-) -> Result<Zeroizing<Vec<u8>>> {
+) -> crate::Result<Zeroizing<Vec<u8>>> {
     let utf16 = |name: &str| name.encode_utf16().flat_map(u16::to_le_bytes).collect::<Vec<_>>();
 
     let supplemental_creds = ntlm_supplemental_credential.map(|credential| {
@@ -459,7 +459,7 @@ pub(super) fn build_ts_credentials(
     Ok(Zeroizing::new(picky_asn1_der::to_vec(&ts_credentials)?))
 }
 
-fn parse_tgs_rep(response: &[u8]) -> Result<TgsRep> {
+fn parse_tgs_rep(response: &[u8]) -> crate::Result<TgsRep> {
     // The first 4 bytes are the message length.
     let response = response.get(4..).ok_or_else(|| {
         Error::new(
@@ -485,7 +485,7 @@ impl Kerberos {
         yield_point: &mut YieldPointLocal,
         target_name: &str,
         ntlm: Option<&NtlmRedirectionPolicy>,
-    ) -> Result<Zeroizing<Vec<u8>>> {
+    ) -> crate::Result<Zeroizing<Vec<u8>>> {
         let result = self
             .build_remote_guard_credentials_impl(yield_point, target_name, ntlm)
             .await;
@@ -504,7 +504,7 @@ impl Kerberos {
         yield_point: &mut YieldPointLocal,
         target_name: &str,
         ntlm: Option<&NtlmRedirectionPolicy>,
-    ) -> Result<Zeroizing<Vec<u8>>> {
+    ) -> crate::Result<Zeroizing<Vec<u8>>> {
         if self.state != KerberosState::Final {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,

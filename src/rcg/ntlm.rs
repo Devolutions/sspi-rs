@@ -44,7 +44,7 @@ use super::session::RemoteGuardSession;
 use super::wrap::constant_time_eq;
 use crate::crypto::{compute_hmac_md5, compute_md4};
 use crate::ntlm::NTLM_HASH_PREFIX;
-use crate::{CredentialsBuffers, Error, ErrorKind, Result, Secret, Utf16String, Utf16StringExt};
+use crate::{CredentialsBuffers, Error, ErrorKind, Secret, Utf16String, Utf16StringExt};
 
 /// Name of the security package in the NTLM `TSRemoteGuardPackageCred` (MS-CSSP 2.2.1.2.3.1).
 pub(crate) const NTLM_PACKAGE_NAME: &str = "NTLM";
@@ -100,7 +100,7 @@ pub(crate) struct NtlmRedirectionPolicy {
 }
 
 impl NtlmRedirectionPolicy {
-    pub(crate) fn new(names: Option<NtlmRedirectionNames>) -> Result<Self> {
+    pub(crate) fn new(names: Option<NtlmRedirectionNames>) -> crate::Result<Self> {
         if names.as_ref().is_some_and(|names| names.user.is_empty()) {
             return Err(Error::new(
                 ErrorKind::InvalidParameter,
@@ -136,7 +136,7 @@ impl NtlmCredential {
         identity: Option<&CredentialsBuffers>,
         policy: &NtlmRedirectionPolicy,
         rng: &mut StdRng,
-    ) -> Result<Option<Self>> {
+    ) -> crate::Result<Option<Self>> {
         let Some(CredentialsBuffers::AuthIdentity(identity)) = identity else {
             return Ok(None);
         };
@@ -193,7 +193,7 @@ impl NtlmCredential {
         buffer
     }
 
-    fn check_reference(&self, reference: &NtlmCredentialReference<'_>) -> Result<()> {
+    fn check_reference(&self, reference: &NtlmCredentialReference<'_>) -> crate::Result<()> {
         let fields_valid = (reference.reserved1 == 1) & (reference.reserved2 == 0) & (reference.reserved3 == 0);
         let handle_valid = constant_time_eq(reference.encrypted_secrets, &self.handle);
 
@@ -207,7 +207,7 @@ impl NtlmCredential {
         Ok(())
     }
 
-    fn check_names(&self, user: &Utf16String, domain: &Utf16String) -> Result<()> {
+    fn check_names(&self, user: &Utf16String, domain: &Utf16String) -> crate::Result<()> {
         if user.to_uppercase() != self.user || domain.to_uppercase() != self.domain {
             return Err(Error::new(
                 ErrorKind::LogonDenied,
@@ -223,7 +223,7 @@ impl NtlmCredential {
 /// [`NTLM_HASH_PREFIX`].
 ///
 /// [MS-NLMP]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/
-pub(super) fn nt_owf(password: &[u16]) -> Result<Secret<[u8; NT_OWF_LEN]>> {
+pub(super) fn nt_owf(password: &[u16]) -> crate::Result<Secret<[u8; NT_OWF_LEN]>> {
     let prefix = NTLM_HASH_PREFIX.encode_utf16();
     let prefix_len = prefix.clone().count();
 
@@ -364,7 +364,7 @@ pub struct NtlmCredentialComparison {
 /// Validates an MS-NLMP `ServerName` (`AV_PAIR` list) and returns its `MsvAvTimestamp`, if any.
 ///
 /// The list must be well formed and end exactly with a single `MsvAvEOL`.
-fn parse_server_name(server_name: &[u8]) -> Result<Option<u64>> {
+fn parse_server_name(server_name: &[u8]) -> crate::Result<Option<u64>> {
     let invalid = || Error::new(ErrorKind::InvalidToken, "NTLM ServerName is not a valid AV_PAIR list");
 
     if server_name.len() > MAX_NTLM_SERVER_NAME_LEN {
@@ -400,7 +400,7 @@ fn parse_server_name(server_name: &[u8]) -> Result<Option<u64>> {
     }
 }
 
-fn parse_name(name: &[u8], what: &str) -> Result<Utf16String> {
+fn parse_name(name: &[u8], what: &str) -> crate::Result<Utf16String> {
     Utf16String::from_bytes_le(name)
         .map_err(|_| Error::new(ErrorKind::InvalidParameter, format!("NTLM {what} is not valid UTF-16")))
 }
@@ -416,7 +416,7 @@ pub(super) fn compute_ntlm3_response(
     server_challenge: &[u8; CHALLENGE_LEN],
     client_challenge: &[u8; CHALLENGE_LEN],
     time: u64,
-) -> Result<Ntlm3ChallengeResponse> {
+) -> crate::Result<Ntlm3ChallengeResponse> {
     let mut user_and_domain = Zeroizing::new(user.to_uppercase().to_bytes_le());
     user_and_domain.extend_from_slice(domain.as_bytes_le());
     let response_key = Zeroizing::new(compute_hmac_md5(nt_owf, &user_and_domain)?);
@@ -456,7 +456,7 @@ pub(super) fn compute_ntlm3_response(
     })
 }
 
-pub(super) fn current_filetime(clock_offset: Duration) -> Result<u64> {
+pub(super) fn current_filetime(clock_offset: Duration) -> crate::Result<u64> {
     let out_of_range = || Error::new(ErrorKind::TimeSkew, "current time is out of range");
 
     let now = OffsetDateTime::now_utc()
@@ -468,7 +468,7 @@ pub(super) fn current_filetime(clock_offset: Duration) -> Result<u64> {
 }
 
 impl RemoteGuardSession {
-    fn ntlm_credential(&self) -> Result<&NtlmCredential> {
+    fn ntlm_credential(&self) -> crate::Result<&NtlmCredential> {
         self.check_usable()?;
 
         self.ntlm.as_ref().ok_or_else(|| {
@@ -502,7 +502,7 @@ impl RemoteGuardSession {
     pub fn lm20_get_ntlm3_challenge_response(
         &mut self,
         request: &Lm20GetNtlm3ChallengeResponseRequest<'_>,
-    ) -> Result<Ntlm3ChallengeResponse> {
+    ) -> crate::Result<Ntlm3ChallengeResponse> {
         let credential = self.ntlm_credential()?;
         credential.check_reference(&request.credential)?;
 
@@ -538,7 +538,7 @@ impl RemoteGuardSession {
         &self,
         lhs: &NtlmCredentialReference<'_>,
         rhs: &NtlmCredentialReference<'_>,
-    ) -> Result<NtlmCredentialComparison> {
+    ) -> crate::Result<NtlmCredentialComparison> {
         let credential = self.ntlm_credential()?;
         credential.check_reference(lhs)?;
         credential.check_reference(rhs)?;

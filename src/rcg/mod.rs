@@ -88,7 +88,7 @@ pub use self::wrap::MAX_TOKEN_LEN as MAX_WRAP_TOKEN_LEN;
 use crate::kerberos::client::KerberosClientState;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
-    BufferType, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosState, Result, Secret, SecurityBufferFlags,
+    BufferType, DecryptionFlags, Error, ErrorKind, Kerberos, KerberosState, Secret, SecurityBufferFlags,
     SecurityBufferRef, SecurityStatus,
 };
 
@@ -113,7 +113,7 @@ impl CapturedTgt {
         ticket: Ticket,
         cipher_suite: CipherSuite,
         session_key: Secret<Vec<u8>>,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         wrap::aes_size(&cipher_suite)?;
 
         if session_key.as_ref().len() != cipher_suite.cipher().key_size() {
@@ -140,7 +140,7 @@ pub(crate) struct ClientBinding {
 }
 
 impl ClientBinding {
-    pub(crate) fn realm_asn1(&self) -> Result<Realm> {
+    pub(crate) fn realm_asn1(&self) -> crate::Result<Realm> {
         Ok(Realm::from(IA5String::from_string(self.realm.clone())?))
     }
 }
@@ -162,7 +162,7 @@ impl ProtectionContext {
         key: Secret<Vec<u8>>,
         next_send_seq: u64,
         next_recv_seq: u64,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         wrap::aes_size(&cipher_suite)?;
 
         if key.as_ref().len() != cipher_suite.cipher().key_size() {
@@ -180,7 +180,7 @@ impl ProtectionContext {
         })
     }
 
-    pub(crate) fn seal(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
+    pub(crate) fn seal(&mut self, plaintext: &[u8]) -> crate::Result<Vec<u8>> {
         if plaintext.len() > wrap::MAX_TOKEN_LEN - wrap::SEAL_OVERHEAD {
             return Err(Error::new(ErrorKind::InvalidParameter, "message is too large to wrap"));
         }
@@ -197,7 +197,7 @@ impl ProtectionContext {
         Ok(token)
     }
 
-    pub(crate) fn unseal(&mut self, token: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+    pub(crate) fn unseal(&mut self, token: &[u8]) -> crate::Result<Zeroizing<Vec<u8>>> {
         let plaintext = wrap::unseal(
             &self.cipher_suite,
             self.key.as_ref(),
@@ -210,7 +210,7 @@ impl ProtectionContext {
         Ok(plaintext)
     }
 
-    pub(crate) fn mic(&mut self, message: &[u8]) -> Result<Vec<u8>> {
+    pub(crate) fn mic(&mut self, message: &[u8]) -> crate::Result<Vec<u8>> {
         let token = wrap::mic(
             &self.cipher_suite,
             self.key.as_ref(),
@@ -223,7 +223,7 @@ impl ProtectionContext {
         Ok(token)
     }
 
-    pub(crate) fn verify_mic(&mut self, message: &[u8], token: &[u8]) -> Result<()> {
+    pub(crate) fn verify_mic(&mut self, message: &[u8], token: &[u8]) -> crate::Result<()> {
         wrap::verify_mic(
             &self.cipher_suite,
             self.key.as_ref(),
@@ -282,7 +282,7 @@ impl fmt::Debug for RemoteGuardState {
 }
 
 impl RemoteGuardState {
-    fn check_usable(&self) -> Result<()> {
+    fn check_usable(&self) -> crate::Result<()> {
         if self.poisoned {
             return Err(Error::new(
                 ErrorKind::ContextExpired,
@@ -294,7 +294,10 @@ impl RemoteGuardState {
     }
 
     /// Runs `f` on the protection context and poisons the state if `f` fails.
-    pub(crate) fn with_context<T>(&mut self, f: impl FnOnce(&mut ProtectionContext) -> Result<T>) -> Result<T> {
+    pub(crate) fn with_context<T>(
+        &mut self,
+        f: impl FnOnce(&mut ProtectionContext) -> crate::Result<T>,
+    ) -> crate::Result<T> {
         self.check_usable()?;
 
         let context = self.context.as_mut().ok_or_else(|| {
@@ -331,7 +334,7 @@ impl RemoteGuardState {
         acceptor_subkey: Option<&EncryptionKey>,
         next_send_seq: u64,
         next_recv_seq: u64,
-    ) -> Result<()> {
+    ) -> crate::Result<()> {
         self.check_usable()?;
 
         if self.context.is_some() {
@@ -367,7 +370,7 @@ impl RemoteGuardState {
 
     /// Seals the single `Data` buffer and writes the first [`wrap::SEAL_OVERHEAD`] bytes of the token to the
     /// `Token` buffer and the rest of the token to the `Data` buffer.
-    pub(crate) fn encrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<SecurityStatus> {
+    pub(crate) fn encrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<SecurityStatus> {
         check_data_buffers(message)?;
 
         if SecurityBufferRef::find_buffer(message, BufferType::Token)?.buf_len() < wrap::SEAL_OVERHEAD {
@@ -406,7 +409,7 @@ impl RemoteGuardState {
     }
 
     /// Unseals a token given as `Token` and `Data` buffers, or as a `Stream` buffer.
-    pub(crate) fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
+    pub(crate) fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         check_data_buffers(message)?;
 
         let token = extract_encrypted_data(message)?;
@@ -420,15 +423,15 @@ impl RemoteGuardState {
         Ok(DecryptionFlags::empty())
     }
 
-    pub(crate) fn generate_mic(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+    pub(crate) fn generate_mic(&mut self, data: &[u8]) -> crate::Result<Vec<u8>> {
         self.with_context(|context| context.mic(data))
     }
 
-    pub(crate) fn verify_mic(&mut self, token: &[u8], data: &[u8]) -> Result<()> {
+    pub(crate) fn verify_mic(&mut self, token: &[u8], data: &[u8]) -> crate::Result<()> {
         self.with_context(|context| context.verify_mic(data, token))
     }
 
-    fn into_session(self, clock_offset: Duration) -> Result<RemoteGuardSession> {
+    fn into_session(self, clock_offset: Duration) -> crate::Result<RemoteGuardSession> {
         self.check_usable()?;
 
         if !self.logon_built {
@@ -465,13 +468,13 @@ impl RemoteGuardState {
     }
 }
 
-pub(crate) fn rng() -> Result<StdRng> {
+pub(crate) fn rng() -> crate::Result<StdRng> {
     Ok(StdRng::try_from_rng(&mut SysRng)?)
 }
 
 /// Remote Credential Guard protects exactly one plain `Data` buffer per message: read-only (signed but not
 /// encrypted) buffers are not supported.
-fn check_data_buffers(message: &[SecurityBufferRef<'_>]) -> Result<()> {
+fn check_data_buffers(message: &[SecurityBufferRef<'_>]) -> crate::Result<()> {
     let mut data_buffers = SecurityBufferRef::buffers_of_type(message, BufferType::Data);
 
     if data_buffers.any(|buffer| !buffer.buffer_flags().is_empty()) {
@@ -491,7 +494,7 @@ fn check_data_buffers(message: &[SecurityBufferRef<'_>]) -> Result<()> {
 }
 
 /// Converts a DER `INTEGER` that must fit in an `Int32`.
-pub(crate) fn integer_to_i32(value: &IntegerAsn1) -> Result<i32> {
+pub(crate) fn integer_to_i32(value: &IntegerAsn1) -> crate::Result<i32> {
     let out_of_range = || Error::new(ErrorKind::InvalidToken, "integer is out of the Int32 range");
 
     let bytes = value.as_signed_bytes_be();
@@ -513,7 +516,7 @@ pub(crate) fn integer_to_i32(value: &IntegerAsn1) -> Result<i32> {
 }
 
 /// Cipher suite for an RFC 3961 encryption type number, restricted to AES.
-pub(crate) fn aes_cipher_suite(etype: i32) -> Result<CipherSuite> {
+pub(crate) fn aes_cipher_suite(etype: i32) -> crate::Result<CipherSuite> {
     let suite = usize::try_from(etype)
         .ok()
         .and_then(|etype| CipherSuite::try_from(etype).ok())
@@ -531,7 +534,7 @@ impl Kerberos {
     /// Enables Remote Credential Guard for this client context.
     ///
     /// Must be called before the first `initialize_security_context` call.
-    pub(crate) fn enable_remote_guard(&mut self) -> Result<()> {
+    pub(crate) fn enable_remote_guard(&mut self) -> crate::Result<()> {
         if !self.is_client() {
             return Err(Error::new(
                 ErrorKind::UnsupportedFunction,
@@ -564,7 +567,7 @@ impl Kerberos {
         self.remote_guard.is_some()
     }
 
-    pub(crate) fn remote_guard_mut(&mut self) -> Result<&mut RemoteGuardState> {
+    pub(crate) fn remote_guard_mut(&mut self) -> crate::Result<&mut RemoteGuardState> {
         self.remote_guard.as_deref_mut().ok_or_else(|| {
             Error::new(
                 ErrorKind::InternalError,
@@ -576,7 +579,7 @@ impl Kerberos {
     /// Takes the authenticated Remote Credential Guard context out of this Kerberos context.
     ///
     /// The Kerberos context cannot protect messages afterwards.
-    pub(crate) fn take_remote_guard_session(&mut self) -> Result<RemoteGuardSession> {
+    pub(crate) fn take_remote_guard_session(&mut self) -> crate::Result<RemoteGuardSession> {
         if self.state != KerberosState::Final {
             return Err(Error::new(
                 ErrorKind::OutOfSequence,

@@ -8,7 +8,7 @@ use super::kerberos::ServerSubkeys;
 use super::key_store::KeyStore;
 use super::ntlm::NtlmCredential;
 use super::{ClientBinding, ProtectionContext, wrap};
-use crate::{Error, ErrorKind, Result, Secret};
+use crate::{Error, ErrorKind, Secret};
 
 /// The authenticated Remote Credential Guard session of a completed CredSSP exchange.
 ///
@@ -61,7 +61,7 @@ impl RemoteGuardSession {
         key_store: KeyStore,
         ntlm: Option<NtlmCredential>,
         clock_offset: Duration,
-    ) -> Result<Self> {
+    ) -> crate::Result<Self> {
         Ok(Self {
             context,
             poisoned: false,
@@ -74,7 +74,7 @@ impl RemoteGuardSession {
         })
     }
 
-    pub(super) fn check_usable(&self) -> Result<()> {
+    pub(super) fn check_usable(&self) -> crate::Result<()> {
         if self.poisoned {
             return Err(Error::new(
                 ErrorKind::ContextExpired,
@@ -98,7 +98,7 @@ impl RemoteGuardSession {
     /// Uses the acceptor subkey and the next initiator sequence number of the CredSSP context. A message
     /// larger than [`MAX_WRAP_TOKEN_LEN`](super::MAX_WRAP_TOKEN_LEN) minus the token overhead is rejected
     /// without consuming a sequence number or disabling the session.
-    pub fn wrap(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
+    pub fn wrap(&mut self, plaintext: &[u8]) -> crate::Result<Vec<u8>> {
         self.check_usable()?;
 
         if plaintext.len() > wrap::MAX_TOKEN_LEN - wrap::SEAL_OVERHEAD {
@@ -117,7 +117,7 @@ impl RemoteGuardSession {
     ///
     /// The token must be sealed, carry the acceptor flags, use the expected next acceptor sequence number,
     /// and pass the integrity check. Any rotation count is accepted. On failure the session is disabled.
-    pub fn unwrap(&mut self, token: &[u8]) -> Result<Secret<Vec<u8>>> {
+    pub fn unwrap(&mut self, token: &[u8]) -> crate::Result<Secret<Vec<u8>>> {
         self.check_usable()?;
 
         match self.context.unseal(token) {

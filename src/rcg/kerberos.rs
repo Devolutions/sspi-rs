@@ -42,7 +42,7 @@ use super::session::RemoteGuardSession;
 use super::{FILETIME_UNIX_EPOCH_OFFSET_SECONDS, aes_cipher_suite, etype_of, integer_to_i32, wrap};
 use crate::crypto::compute_md5;
 use crate::kerberos::{KERBEROS_VERSION, TGT_SERVICE_NAME};
-use crate::{Error, ErrorKind, Result, Secret};
+use crate::{Error, ErrorKind, Secret};
 
 /// Upper bound on any ASN.1 input of an operation.
 pub const MAX_OPERATION_INPUT_LEN: usize = 64 * 1024;
@@ -253,7 +253,7 @@ impl ServerSubkeys {
     }
 }
 
-fn check_input_len(input: &[u8]) -> Result<()> {
+fn check_input_len(input: &[u8]) -> crate::Result<()> {
     if input.is_empty() || input.len() > MAX_OPERATION_INPUT_LEN {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
@@ -264,7 +264,7 @@ fn check_input_len(input: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn decode<T: serde::de::DeserializeOwned>(input: &[u8], what: &str) -> Result<T> {
+fn decode<T: serde::de::DeserializeOwned>(input: &[u8], what: &str) -> crate::Result<T> {
     check_input_len(input)?;
 
     picky_asn1_der::from_bytes(input).map_err(|_| Error::new(ErrorKind::InvalidToken, format!("invalid {what}")))
@@ -278,7 +278,7 @@ fn encrypted_data(cipher_suite: &CipherSuite, cipher: Vec<u8>) -> EncryptedData 
     }
 }
 
-fn filetime(time: OffsetDateTime, microseconds: u32) -> Result<i64> {
+fn filetime(time: OffsetDateTime, microseconds: u32) -> crate::Result<i64> {
     time.unix_timestamp()
         .checked_add(FILETIME_UNIX_EPOCH_OFFSET_SECONDS)
         .and_then(|seconds| seconds.checked_mul(10_000_000))
@@ -293,7 +293,7 @@ struct OperationKey {
 }
 
 impl RemoteGuardSession {
-    fn owned_key(&self, reference: KeyReference<'_>, role: KeyRole) -> Result<OperationKey> {
+    fn owned_key(&self, reference: KeyReference<'_>, role: KeyRole) -> crate::Result<OperationKey> {
         let stored = self.key_store.get(reference.encryption_type, reference.value, role)?;
 
         Ok(OperationKey {
@@ -302,7 +302,7 @@ impl RemoteGuardSession {
         })
     }
 
-    fn server_subkey(&self, reference: KeyReference<'_>) -> Result<OperationKey> {
+    fn server_subkey(&self, reference: KeyReference<'_>) -> crate::Result<OperationKey> {
         let cipher_suite = aes_cipher_suite(reference.encryption_type)?;
         let entry = self
             .server_subkeys
@@ -315,7 +315,12 @@ impl RemoteGuardSession {
         })
     }
 
-    fn decrypt_encrypted_data(&self, input: &[u8], key: &OperationKey, usage: i32) -> Result<Zeroizing<Vec<u8>>> {
+    fn decrypt_encrypted_data(
+        &self,
+        input: &[u8],
+        key: &OperationKey,
+        usage: i32,
+    ) -> crate::Result<Zeroizing<Vec<u8>>> {
         let encrypted: EncryptedData = decode(input, "encrypted data")?;
 
         if integer_to_i32(&encrypted.etype.0)? != etype_of(&key.cipher_suite) {
@@ -339,7 +344,7 @@ impl RemoteGuardSession {
         Ok(Zeroizing::new(plaintext))
     }
 
-    fn encrypt_to_der(&self, key: &OperationKey, usage: i32, plaintext: &[u8]) -> Result<Vec<u8>> {
+    fn encrypt_to_der(&self, key: &OperationKey, usage: i32, plaintext: &[u8]) -> crate::Result<Vec<u8>> {
         let cipher = key.cipher_suite.cipher().encrypt(key.key.as_ref(), usage, plaintext)?;
 
         Ok(picky_asn1_der::to_vec(&encrypted_data(&key.cipher_suite, cipher))?)
@@ -352,7 +357,7 @@ impl RemoteGuardSession {
     /// RSA-MD5 does not use the key or replace the authenticator's AES encryption.
     ///
     /// Returns a DER-encoded `Checksum`.
-    pub fn compute_tgs_checksum(&mut self, request: ComputeTgsChecksumRequest<'_>) -> Result<Vec<u8>> {
+    pub fn compute_tgs_checksum(&mut self, request: ComputeTgsChecksumRequest<'_>) -> crate::Result<Vec<u8>> {
         self.check_usable()?;
 
         let _: KdcReqBody = decode(request.request_body, "KDC-REQ-BODY")?;
@@ -393,7 +398,7 @@ impl RemoteGuardSession {
     /// Encrypts TGS-REQ authorization data (key usage 4 or 5).
     ///
     /// Returns a DER-encoded `EncryptedData`.
-    pub fn build_encrypted_auth_data(&mut self, request: BuildEncryptedAuthDataRequest<'_>) -> Result<Vec<u8>> {
+    pub fn build_encrypted_auth_data(&mut self, request: BuildEncryptedAuthDataRequest<'_>) -> crate::Result<Vec<u8>> {
         self.check_usable()?;
 
         let _: AuthorizationData = decode(request.plain_auth_data, "authorization data")?;
@@ -419,7 +424,7 @@ impl RemoteGuardSession {
     pub fn create_ap_req_authenticator(
         &mut self,
         request: CreateApReqAuthenticatorRequest<'_>,
-    ) -> Result<ApReqAuthenticator> {
+    ) -> crate::Result<ApReqAuthenticator> {
         self.check_usable()?;
 
         let (key, usage) = match i32::try_from(request.key_usage) {
@@ -457,7 +462,7 @@ impl RemoteGuardSession {
 
         let sub_key = request
             .sub_key
-            .map(|sub_key| -> Result<(CipherSuite, &[u8])> {
+            .map(|sub_key| -> crate::Result<(CipherSuite, &[u8])> {
                 let cipher_suite = aes_cipher_suite(sub_key.encryption_type)?;
                 if sub_key.value.len() != cipher_suite.cipher().key_size() {
                     return Err(Error::new(
@@ -536,7 +541,7 @@ impl RemoteGuardSession {
     /// The returned DER can contain a service key: send it only in an authenticated, encrypted RDPEAR
     /// response for this connection and erase the plaintext after use. No reusable TGT or CredSSP
     /// protection key is released.
-    pub fn unpack_kdc_reply_body(&mut self, request: UnpackKdcReplyBodyRequest<'_>) -> Result<Vec<u8>> {
+    pub fn unpack_kdc_reply_body(&mut self, request: UnpackKdcReplyBodyRequest<'_>) -> crate::Result<Vec<u8>> {
         self.check_usable()?;
 
         if request.strengthen_key.is_some() {
@@ -588,7 +593,7 @@ impl RemoteGuardSession {
         Ok(encoded?)
     }
 
-    fn store_reply_key(&mut self, reply: &mut EncKdcRepPart) -> Result<Vec<u8>> {
+    fn store_reply_key(&mut self, reply: &mut EncKdcRepPart) -> crate::Result<Vec<u8>> {
         let key = Secret::new(std::mem::take(&mut reply.key.0.key_value.0.0));
         let cipher_suite = aes_cipher_suite(integer_to_i32(&reply.key.0.key_type.0)?)?;
 
@@ -613,7 +618,7 @@ impl RemoteGuardSession {
     ///
     /// Returns a DER-encoded `EncAPRepPart`. The subkey it may contain was chosen by the service and is
     /// returned to the server as is.
-    pub fn decrypt_ap_reply(&mut self, request: DecryptApReplyRequest<'_>) -> Result<Secret<Vec<u8>>> {
+    pub fn decrypt_ap_reply(&mut self, request: DecryptApReplyRequest<'_>) -> crate::Result<Secret<Vec<u8>>> {
         self.check_usable()?;
 
         let key = self.owned_key(request.key, KeyRole::Service)?;
@@ -630,7 +635,7 @@ impl RemoteGuardSession {
     /// Returns the DER-encoded `KRB_AP_REP`. The template is rejected unless it is canonical DER and has
     /// `pvno` 5 and `msg-type` 15. Its whole `enc-part` is replaced: `etype` becomes the session key's
     /// encryption type and `kvno` is omitted. All other template fields are returned unchanged.
-    pub fn pack_ap_reply(&mut self, request: PackApReplyRequest<'_>) -> Result<Vec<u8>> {
+    pub fn pack_ap_reply(&mut self, request: PackApReplyRequest<'_>) -> crate::Result<Vec<u8>> {
         self.check_usable()?;
 
         let mut reply: ApRep = decode(request.reply, "AP-REP template")?;
@@ -689,7 +694,7 @@ impl RemoteGuardSession {
         Ok(picky_asn1_der::to_vec(&reply)?)
     }
 
-    fn check_client_identity(&self, client_name: &[String], client_realm: &str) -> Result<()> {
+    fn check_client_identity(&self, client_name: &[String], client_realm: &str) -> crate::Result<()> {
         let names = &self.binding.name.name_string.0.0;
 
         let name_matches = names.len() == client_name.len()

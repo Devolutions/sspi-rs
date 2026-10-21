@@ -1,7 +1,8 @@
 //! ASN.1 structures used by the Remote Credential Guard logon credential.
 //!
-//! `picky-krb` does not model `KRB-CRED`, so the RFC 4120 structures are defined here,
-//! together with the MS-CSSP `TSRemoteGuardCreds` structures.
+//! These protocol types belong in `picky-krb`, alongside its Kerberos messages and CredSSP credentials.
+//! They remain private compatibility definitions until `picky-krb` provides them in a release.
+//! No Remote Credential Guard policy or session state belongs in this module.
 
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
