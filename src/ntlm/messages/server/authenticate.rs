@@ -37,6 +37,25 @@ pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl Read) -> cr
     let mic = read_payload(flags, &mut message_fields, &mut buffer)?;
     let message = buffer.into_inner();
 
+    if is_anonymous_authenticate(&message_fields) {
+        if !context.allow_null_session {
+            return Err(crate::Error::new(
+                crate::ErrorKind::LogonDenied,
+                "anonymous NULL sessions are disabled; the acceptor must explicitly request ALLOW_NULL_SESSION",
+            ));
+        }
+
+        context.finish_null_session();
+        return Ok(SecurityStatus::Ok);
+    }
+
+    if message_fields.user_name.buffer.is_empty() || message_fields.nt_challenge_response.buffer.is_empty() {
+        return Err(crate::Error::new(
+            crate::ErrorKind::InvalidToken,
+            "malformed anonymous NTLM authenticate message",
+        ));
+    }
+
     let (authenticate_message, updated_identity) = process_message_fields(
         &context.identity,
         message_fields,
@@ -50,6 +69,14 @@ pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl Read) -> cr
     context.state = NtlmState::Completion;
 
     Ok(SecurityStatus::CompleteNeeded)
+}
+
+// MS-NLMP 3.2.5.1.2 identifies anonymous logon by the responses and user
+// name, not the anonymous flag (see also Windows behavior in footnote 29).
+fn is_anonymous_authenticate(fields: &AuthenticateMessageFields) -> bool {
+    fields.user_name.buffer.is_empty()
+        && fields.nt_challenge_response.buffer.is_empty()
+        && (fields.lm_challenge_response.buffer.is_empty() || fields.lm_challenge_response.buffer == [0])
 }
 
 fn check_state(state: NtlmState) -> crate::Result<()> {
@@ -111,14 +138,45 @@ fn read_header(mut buffer: impl Read) -> crate::Result<(AuthenticateMessageField
 }
 
 fn read_payload<T>(
-    negotiate_flags: NegotiateFlags,
+    _negotiate_flags: NegotiateFlags,
     message_fields: &mut AuthenticateMessageFields,
     buffer: &mut io::Cursor<T>,
 ) -> crate::Result<Option<Mic>>
 where
+    T: AsRef<[u8]>,
     io::Cursor<T>: Read + io::Seek,
 {
-    let mic = if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO) {
+    let header_end = buffer.position();
+    let fields = [
+        &message_fields.domain_name,
+        &message_fields.user_name,
+        &message_fields.workstation,
+        &message_fields.lm_challenge_response,
+        &message_fields.nt_challenge_response,
+        &message_fields.encrypted_random_session_key,
+    ];
+    for field in fields {
+        if !field.buffer.is_empty()
+            && (u64::from(field.buffer_offset) < header_end
+                || u64::from(field.buffer_offset) + field.buffer.len() as u64 > buffer.get_ref().as_ref().len() as u64)
+        {
+            return Err(crate::Error::new(
+                crate::ErrorKind::InvalidToken,
+                "NTLM payload field lies outside the payload",
+            ));
+        }
+    }
+    let first_payload_offset = fields
+        .into_iter()
+        .filter(|field| !field.buffer.is_empty())
+        .map(|field| u64::from(field.buffer_offset))
+        .min();
+    let mic_offset = buffer.position();
+    let mic_size = u64::try_from(MESSAGE_INTEGRITY_CHECK_SIZE)
+        .map_err(|_| crate::Error::new(crate::ErrorKind::InternalError, "MIC size exceeds u64"))?;
+    let has_mic = first_payload_offset.is_some_and(|offset| offset >= mic_offset + mic_size);
+
+    let mic = if has_mic {
         let mic_offset = u8::try_from(buffer.position())
             .map_err(|_| crate::Error::new(crate::ErrorKind::InvalidToken, "MIC offset exceeds u8"))?;
 
@@ -159,13 +217,8 @@ fn process_message_fields(
 
     let av_pairs = AvPair::buffer_to_av_pairs(target_info.as_ref())?;
 
-    let mic = if mic.is_some() {
-        let challenge_response_av_flags = get_av_flags_from_response(&av_pairs)?;
-        if challenge_response_av_flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
-            mic
-        } else {
-            None
-        }
+    let mic = if get_av_flags_from_response(&av_pairs)?.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
+        Some(mic.ok_or_else(|| crate::Error::new(crate::ErrorKind::InvalidToken, "NTLM response requires a MIC"))?)
     } else {
         None
     };
