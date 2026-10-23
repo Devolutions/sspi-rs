@@ -72,7 +72,6 @@ pub(crate) struct EcdhParameters {
     /// Client private key (the 32-byte big-endian P-256 scalar).
     private_key: Secret<Vec<u8>>,
     pub client_nonce: [u8; DH_NONCE_LEN],
-    pub server_nonce: Option<[u8; DH_NONCE_LEN]>,
 }
 
 impl EcdhParameters {
@@ -80,12 +79,15 @@ impl EcdhParameters {
     pub(crate) fn generate(rng: &mut rand::rngs::StdRng) -> Self {
         use rand_core::Rng as _;
 
+        use zeroize::Zeroizing;
+
         let private_key = loop {
-            let mut candidate = [0_u8; 32];
-            rng.fill_bytes(&mut candidate);
+            // The candidate scalar is wiped from the stack when it goes out of scope.
+            let mut candidate = Zeroizing::new([0_u8; 32]);
+            rng.fill_bytes(candidate.as_mut_slice());
 
             // Rejects zero and values greater than or equal to the curve order.
-            if p256::SecretKey::from_slice(&candidate).is_ok() {
+            if p256::SecretKey::from_slice(candidate.as_slice()).is_ok() {
                 break Secret::new(candidate.to_vec());
             }
         };
@@ -96,7 +98,6 @@ impl EcdhParameters {
         Self {
             private_key,
             client_nonce,
-            server_nonce: None,
         }
     }
 
