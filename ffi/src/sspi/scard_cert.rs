@@ -15,21 +15,16 @@ use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
 use picky_asn1::wrapper::Utf8StringAsn1;
 use picky_asn1_x509::{Certificate, ExtendedKeyUsage, ExtensionView, GeneralName, PublicKey, oids};
 use sspi::{Error, ErrorKind, Result, Utf16String, Utf16StringExt};
-use winscard::MICROSOFT_DEFAULT_CSP;
+use winscard::{MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP};
 
 use crate::winscard::piv::try_get_piv_container_name;
 
 /// Environment variable that specifies a custom CSP name.
 ///
-/// If not set, the default CSP name will be used: [MICROSOFT_DEFAULT_CSP].
+/// If not set, the default provider is selected by the certificate key type:
+/// * [MICROSOFT_DEFAULT_KSP] for EC certificates (the legacy CSP cannot work with EC keys);
+/// * [MICROSOFT_DEFAULT_CSP] otherwise.
 const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
-
-/// The CNG key storage provider for smart cards.
-///
-/// The legacy [MICROSOFT_DEFAULT_CSP] cannot work with EC keys, so this provider is the default for EC certificates.
-///
-/// [Microsoft Smart Card Key Storage Provider](https://learn.microsoft.com/en-us/windows/win32/seccng/cng-provider-identifiers)
-const MICROSOFT_SMART_CARD_KSP: &str = "Microsoft Smart Card Key Storage Provider";
 
 /// System smart card information.
 ///
@@ -119,7 +114,8 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
         let csp_name = if let Ok(csp) = env::var(CSP_NAME_VAR) {
             Cow::Owned(csp)
         } else if is_ec_certificate(&certificate) {
-            Cow::Borrowed(MICROSOFT_SMART_CARD_KSP)
+            // The legacy CSP cannot work with EC keys.
+            Cow::Borrowed(MICROSOFT_DEFAULT_KSP)
         } else {
             Cow::Borrowed(MICROSOFT_DEFAULT_CSP)
         };
