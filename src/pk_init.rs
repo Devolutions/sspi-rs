@@ -25,7 +25,7 @@ use picky_krb::crypto::diffie_hellman::compute_public_key;
 use picky_krb::data_types::{KerbPaPacRequest, KerberosTime, PaData};
 use picky_krb::messages::KdcReqBody;
 use picky_krb::pkinit::{
-    AuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, KdcDhKeyInfo, PaPkAsReq, PkAuthenticator,
+    DhAuthPack, DhDomainParameters, DhReqInfo, DhReqKeyInfo, EcAuthPack, KdcDhKeyInfo, PaPkAsReq, PkAuthenticator,
 };
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
@@ -124,19 +124,6 @@ impl EcdhParameters {
             .raw_secret_bytes()
             .to_vec())
     }
-}
-
-/// The `AuthPack` with the EC `clientPublicValue`.
-///
-/// The `AuthPack` from the `picky-krb` crate supports only Diffie-Hellman public values.
-///
-/// [RFC 5349, Section 2.1](https://www.rfc-editor.org/rfc/rfc5349.html#section-2.1)
-#[derive(Serialize, Deserialize)]
-struct EcAuthPack {
-    pk_authenticator: ExplicitContextTag0<PkAuthenticator>,
-    client_public_value: ExplicitContextTag1<SubjectPublicKeyInfo>,
-    supported_cms_types: ExplicitContextTag2<Asn1SequenceOf<AlgorithmIdentifier>>,
-    client_dh_nonce: ExplicitContextTag3<OctetStringAsn1>,
 }
 
 /// Signature scheme used to sign the PKINIT `AuthPack` with the client certificate key.
@@ -304,7 +291,7 @@ pub(crate) fn generate_pa_datas_for_as_req_at(
                 &dh_parameters.base,
             )?;
 
-            let auth_pack = AuthPack {
+            let auth_pack = DhAuthPack {
                 pk_authenticator,
                 client_public_value: Optional::from(Some(ExplicitContextTag1::from(DhReqInfo {
                     key_info: DhReqKeyInfo {
@@ -335,14 +322,14 @@ pub(crate) fn generate_pa_datas_for_as_req_at(
         KeyAgreement::Ecdh(ecdh_parameters) => {
             let auth_pack = EcAuthPack {
                 pk_authenticator,
-                client_public_value: ExplicitContextTag1::from(SubjectPublicKeyInfo::new_ec_key(
+                client_public_value: Optional::from(Some(ExplicitContextTag1::from(SubjectPublicKeyInfo::new_ec_key(
                     oids::secp256r1(),
                     BitString::with_bytes(ecdh_parameters.public_key()?),
-                )),
-                supported_cms_types: ExplicitContextTag2::from(Asn1SequenceOf::from(Vec::new())),
-                client_dh_nonce: ExplicitContextTag3::from(OctetStringAsn1::from(
+                )))),
+                supported_cms_types: Optional::from(Some(ExplicitContextTag2::from(Asn1SequenceOf::from(Vec::new())))),
+                client_dh_nonce: Optional::from(Some(ExplicitContextTag3::from(OctetStringAsn1::from(
                     ecdh_parameters.client_nonce.to_vec(),
-                )),
+                )))),
             };
 
             picky_asn1_der::to_vec(&auth_pack)?
@@ -576,9 +563,7 @@ mod ecdh_tests {
     use rand::rngs::StdRng;
     use time::OffsetDateTime;
 
-    use super::{
-        EcAuthPack, EcdhParameters, GenerateAsPaDataOptions, KeyAgreement, Wrapper, generate_pa_datas_for_as_req_at,
-    };
+    use super::{EcdhParameters, GenerateAsPaDataOptions, KeyAgreement, Wrapper, generate_pa_datas_for_as_req_at};
     use crate::ClientRequestFlags;
     use crate::kerberos::client::generators::{GenerateAsReqOptions, generate_as_req_kdc_body};
 
@@ -667,9 +652,15 @@ mod ecdh_tests {
         else {
             panic!("the AuthPack must be an octet string");
         };
-        let auth_pack: EcAuthPack = picky_asn1_der::from_bytes(&encoded_auth_pack.0).expect("EC AuthPack is decodable");
+        let auth_pack: picky_krb::pkinit::EcAuthPack =
+            picky_asn1_der::from_bytes(&encoded_auth_pack.0).expect("EC AuthPack is decodable");
 
-        let public_value = &auth_pack.client_public_value.0;
+        let public_value = &auth_pack
+            .client_public_value
+            .0
+            .as_ref()
+            .expect("clientPublicValue is present")
+            .0;
         assert!(public_value.algorithm.is_a(oids::ec_public_key()));
         assert!(matches!(
             public_value.algorithm.parameters(),
@@ -679,7 +670,16 @@ mod ecdh_tests {
             panic!("clientPublicValue must be an EC key");
         };
         assert_eq!(expected_public_key, point.0.payload_view());
-        assert_eq!(expected_nonce, auth_pack.client_dh_nonce.0.0);
+        assert_eq!(
+            expected_nonce,
+            auth_pack
+                .client_dh_nonce
+                .0
+                .as_ref()
+                .expect("clientDHNonce is present")
+                .0
+                .0
+        );
     }
 
     #[test]
