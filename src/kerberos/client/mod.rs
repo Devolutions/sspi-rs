@@ -253,9 +253,19 @@ pub async fn initialize_security_context<'a>(
 
                         #[cfg(feature = "scard")]
                         {
+                            use picky_asn1_x509::Certificate;
+
+                            use crate::pk_init::KeyAgreement;
                             use crate::pku2u::generate_client_dh_parameters;
 
-                            client.dh_parameters = Some(generate_client_dh_parameters(&mut rand));
+                            client.key_agreement = Some(match credentials {
+                                CredentialsBuffers::SmartCard(scard_identity_buffers) => {
+                                    let certificate = Certificate::from(&scard_identity_buffers.certificate);
+
+                                    KeyAgreement::for_certificate(&certificate, &mut rand)?
+                                }
+                                _ => KeyAgreement::Dh(generate_client_dh_parameters(&mut rand)),
+                            });
                         }
 
                         let as_exchange = AsExchange::new(
@@ -263,7 +273,10 @@ pub async fn initialize_security_context<'a>(
                             credentials.extract_password(),
                             salt,
                             #[cfg(feature = "scard")]
-                            client.dh_parameters.clone().expect("DH parameters are set above"),
+                            client
+                                .key_agreement
+                                .clone()
+                                .expect("key agreement parameters are set above"),
                             #[cfg(feature = "scard")]
                             generate_nonce(&mut rand),
                         );
@@ -391,7 +404,7 @@ pub async fn initialize_security_context<'a>(
                             },
                             #[cfg(feature = "scard")]
                             CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
-                                dh_parameters: client.dh_parameters.as_mut().unwrap(),
+                                key_agreement: client.key_agreement.as_mut().unwrap(),
                                 enc_params: &mut client.encryption_params,
                             },
                         };

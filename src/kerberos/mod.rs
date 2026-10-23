@@ -37,7 +37,7 @@ use crate::kerberos::client::KerberosClientState;
 use crate::kerberos::server::KerberosServerState;
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
-use crate::pk_init::DhParameters;
+use crate::pk_init::KeyAgreement;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
@@ -98,7 +98,7 @@ pub struct Kerberos {
     pub(crate) realm: Option<String>,
     pub(crate) channel_bindings: Option<ChannelBindings>,
     #[cfg(feature = "scard")]
-    pub(crate) dh_parameters: Option<DhParameters>,
+    pub(crate) key_agreement: Option<KeyAgreement>,
     pub(crate) krb5_user_to_user: bool,
     pub(crate) server: Option<Box<ServerProperties>>,
     pub(crate) remote_seq_number: u32,
@@ -123,7 +123,7 @@ impl Kerberos {
             realm: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
-            dh_parameters: None,
+            key_agreement: None,
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
@@ -145,7 +145,7 @@ impl Kerberos {
             realm: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
-            dh_parameters: None,
+            key_agreement: None,
             krb5_user_to_user: false,
             server: Some(Box::new(server_properties)),
             remote_seq_number: 0,
@@ -881,7 +881,7 @@ pub mod test_data {
             realm: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
-            dh_parameters: None,
+            key_agreement: None,
             krb5_user_to_user: false,
             server: None,
             remote_seq_number: 0,
@@ -930,7 +930,7 @@ pub mod test_data {
             realm: None,
             channel_bindings: None,
             #[cfg(feature = "scard")]
-            dh_parameters: None,
+            key_agreement: None,
             krb5_user_to_user: false,
             server: Some(Box::new(fake_server_properties())),
             remote_seq_number: 0,

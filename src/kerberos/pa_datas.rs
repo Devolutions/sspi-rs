@@ -69,7 +69,7 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
     },
     #[cfg(feature = "scard")]
     SmartCard {
-        dh_parameters: &'a mut crate::pk_init::DhParameters,
+        key_agreement: &'a mut crate::pk_init::KeyAgreement,
         enc_params: &'a mut EncryptionParams,
     },
 }
@@ -88,15 +88,17 @@ impl AsRepSessionKeyExtractor<'_> {
             }
             #[cfg(feature = "scard")]
             AsRepSessionKeyExtractor::SmartCard {
-                dh_parameters,
+                key_agreement,
                 enc_params,
             } => {
                 use picky_asn1_x509::signed_data::SignedData;
                 use picky_krb::crypto::CipherSuite;
-                use picky_krb::crypto::diffie_hellman::{DhNonce, generate_key};
+                use picky_krb::crypto::diffie_hellman::{DhNonce, generate_key, generate_key_from_shared_secret};
                 use picky_krb::pkinit::PaPkAsRep;
 
-                use crate::pk_init::{Wrapper, extract_server_dh_public_key};
+                use crate::pk_init::{
+                    KeyAgreement, Wrapper, extract_server_dh_public_key, extract_server_ecdh_public_key,
+                };
                 use crate::pku2u::{
                     extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data,
                 };
@@ -113,7 +115,6 @@ impl AsRepSessionKeyExtractor<'_> {
                 };
 
                 let server_nonce = extract_server_nonce(&dh_rep_info)?;
-                dh_parameters.server_nonce = Some(server_nonce);
 
                 let wrapped_signed_data: Wrapper<SignedData> =
                     picky_asn1_der::from_bytes(&dh_rep_info.dh_signed_data.0)?;
@@ -122,26 +123,48 @@ impl AsRepSessionKeyExtractor<'_> {
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
 
-                let public_key = extract_server_dh_public_key(&signed_data)?;
-                dh_parameters.other_public_key = Some(public_key);
-
                 enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
+                let cipher =
+                    check_if_empty!(enc_params.encryption_type.as_ref(), "encryption type is not set").cipher();
 
-                let key = generate_key(
-                    check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
-                    dh_parameters.private_key.as_ref(),
-                    &dh_parameters.modulus,
-                    Some(DhNonce {
-                        client_nonce: check_if_empty!(dh_parameters.client_nonce.as_ref(), "dh client none is not set"),
-                        server_nonce: check_if_empty!(
-                            dh_parameters.server_nonce.as_ref(),
-                            "dh server nonce is not set"
-                        ),
-                    }),
-                    check_if_empty!(enc_params.encryption_type.as_ref(), "encryption type is not set")
-                        .cipher()
-                        .as_ref(),
-                )?;
+                let key = match key_agreement {
+                    KeyAgreement::Dh(dh_parameters) => {
+                        dh_parameters.server_nonce = Some(server_nonce);
+
+                        let public_key = extract_server_dh_public_key(&signed_data)?;
+                        dh_parameters.other_public_key = Some(public_key);
+
+                        generate_key(
+                            check_if_empty!(dh_parameters.other_public_key.as_ref(), "dh public key is not set"),
+                            dh_parameters.private_key.as_ref(),
+                            &dh_parameters.modulus,
+                            Some(DhNonce {
+                                client_nonce: check_if_empty!(
+                                    dh_parameters.client_nonce.as_ref(),
+                                    "dh client none is not set"
+                                ),
+                                server_nonce: check_if_empty!(
+                                    dh_parameters.server_nonce.as_ref(),
+                                    "dh server nonce is not set"
+                                ),
+                            }),
+                            cipher.as_ref(),
+                        )?
+                    }
+                    KeyAgreement::Ecdh(ecdh_parameters) => {
+                        let server_public_key = extract_server_ecdh_public_key(&signed_data)?;
+                        let shared_secret = ecdh_parameters.shared_secret(&server_public_key)?;
+
+                        generate_key_from_shared_secret(
+                            shared_secret,
+                            Some(DhNonce {
+                                client_nonce: &ecdh_parameters.client_nonce,
+                                server_nonce: &server_nonce,
+                            }),
+                            cipher.as_ref(),
+                        )?
+                    }
+                };
 
                 let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, enc_params)?;
 

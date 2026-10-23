@@ -116,13 +116,23 @@ rand = "0.10"
 rand_core = "0.10"
 getrandom = "0.3"
 cfg-if = "1"
-picky = { version = "=7.0.0-rc.27", default-features = false }
 sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 num-derive = "0.5"
 num-traits = { version = "0.2", default-features = true }
-picky-asn1-der = "0.5"
-picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
+
+# picky = { version = "=7.0.0-rc.27", default-features = false }
+# picky-asn1 = { version = "0.10", features = ["time_conversion"] }
+# picky-asn1-der = "0.5"
+# picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
+# picky-krb = "0.13"
+
+picky = { path = "../picky-rs/picky", default-features = false }
+picky-asn1 = { path = "../picky-rs/picky-asn1", features = ["time_conversion"] }
+picky-asn1-der = { path = "../picky-rs/picky-asn1-der" }
+picky-asn1-x509 = { path = "../picky-rs/picky-asn1-x509", features = ["pkcs7"] }
+picky-krb = { path = "../picky-rs/picky-krb" }
+
 uuid = { version = "1.23", default-features = true, features = ["v4"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
@@ -130,12 +140,12 @@ winscard = { workspace = true, optional = true }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 tracing = { version = "0.1", default-features = true }
 serde = "1"
-picky-krb = "0.13"
-picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 byteorder = "1.5"
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
 hmac = "0.13"
 widestring = "1.2"
+# ECDH key agreement for PKINIT with EC smart card certificates.
+p256 = { version = "0.14", default-features = false, features = ["ecdh"] }
 
 url = "2.5"
 
@@ -181,7 +191,8 @@ pkcs1 = "=0.8.0-rc.4"
 base64 = "0.23"
 static_assertions = "1"
 whoami = "2.1"
-picky = { version = "=7.0.0-rc.27", default-features = false, features = ["x509"] }
+# picky = { version = "=7.0.0-rc.27", default-features = false, features = ["x509"] }
+picky = { path = "../picky-rs/picky", default-features = false, features = ["x509"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 proptest = "1.6"
 cfg-if = "1"
