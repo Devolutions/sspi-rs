@@ -253,15 +253,16 @@ pub async fn initialize_security_context<'a>(
 
                         #[cfg(feature = "scard")]
                         {
-                            use crate::SmartCardIdentity;
+                            use picky_asn1_x509::Certificate;
+
                             use crate::pk_init::KeyAgreement;
                             use crate::pku2u::generate_client_dh_parameters;
 
                             client.key_agreement = Some(match credentials {
                                 CredentialsBuffers::SmartCard(scard_identity_buffers) => {
-                                    let scard_identity = SmartCardIdentity::try_from(scard_identity_buffers)?;
+                                    let certificate = Certificate::from(&scard_identity_buffers.certificate);
 
-                                    KeyAgreement::for_certificate(&scard_identity.certificate, &mut rand)?
+                                    KeyAgreement::for_certificate(&certificate, &mut rand)?
                                 }
                                 _ => KeyAgreement::Dh(generate_client_dh_parameters(&mut rand)),
                             });
