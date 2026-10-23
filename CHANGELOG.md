@@ -6,6 +6,270 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.23.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.0...sspi-v0.23.1)] - 2026-10-23
+
+### <!-- 0 -->Security
+
+- Add support for IAKerb extension for Kerberos client ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f)) 
+
+  This PR adds support for the IAKERB extension according to the [IAKERB
+  specification](https://datatracker.ietf.org/doc/html/draft-ietf-kitten-iakerb-03).
+  
+  The main changes are focused on the `Kerberos` state machine.
+  Previously, the `Preauthentication` state handled the entire KDC message
+  exchange withing a single async `intialize_security_context` call. This
+  approach does not work with IAKERB, where KDC messages are exchanged via
+  a server that acts as a proxy. The `Preauthentication` state has
+  therefore been split into multiple states, allowing the state machine to
+  save `Kerberos` state between KDC message exchanges.
+  
+  Additionaly, the `AS` and `TGS` exchanges have been extracted into
+  separate state machines. These new state machines are KDC
+  transport-agnostic and can be used with both external KDC and an IAKERB
+  proxy.
+  
+  ## What is IAKERB
+  IAKERB extends Kerberos to support scenarios where the client cannot
+  directly access the KDC. Instead, KDC messages are encapsulated in
+  GSS-API tokens and exchanged through an IAKERB proxy. The server
+  forwards these messages to the LocalKDC, allowing the client to obtain
+  the required Kerberos tickets without direct network access to the KDC.
+  
+  Microsoft recently introduced IAKERB support in Windows Insider builds
+  as part of its effort to reduce NTLM dependency:
+  https://techcommunity.microsoft.com/blog/windows-itpro-blog/reducing-ntlm-dependency-iakerb-and-localkdc-in-windows-insider-preview/4524615.
+  
+  ## Related PRs
+  * picky-rs: https://github.com/Devolutions/picky-rs/pull/531
+  * IronRDP: https://github.com/Devolutions/IronRDP/pull/1987
+
+### <!-- 4 -->Bug Fixes
+
+- Drop local qualifier before a qualified name ([#767](https://github.com/Devolutions/sspi-rs/issues/767)) ([d87a57a704](https://github.com/Devolutions/sspi-rs/commit/d87a57a7042cbefd1f794a9c3657b33d3cee8037)) 
+
+- Enforce the sequence number of MIC token only for acce… ([#772](https://github.com/Devolutions/sspi-rs/issues/772)) ([08d8622794](https://github.com/Devolutions/sspi-rs/commit/08d862279488dcdd0030050d7047bef85686a57a)) 
+
+  This PR fixes [#748](https://github.com/Devolutions/sspi-rs/issues/748)
+  by enforcing sequence number verification only on the acceptor side. The
+  initiator verifies the MIC checksum without enforcing the sequence
+  number.
+  
+  ---------
+
+- Interoperate with MIT and Heimdal KDCs ([#768](https://github.com/Devolutions/sspi-rs/issues/768)) ([cf91195338](https://github.com/Devolutions/sspi-rs/commit/cf91195338f62a8b01ca5024e06f97c150e03225)) 
+
+  ## Summary
+  
+  Two client fixes for password logons against MIT and Heimdal KDCs, found
+  while using `sspi` for SASL/GSSAPI binds to Active Directory and
+  MIT/Heimdal realms. Each currently makes every such logon fail.
+  
+  - **Reuse the pre-authentication salt for AS-REP decryption.** MIT and
+  Heimdal send PA-ETYPE-INFO2 only in `KDC_ERR_PREAUTH_REQUIRED`, not in
+  the AS-REP. The client then derived the AS-REP key with an empty salt
+  and failed with `Bad integrity: calculated hmac is different than
+  provided`. The AS exchange now keeps the pre-authentication salt in the
+  PA-DATA options, and the client falls back to it when the AS-REP has
+  none.
+  - **Accept an AS-REP enc-part tagged `EncTGSRepPart`.** The MIT KDC
+  encodes the AS-REP enc-part with APPLICATION 26 for backwards
+  compatibility, and the client failed with `Expected Application number
+  tag 25 but got: 26`. It now accepts both tags.
+  
+  ### About the `EncTGSRepPart` fallback
+  
+  I know this fallback was removed during the review of #681 ("We should
+  not expect `EncTgsRepPart` during AS exchange"). The MIT KDC however
+  always sends it, so without the fallback no AS exchange with an MIT KDC
+  can succeed:
+  
+  - MIT krb5,
+  [`src/lib/krb5/asn.1/asn1_k_encode.c`](https://github.com/krb5/krb5/blob/master/src/lib/krb5/asn.1/asn1_k_encode.c):
+  "For backwards compatibility, we encode both EncASRepPart and
+  EncTGSRepPart with application tag 26. On decode, we accept either app
+  tag". The encoder is `MAKE_ENCODER(encode_krb5_enc_kdc_rep_part,
+  enc_tgs_rep_part)`, used for both reply types.
+  - [RFC 4120 section
+  5.4.2](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.2): "Some
+  implementations unconditionally send an encrypted EncTGSRepPart
+  (application tag number 26) in this field regardless of whether the
+  reply is a AS-REP or a TGS-REP. In the interest of compatibility,
+  implementors MAY relax the check on the tag number of the decrypted
+  ENC-PART."
+  
+  The fallback only applies after the enc-part decrypted with the AS-REP
+  key usage, and the TGS path is unchanged.
+  
+  ## Review and validation
+  
+  - The test `KdcMock` gets two options reproducing each KDC behavior
+  (`omit_as_rep_etype_info2`, `tgs_rep_enc_part_in_as_rep`), each covered
+  by an end-to-end client/server authentication test. Without the fix,
+  each test fails with the error quoted above.
+  - Also verified against real MIT and Heimdal KDCs (LDAP SASL/GSSAPI
+  binds).
+  - `cargo test -q -p sspi -p kdc --features network_client,__test-data`
+  - `cargo check -q -p sspi --all-targets --features
+  network_client,dns_resolver,scard,__test-data` (`--all-features` also
+  enables `tsssp`, which only builds on Windows)
+  - `cargo clippy -q -p sspi -p kdc --features network_client,__test-data
+  --lib --tests -- -D warnings -A unreachable-pub -A
+  clippy::non-ascii-literal`
+  - `cargo clippy --manifest-path ffi/Cargo.toml -- -D warnings -D
+  clippy::print_stdout`
+  - `cargo fmt --all -- --check`
+
+- Complete AS-REP interoperability follow-ups ([#777](https://github.com/Devolutions/sspi-rs/issues/777)) ([e7ec8e45fd](https://github.com/Devolutions/sspi-rs/commit/e7ec8e45fdd83ef91cd1d90a381892a3557ef8fc)) 
+
+  ## Summary
+  
+  Follow up on [#768](https://github.com/Devolutions/sspi-rs/pull/768),
+  based on freshly fetched `origin/master` at
+  `[[cf91195338f62a8b01ca5024e06f97c150e03225](https://github.com/Devolutions/sspi-rs/commit/cf91195338f62a8b01ca5024e06f97c150e03225)](https://github.com/Devolutions/sspi-rs/commit/[cf91195338f62a8b01ca5024e06f97c150e03225](https://github.com/Devolutions/sspi-rs/commit/cf91195338f62a8b01ca5024e06f97c150e03225))`, including that merged PR.
+  
+  - Carry the negotiated preauthentication salt out of the AS exchange for
+  password changes and password-backed U2U acceptor TGT acquisition, using
+  the same reply-salt selection helper as the direct/IAKerb client.
+  - Distinguish an absent PA-ETYPE-INFO2 hint, an omitted salt field, and
+  an explicitly empty salt. Retain the existing public extractor
+  signatures.
+  - Share authenticated AS-REP decryption between password/keytab and the
+  actual PKINIT-facing PKU2U extractors, accepting application tags 25 and
+  26 without weakening decryption or nonce handling.
+  - Add 27 deterministic regressions, reusing the KDC mocks and
+  direct/IAKerb flows. Fix the reported test-target Clippy findings and
+  the RFC section-title capitalization.
+  
+  ## Salt semantics
+  
+  RFC 4120 section 4, “Encryption and Checksum Specifications”, defines
+  the default salt as the realm followed by principal components without
+  separators; section 5.2.7.5, “PA-ETYPE-INFO2”, defines the optional salt
+  field.
+  
+  | Reply information | Salt used |
+  | --- | --- |
+  | PA-ETYPE-INFO2 absent | Salt used for preauthentication |
+  | Entry present, salt field absent | Default from the reply client realm
+  and principal components |
+  | Salt explicitly empty | Empty salt, even when preauthentication used a
+  different salt |
+  | Salt explicitly nonempty | Reply-provided salt, taking precedence over
+  preauthentication |
+  
+  The preauthentication path also distinguishes an absent hint from a
+  present entry requesting the principal's default salt. Existing
+  explicit-salt/tag-25 behavior and the IAKerb state machine are retained.
+  
+  ## Requirement coverage
+  
+  | Requirement | Deterministic evidence |
+  | --- | --- |
+  | Password-change salt fallback |
+  `kerberos_change_password_uses_negotiated_salt_without_as_rep_hint`
+  invokes the actual password-change consumer and decrypts/asserts the
+  outgoing ticket, authenticator, and exact new-password bytes |
+  | Password-backed U2U acceptor TGT acquisition |
+  `kerberos_u2u_server_acquires_tgt_with_password_without_as_rep_hint`
+  starts without a preinstalled ticket-decryption key, acquires the
+  acceptor TGT, and completes authentication plus encrypted application
+  traffic |
+  | Combined missing reply hint and tag 26 |
+  `kerberos_auth_without_as_rep_etype_info2_with_tgs_rep_enc_part_in_as_rep`
+  |
+  | The same combination through IAKerb |
+  `iakerb_auth_without_as_rep_etype_info2_with_tgs_rep_enc_part_in_as_rep`,
+  including cookies/transcript and encrypted application traffic |
+  | Explicit-empty and custom reply salts override a different preauth
+  salt | `kerberos_auth_with_explicit_empty_as_rep_salt`,
+  `kerberos_auth_with_custom_as_rep_salt`,
+  `extract_encryption_params_from_as_rep_with_salt_preserves_explicit_reply_salt`
+  |
+  | Omitted reply salt field uses the reply-principal default |
+  `kerberos_auth_with_missing_as_rep_salt_field`,
+  `extract_encryption_params_from_as_rep_with_salt_defaults_missing_reply_salt_field`
+  assert case-preserving, separator-free realm/multicomponent-principal
+  concatenation |
+  | Missing versus empty preauth salt |
+  `extract_preauth_salt_distinguishes_absent_default_empty_and_custom`,
+  `kerberos_auth_with_missing_preauth_salt_field`,
+  `kerberos_auth_with_explicit_empty_preauth_salt` |
+  | Password/keytab and shared decoder tag compatibility |
+  `kerberos_password_extractor_returns_expected_session_key_for_both_application_tags`,
+  `kerberos_derived_key_extractor_returns_expected_session_key_for_both_application_tags`,
+  `decrypt_as_rep_preserves_fields_for_both_application_tags` |
+  | Actual PKINIT-facing key-only and key+nonce decoding |
+  `pku2u_public_key_extractor_returns_expected_session_key_for_both_application_tags`,
+  `pku2u_key_and_nonce_extractor_preserves_nonce_boundaries` |
+  | Invalid tags, wrong keys, tampering, and nonce overflow still fail |
+  `kerberos_session_key_extractors_reject_unsupported_application_tag`,
+  `pku2u_session_key_extractors_reject_unsupported_application_tag`,
+  `kerberos_session_key_extractors_reject_wrong_key_and_tampered_ciphertext`,
+  `pku2u_session_key_extractors_reject_wrong_key_and_tampered_ciphertext`,
+  `pku2u_nonce_extractor_rejects_nonce_above_u32_max` |
+  | Public compatibility wrappers and malformed metadata |
+  `extract_salt_from_krb_error_preserves_legacy_optional_string_contract`,
+  `extract_encryption_params_from_as_rep_preserves_one_argument_api`,
+  `salt_extractors_reject_invalid_challenges`,
+  `reply_encryption_params_reject_malformed_or_missing_values` |
+  | Cleanup | RFC title is `KRB_KDC_REP definition`; checked IAKerb
+  `usize::try_from` conversion and structured trace logging in the common
+  test helper; strict Clippy passes |
+  
+  ## Validation
+  
+  Local Windows validation with VsDevShell initialized in each build
+  process; `AWS_LC_SYS_NO_ASM=true`, `CMAKE_GENERATOR=Ninja`, and
+  `SSPI_RS_IS_RUNNING_TESTS=true` for tests:
+  
+  - `cargo test --locked -q -p sspi --lib --features
+  network_client,dns_resolver,scard,tsssp,__test-data`: **307 passed, 0
+  failed**.
+  - `cargo test --locked -q -p sspi --test sspi --features
+  network_client,dns_resolver,scard,tsssp,__test-data
+  client_server::kerberos:: -- --test-threads=1`: **22 passed, 0 failed**.
+  - Scoped extractor runs: **16 Kerberos tests** and **7 PKU2U tests**
+  passed. The affected password-change and U2U tests were also rerun after
+  the final Clippy cleanup.
+  - `cargo clippy --locked -q -p sspi --lib --test sspi --features
+  network_client,dns_resolver,scard,tsssp,__test-data -- -D warnings -D
+  clippy::print_stdout`: passed.
+  - `cargo check --locked -q -p sspi --no-default-features`: passed.
+  - `cargo fmt --all -- --check` and `git diff --check`: passed; style
+  review passed.
+  - Standalone `tools/wasm-testcompile` fresh dependency resolution
+  selected **picky-krb 0.13.0**; both `cargo check` and `cargo build` with
+  `--locked --target wasm32-unknown-unknown` passed. The full `check.ps1`
+  import scan was not run (`wasm2wat` is unavailable).
+  
+  Formatting emits the existing stable-rustfmt warnings for nightly-only
+  options. Cargo emits nonfatal incremental-cache access-denied notes;
+  WASM compilation also emits the existing `encode_digest` dead-code
+  warning.
+  
+  ## Investigated without changes
+  
+  - **WASM dependency failure:** current master already requires
+  `picky-krb = "0.13"` (raised in #772), which excludes the older 0.12.4
+  release lacking `InvalidMechanismOid`. Fresh resolution and an actual
+  standalone wasm32 build succeeded. No additional pin, lockfile change,
+  or external workspace dependency is warranted.
+  - **Dependency-fetch hang:** the reported historical macOS winscard
+  timeout remains an infrastructure symptom, not a reproduced source
+  failure. The historical failed-run jobs API returned HTTP 502, so its
+  detailed logs could not be revalidated here. The later run
+  [39320794389](https://github.com/Devolutions/sspi-rs/actions/runs/39320794389)
+  has successful WASM and Windows/macOS/Linux winscard jobs; the
+  RustCrypto/KDFs dependency is already revision-locked. No speculative
+  timeout/retry infrastructure or dependency update was added.
+  
+  No live Windows/MIT/Heimdal KDC validation was performed. Explicit-empty
+  reply salt is a theoretical deterministic case, not a claimed real-world
+  reproduction. Password-change coverage verifies the encrypted outgoing
+  request, not a completed password update on a KDC.
+
+
+
 ## [[0.23.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.1...sspi-v0.23.0)] - 2026-10-01
 
 ### <!-- 1 -->Features
