@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.4.1](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.4.0...winscard-v0.4.1)] - 2026-10-23
+
+### <!-- 0 -->Security
+
+- Add support for IAKerb extension for Kerberos client ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f)) 
+
+  This PR adds support for the IAKERB extension according to the [IAKERB
+  specification](https://datatracker.ietf.org/doc/html/draft-ietf-kitten-iakerb-03).
+  
+  The main changes are focused on the `Kerberos` state machine.
+  Previously, the `Preauthentication` state handled the entire KDC message
+  exchange withing a single async `intialize_security_context` call. This
+  approach does not work with IAKERB, where KDC messages are exchanged via
+  a server that acts as a proxy. The `Preauthentication` state has
+  therefore been split into multiple states, allowing the state machine to
+  save `Kerberos` state between KDC message exchanges.
+  
+  Additionaly, the `AS` and `TGS` exchanges have been extracted into
+  separate state machines. These new state machines are KDC
+  transport-agnostic and can be used with both external KDC and an IAKERB
+  proxy.
+  
+  ## What is IAKERB
+  IAKERB extends Kerberos to support scenarios where the client cannot
+  directly access the KDC. Instead, KDC messages are encapsulated in
+  GSS-API tokens and exchanged through an IAKERB proxy. The server
+  forwards these messages to the LocalKDC, allowing the client to obtain
+  the required Kerberos tickets without direct network access to the KDC.
+  
+  Microsoft recently introduced IAKERB support in Windows Insider builds
+  as part of its effort to reduce NTLM dependency:
+  https://techcommunity.microsoft.com/blog/windows-itpro-blog/reducing-ntlm-dependency-iakerb-and-localkdc-in-windows-insider-preview/4524615.
+  
+  ## Related PRs
+  * picky-rs: https://github.com/Devolutions/picky-rs/pull/531
+  * IronRDP: https://github.com/Devolutions/IronRDP/pull/1987
+
+
+
 ## [[0.4.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.4...winscard-v0.4.0)] - 2026-10-01
 
 ### <!-- 1 -->Features
