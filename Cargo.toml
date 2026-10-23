@@ -115,13 +115,17 @@ rand = "0.10"
 rand_core = "0.10"
 getrandom = "0.3"
 cfg-if = "1"
-picky = { version = "=7.0.0-rc.27", default-features = false }
 sha1 = { version = "0.11", default-features = false }
 sha2 = "0.11"
 num-derive = "0.5"
 num-traits = { version = "0.2", default-features = true }
+
+picky = { version = "=7.0.0-rc.27", default-features = false }
 picky-asn1-der = "0.5"
 picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
+picky-krb = "0.13"
+picky-asn1 = { version = "0.10", features = ["time_conversion"] }
+
 uuid = { version = "1.23", default-features = true, features = ["v4"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
@@ -129,8 +133,6 @@ winscard = { workspace = true, optional = true }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 tracing = { version = "0.1", default-features = true }
 serde = "1"
-picky-krb = "0.13"
-picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 byteorder = "1.5"
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
 hmac = "0.13"
