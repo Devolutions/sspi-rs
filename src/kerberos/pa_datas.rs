@@ -152,8 +152,6 @@ impl AsRepSessionKeyExtractor<'_> {
                         )?
                     }
                     KeyAgreement::Ecdh(ecdh_parameters) => {
-                        ecdh_parameters.server_nonce = Some(server_nonce);
-
                         let server_public_key = extract_server_ecdh_public_key(&signed_data)?;
                         let shared_secret = ecdh_parameters.shared_secret(&server_public_key)?;
 
