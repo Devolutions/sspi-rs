@@ -608,6 +608,8 @@ fn complete_authenticate_does_not_fail_on_correct_mic() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
+        nt_proof_for_zeroed_challenge(&DOMAIN_TARGET_INFO, &DOMAIN_CLIENT_CHALLENGE),
+        0,
         Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
@@ -639,6 +641,8 @@ fn complete_authenticate_fails_on_incorrect_challenge_message() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
+        nt_proof_for_zeroed_challenge(&DOMAIN_TARGET_INFO, &DOMAIN_CLIENT_CHALLENGE),
+        0,
         Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
@@ -683,6 +687,8 @@ fn complete_authenticate_succeeds_with_correct_candidate_among_multiple() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
+        nt_proof_for_zeroed_challenge(&DOMAIN_TARGET_INFO, &DOMAIN_CLIENT_CHALLENGE),
+        0,
         Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
@@ -739,9 +745,181 @@ fn complete_authenticate_fails_when_no_candidate_matches() {
         )),
         DOMAIN_TARGET_INFO.to_vec(),
         DOMAIN_CLIENT_CHALLENGE,
+        nt_proof_for_zeroed_challenge(&DOMAIN_TARGET_INFO, &DOMAIN_CLIENT_CHALLENGE),
+        0,
         Some(DOMAIN_ENCRYPTED_SESSION_KEY),
     ));
 
     let err = complete_authenticate(&mut context).unwrap_err();
     assert_eq!(err.error_type, ErrorKind::LogonDenied);
+}
+
+/// Server challenge from [MS-NLMP 4.2.1](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/7fc694c9-397a-446a-bd80-4635000f2c0f).
+const SPEC_SERVER_CHALLENGE: [u8; CHALLENGE_SIZE] = [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
+const SPEC_CLIENT_CHALLENGE: [u8; CHALLENGE_SIZE] = [0xaa; CHALLENGE_SIZE];
+/// `AvPairs` of the NTLMv2 client blob: `NbDomainName` "Domain", `NbComputerName` "Server", the terminator, and the 4 reserved bytes after it.
+const SPEC_TARGET_INFO: [u8; 40] = [
+    0x02, 0x00, 0x0c, 0x00, 0x44, 0x00, 0x6f, 0x00, 0x6d, 0x00, 0x61, 0x00, 0x69, 0x00, 0x6e, 0x00, 0x01, 0x00, 0x0c,
+    0x00, 0x53, 0x00, 0x65, 0x00, 0x72, 0x00, 0x76, 0x00, 0x65, 0x00, 0x72, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+];
+/// `NTProofStr` for `User`/`Domain`/`Password` over the values above, with a zero timestamp.
+const SPEC_NT_PROOF: [u8; HASH_SIZE] = [
+    0x68, 0xcd, 0x0a, 0xb8, 0x51, 0xe5, 0x1c, 0x96, 0xaa, 0xbc, 0x92, 0x7b, 0xeb, 0xef, 0x6a, 0x1c,
+];
+
+/// Builds a server context that has received an authenticate message without a MIC.
+fn context_with_micless_authenticate(nt_proof: [u8; HASH_SIZE]) -> Ntlm {
+    let mut context = Ntlm::new();
+
+    context.identity = Some(TEST_CREDENTIALS.clone());
+    context.allowed_identities = Some(vec![TEST_CREDENTIALS.clone()]);
+    context.state = NtlmState::Completion;
+    context.negotiate_message = Some(NegotiateMessage::new(vec![0x01, 0x02, 0x03]));
+    context.challenge_message = Some(ChallengeMessage::new(
+        vec![0x04, 0x05, 0x06],
+        Vec::new(),
+        SPEC_SERVER_CHALLENGE,
+        0,
+    ));
+    context.authenticate_message = Some(AuthenticateMessage::new(
+        vec![0x07, 0x08, 0x09],
+        None,
+        SPEC_TARGET_INFO.to_vec(),
+        SPEC_CLIENT_CHALLENGE,
+        nt_proof,
+        0,
+        None,
+    ));
+
+    context
+}
+
+// oracle: spec MS-NLMP §4.2.4.1.3 (NTProofStr)
+#[test]
+fn complete_authenticate_accepts_correct_nt_proof_without_mic() {
+    let mut context = context_with_micless_authenticate(SPEC_NT_PROOF);
+
+    complete_authenticate(&mut context).unwrap();
+
+    assert_eq!(context.state, NtlmState::Final);
+}
+
+// oracle: regression Devolutions/sspi-rs#172
+#[test]
+fn complete_authenticate_rejects_wrong_nt_proof_without_mic() {
+    // Without a MIC nothing but the NT proof ties the exchange to the password.
+    let mut context = context_with_micless_authenticate([0x00; HASH_SIZE]);
+
+    let err = complete_authenticate(&mut context).unwrap_err();
+
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
+    assert_ne!(context.state, NtlmState::Final);
+}
+
+// oracle: regression Devolutions/sspi-rs#172
+#[test]
+fn complete_authenticate_rejects_nt_proof_computed_with_other_password_without_mic() {
+    let mut context = context_with_micless_authenticate(SPEC_NT_PROOF);
+    context.allowed_identities = Some(vec![AuthIdentityBuffers {
+        user: TEST_CREDENTIALS.user.clone(),
+        domain: TEST_CREDENTIALS.domain.clone(),
+        password: ZeroizedUtf16String::from_bytes_le(
+            "WrongPassword"
+                .encode_utf16()
+                .flat_map(|c| c.to_le_bytes())
+                .collect::<Vec<u8>>(),
+        )
+        .unwrap()
+        .into(),
+    }]);
+
+    let err = complete_authenticate(&mut context).unwrap_err();
+
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
+}
+
+// oracle: spec MS-NLMP §4.2.4.1.3 (NTProofStr), whose client blob carries a zero Time
+#[test]
+fn complete_authenticate_accepts_client_blob_timestamp_that_differs_from_challenge_timestamp() {
+    let mut context = context_with_micless_authenticate(SPEC_NT_PROOF);
+    context.challenge_message = Some(ChallengeMessage::new(
+        vec![0x04, 0x05, 0x06],
+        Vec::new(),
+        SPEC_SERVER_CHALLENGE,
+        133_476_322_467_244_370,
+    ));
+
+    complete_authenticate(&mut context).unwrap();
+
+    assert_eq!(context.state, NtlmState::Final);
+}
+
+// oracle: spec MS-NLMP §3.3.2 (NTProofStr is computed over temp, which includes the client blob Time)
+#[test]
+fn complete_authenticate_rejects_altered_client_blob_timestamp() {
+    let mut context = context_with_micless_authenticate(SPEC_NT_PROOF);
+    context.authenticate_message.as_mut().unwrap().timestamp = 1;
+
+    let err = complete_authenticate(&mut context).unwrap_err();
+
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
+}
+
+/// Runs a real client through the NEGOTIATE and CHALLENGE messages.
+/// Returns the server context waiting for the AUTHENTICATE message and the client's AUTHENTICATE message.
+fn server_context_and_authenticate_token_from_client() -> (Ntlm, Vec<u8>) {
+    use crate::ntlm::messages::client::{read_challenge, write_authenticate, write_negotiate};
+
+    let mut client = Ntlm::new();
+    let mut server = Ntlm::new();
+    server.identity = Some(TEST_CREDENTIALS.clone());
+    server.allowed_identities = Some(vec![TEST_CREDENTIALS.clone()]);
+
+    client.state = NtlmState::Negotiate;
+    server.state = NtlmState::Negotiate;
+
+    let mut negotiate = Vec::new();
+    write_negotiate(&mut client, &mut negotiate).unwrap();
+    read_negotiate(&mut server, negotiate.as_slice()).unwrap();
+
+    let mut challenge = Vec::new();
+    write_challenge(&mut server, &mut challenge).unwrap();
+    read_challenge(&mut client, challenge.as_slice()).unwrap();
+
+    let mut authenticate = Vec::new();
+    write_authenticate(&mut client, &TEST_CREDENTIALS, &mut authenticate).unwrap();
+
+    (server, authenticate)
+}
+
+// Connects the crate's own client to its own server, so symmetric bugs on both sides would pass.
+// oracle: mutant the server rejects, or fails to verify, a MIC that a real client produced
+#[test]
+fn read_authenticate_accepts_message_with_mic_from_client() {
+    let (mut server, authenticate) = server_context_and_authenticate_token_from_client();
+
+    read_authenticate(&mut server, authenticate.as_slice()).unwrap();
+    complete_authenticate(&mut server).unwrap();
+
+    assert_eq!(server.state, NtlmState::Final);
+}
+
+// A man-in-the-middle must not be able to drop the MIC by clearing a flag that the MIC itself protects.
+// oracle: spec MS-NLMP §3.2.5.1.2 (the MIC must be checked when MsvAvFlags announces it)
+#[test]
+fn authentication_fails_when_target_info_flag_is_cleared_in_authenticate_message() {
+    let (mut server, mut authenticate) = server_context_and_authenticate_token_from_client();
+
+    let flags_range = AUTHENTICATE_FLAGS_START..AUTHENTICATE_FLAGS_START + NEGOTIATE_FLAGS_SIZE;
+    let flags = u32::from_le_bytes(authenticate[flags_range.clone()].try_into().unwrap());
+    assert_ne!(flags & NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO.bits(), 0);
+    let flags = flags & !NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO.bits();
+    authenticate[flags_range].copy_from_slice(&flags.to_le_bytes());
+
+    read_authenticate(&mut server, authenticate.as_slice()).unwrap();
+    let err = complete_authenticate(&mut server).unwrap_err();
+
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
+    assert_ne!(server.state, NtlmState::Final);
 }

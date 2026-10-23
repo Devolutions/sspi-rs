@@ -4,7 +4,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _};
 
-use crate::crypto::Rc4;
+use crate::crypto::{HASH_SIZE, Rc4};
 use crate::ntlm::messages::computations::*;
 use crate::ntlm::messages::{
     CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, MessageFields, MessageTypes, NTLM_SIGNATURE, SERVER_SEAL_MAGIC,
@@ -123,6 +123,10 @@ pub(crate) fn write_authenticate(
         ntlm_v2_hash.as_ref(),
         challenge_message.timestamp,
     )?;
+    let nt_proof = nt_challenge_response
+        .first_chunk::<HASH_SIZE>()
+        .copied()
+        .expect("NTLMv2 response starts with the NT proof");
     context.flags = get_flags(context, credentials);
 
     let session_key = if context.flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH) {
@@ -182,6 +186,8 @@ pub(crate) fn write_authenticate(
         Some(mic),
         target_info,
         client_challenge,
+        nt_proof,
+        challenge_message.timestamp,
         Some(encrypted_session_key),
     ));
     context.state = NtlmState::Final;

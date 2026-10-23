@@ -61,12 +61,12 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
                 continue;
             }
         };
-        let (_, key_exchange_key) = match compute_ntlm_v2_response(
+        let (nt_challenge_response, key_exchange_key) = match compute_ntlm_v2_response(
             authenticate_message.client_challenge.as_ref(),
             challenge_message.server_challenge.as_ref(),
             authenticate_message.target_info.as_ref(),
             ntlm_v2_hash.as_ref(),
-            challenge_message.timestamp,
+            authenticate_message.timestamp,
         ) {
             Ok(result) => result,
             Err(e) => {
@@ -74,6 +74,15 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
                 continue;
             }
         };
+
+        // The MIC is optional, so it cannot be the only proof of the password:
+        // a client may omit it, and nothing else would then tie the exchange to the credentials.
+        // The NT proof is an HMAC keyed with the password-derived hash, so it must match for the candidate.
+        if nt_challenge_response.first_chunk::<HASH_SIZE>() != Some(&authenticate_message.nt_proof) {
+            debug!("candidate skipped: NT proof mismatch");
+            continue;
+        }
+
         let session_key = match authenticate_message.encrypted_random_session_key.map_or(
             Ok(key_exchange_key),
             |encrypted_random_session_key| {
