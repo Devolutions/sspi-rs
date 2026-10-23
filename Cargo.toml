@@ -122,10 +122,10 @@ num-derive = "0.5"
 num-traits = { version = "0.2", default-features = true }
 
 picky = { version = "=7.0.0-rc.27", default-features = false }
+picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 picky-asn1-der = "0.5"
 picky-asn1-x509 = { version = "0.15", features = ["pkcs7"] }
 picky-krb = "0.13"
-picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 
 uuid = { version = "1.23", default-features = true, features = ["v4"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
