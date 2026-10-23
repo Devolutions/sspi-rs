@@ -189,11 +189,11 @@ pub(crate) fn check_messages_encryption(client: &mut impl Sspi, server: &mut imp
     server.encrypt_message(EncryptionFlags::empty(), &mut messages)?;
     assert_ne!(MESSAGE_TO_CLIENT, messages[1].data());
 
-    println!(
-        "Message to client: {:x?}, encrypted message: {:x?}, token: {:x?}",
-        MESSAGE_TO_CLIENT,
-        messages[0].data(),
-        messages[1].data()
+    tracing::trace!(
+        message = ?MESSAGE_TO_CLIENT,
+        token = ?messages[0].data(),
+        encrypted_message = ?messages[1].data(),
+        "Message to client"
     );
 
     let [mut token, mut data] = messages;

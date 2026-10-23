@@ -17,7 +17,7 @@ use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng;
 
 use self::extractors::{
-    decrypt_ap_rep, extract_encryption_params_from_as_rep, extract_seq_number_from_ap_rep,
+    decrypt_ap_rep, extract_encryption_params_from_as_rep_with_salt, extract_seq_number_from_ap_rep,
     extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
@@ -364,10 +364,8 @@ pub async fn initialize_security_context<'a>(
 
                         client.realm = Some(as_rep.0.crealm.0.to_string());
 
-                        let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
-                        // Some KDCs omit PA-ETYPE-INFO2 from the AS-REP.
-                        // The AS-REP key uses the same salt as the pre-authentication key.
-                        let salt = if salt.is_empty() { preauth_salt } else { salt };
+                        let (encryption_type, salt) =
+                            extract_encryption_params_from_as_rep_with_salt(&as_rep, &preauth_salt)?;
 
                         let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
 

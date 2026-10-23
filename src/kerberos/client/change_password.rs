@@ -6,7 +6,8 @@ use rand_core::SeedableRng as _;
 use crate::builders::ChangePassword;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::{
-    extract_encryption_params_from_as_rep, extract_session_key_from_as_rep, extract_status_code_from_krb_priv_response,
+    extract_encryption_params_from_as_rep_with_salt, extract_session_key_from_as_rep,
+    extract_status_code_from_krb_priv_response,
 };
 use crate::kerberos::client::generators::{
     EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_as_req_kdc_body,
@@ -66,13 +67,14 @@ pub async fn change_password<'a>(
         with_pre_auth: false,
     });
 
-    let as_rep = server::as_exchange::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
+    let (as_rep, preauth_salt) =
+        server::as_exchange::as_exchange(client, yield_point, &kdc_req_body, pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 
     client.realm = Some(as_rep.0.crealm.0.to_string());
 
-    let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+    let (encryption_type, salt) = extract_encryption_params_from_as_rep_with_salt(&as_rep, &preauth_salt)?;
     debug!(?encryption_type, "Negotiated encryption type");
 
     client.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);

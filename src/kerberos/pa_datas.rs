@@ -52,6 +52,15 @@ impl AsReqPaDataOptions<'_> {
             AsReqPaDataOptions::Keytab(_) => {}
         }
     }
+
+    pub(crate) fn salt(&self) -> &[u8] {
+        match self {
+            AsReqPaDataOptions::AuthIdentity(options) => &options.salt,
+            #[cfg(feature = "scard")]
+            AsReqPaDataOptions::SmartCard(_) => &[],
+            AsReqPaDataOptions::Keytab(_) => &[],
+        }
+    }
 }
 
 // ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.

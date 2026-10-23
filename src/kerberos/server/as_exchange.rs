@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::TGT_SERVICE_NAME;
-use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep, extract_salt_from_krb_error};
+use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_salt};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions, GenerateAsReqOptions, generate_as_req, generate_as_req_kdc_body, generate_nonce,
 };
@@ -114,13 +114,13 @@ pub(crate) async fn request_tgt(
         }
     };
 
-    let as_rep = as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
+    let (as_rep, preauth_salt) = as_exchange(server, yield_point, &kdc_req_body, pa_data_options).await?;
 
     debug!("AS exchange finished successfully.");
 
     server.realm = Some(as_rep.0.crealm.0.to_string());
 
-    let (encryption_type, salt) = extract_encryption_params_from_as_rep(&as_rep)?;
+    let (encryption_type, salt) = extract_encryption_params_from_as_rep_with_salt(&as_rep, &preauth_salt)?;
 
     let encryption_type = CipherSuite::try_from(usize::from(encryption_type))?;
     server.encryption_params.encryption_type = Some(encryption_type);
@@ -152,7 +152,7 @@ pub(crate) async fn as_exchange(
     yield_point: &mut YieldPointLocal,
     kdc_req_body: &KdcReqBody,
     mut pa_data_options: AsReqPaDataOptions<'_>,
-) -> Result<AsRep> {
+) -> Result<(AsRep, String)> {
     pa_data_options.with_pre_auth(false);
     let pa_datas = pa_data_options.generate(client.current_kdc_time()?)?;
     let as_req = generate_as_req(pa_datas, kdc_req_body.clone());
@@ -180,7 +180,15 @@ pub(crate) async fn as_exchange(
             ));
         }
 
-        if let Some(correct_salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+        if let Some(correct_salt) = extract_preauth_salt(
+            &as_rep.unwrap_err(),
+            kdc_req_body.realm.0.0.as_utf8(),
+            kdc_req_body
+                .cname
+                .0
+                .as_ref()
+                .ok_or_else(|| Error::new(ErrorKind::InvalidParameter, "missing client name in AS-REQ"))?,
+        )? {
             debug!("salt extracted successfully from the KRB_ERROR");
 
             pa_data_options.with_salt(correct_salt.into_bytes());
@@ -206,7 +214,9 @@ pub(crate) async fn as_exchange(
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
         match as_rep {
-            Ok(as_rep) => return Ok(as_rep),
+            Ok(as_rep) => {
+                return Ok((as_rep, String::from_utf8_lossy(pa_data_options.salt()).into_owned()));
+            }
             Err(err) if !retried_skew && err.0.error_code.0 == KRB_AP_ERR_SKEW => {
                 client.clock_offset = clock_offset_from_error(&err, received_at)?;
                 retried_skew = true;

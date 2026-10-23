@@ -4,7 +4,7 @@ use picky_krb::messages::{AsRep, AsReq, KdcReqBody, KrbError};
 use time::{Duration, OffsetDateTime};
 
 use crate::kerberos::EncryptionParams;
-use crate::kerberos::client::extractors::extract_salt_from_krb_error;
+use crate::kerberos::client::extractors::extract_preauth_salt;
 use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateKeytabPaDataOptions, generate_as_req};
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
@@ -104,7 +104,15 @@ impl AsExchange {
                         ));
                     }
 
-                    if let Some(salt) = extract_salt_from_krb_error(&as_rep.unwrap_err())? {
+                    if let Some(salt) =
+                        extract_preauth_salt(
+                            &as_rep.unwrap_err(),
+                            self.kdc_req_body.realm.0.0.as_utf8(),
+                            self.kdc_req_body.cname.0.as_ref().ok_or_else(|| {
+                                Error::new(ErrorKind::InvalidParameter, "missing client name in AS-REQ")
+                            })?,
+                        )?
+                    {
                         debug!("salt extracted successfully from the KRB_ERROR");
                         self.salt = salt.into_bytes();
                     }
