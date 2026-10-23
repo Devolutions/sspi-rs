@@ -256,7 +256,7 @@ fn run_kerberos(
     panic!("Kerberos authentication should not exceed {steps} steps");
 }
 
-fn ap_req_authenticator_time(token: &[u8], service_key: &[u8]) -> OffsetDateTime {
+pub(super) fn ap_req_authenticator(token: &[u8], service_key: &[u8]) -> Authenticator {
     let ap_req = KrbMessage::<ApReq>::decode_application_krb_message(token)
         .expect("client token contains an AP-REQ")
         .0
@@ -281,7 +281,11 @@ fn ap_req_authenticator_time(token: &[u8], service_key: &[u8]) -> OffsetDateTime
             &encrypted_authenticator.cipher.0.0,
         )
         .expect("session key decrypts the authenticator");
-    let authenticator: Authenticator = picky_asn1_der::from_bytes(&authenticator_data).expect("valid authenticator");
+    picky_asn1_der::from_bytes(&authenticator_data).expect("valid authenticator")
+}
+
+fn ap_req_authenticator_time(token: &[u8], service_key: &[u8]) -> OffsetDateTime {
+    let authenticator = ap_req_authenticator(token, service_key);
     OffsetDateTime::try_from(authenticator.0.ctime.0.0).expect("valid authenticator time")
 }
 

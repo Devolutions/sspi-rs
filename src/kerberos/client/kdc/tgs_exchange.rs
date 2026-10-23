@@ -9,6 +9,7 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::client::referral_target_realm;
+use crate::rcg::CapturedTgt;
 use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result, Secret};
 
 const MAX_REFERRAL_HOPS: usize = 10;
@@ -101,14 +102,27 @@ impl TgsExchange {
                         now,
                     )?;
 
+                    let ticket = self
+                        .ticket
+                        .take()
+                        .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket is missing"))?;
+                    if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
+                        remote_guard.service_tgt =
+                            Some(CapturedTgt::new(
+                                self.realm.clone(),
+                                ticket.clone(),
+                                client.encryption_params.encryption_type.clone().ok_or_else(|| {
+                                    Error::new(ErrorKind::InternalError, "encryption type is not set")
+                                })?,
+                                self.tgt_session_key.clone(),
+                            )?);
+                    }
+
                     let tgs_req = generate_tgs_req(GenerateTgsReqOptions {
                         realm: &self.realm,
                         service_principal,
                         session_key: &self.tgt_session_key,
-                        ticket: self
-                            .ticket
-                            .take()
-                            .ok_or_else(|| Error::new(ErrorKind::InternalError, "ticket is missing"))?,
+                        ticket,
                         authenticator: &mut authenticator,
                         additional_tickets: self.additional_tickets.take(),
                         enc_params: &client.encryption_params,

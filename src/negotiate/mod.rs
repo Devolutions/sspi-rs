@@ -29,7 +29,7 @@ use crate::{
     ContextNames, ContextSizes, CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind,
     InitializeSecurityContextResult, Kerberos, KerberosConfig, Ntlm, PACKAGE_ID_NONE, PackageCapabilities, PackageInfo,
     Pku2u, Result, SecurityBuffer, SecurityBufferRef, SecurityPackageType, SecurityStatus, Sspi, SspiEx, SspiImpl,
-    builders, kerberos, ntlm, pku2u,
+    builders, kerberos, ntlm, pku2u, rcg,
 };
 
 pub const PKG_NAME: &str = "Negotiate";
@@ -219,6 +219,8 @@ pub struct Negotiate {
     /// > if the accepted mechanism is the most preferred mechanism of both the initiator and the acceptor,
     /// > then the MIC token exchange is OPTIONAL.
     mic_needed: bool,
+    /// Remote Credential Guard: Kerberos is the only allowed mechanism and the `mechListMIC` is mandatory.
+    remote_guard: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -300,7 +302,97 @@ impl Negotiate {
             mech_types: Default::default(),
             mic_verified: false,
             mic_needed: true,
+            remote_guard: false,
         })
+    }
+
+    /// Restricts this client context to Kerberos for Remote Credential Guard.
+    ///
+    /// NTLM and PKU2U are disabled, falling back to NTLM is impossible, and the peer's `mechListMIC` must be
+    /// present and valid. Must be called before the first `initialize_security_context` call.
+    pub(crate) fn enable_remote_guard(&mut self) -> Result<()> {
+        if !self.mode.is_client() {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "remote credential guard is only supported for Negotiate clients",
+            ));
+        }
+        if self.state != NegotiateState::Initial {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "remote credential guard must be enabled before authentication starts",
+            ));
+        }
+        if !self.package_list.kerberos {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "remote credential guard requires Kerberos, but it is disabled in package_list",
+            ));
+        }
+
+        if !self.protocol.is_kerberos() {
+            self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
+                client_computer_name: self.client_computer_name.clone(),
+                kdc_resolution: KdcResolution::KdcUrl(None),
+            })?);
+        }
+        let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol else {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "Kerberos protocol is not selected",
+            ));
+        };
+        kerberos.enable_remote_guard()?;
+
+        self.package_list.ntlm = false;
+        self.package_list.pku2u = false;
+        self.remote_guard = true;
+
+        Ok(())
+    }
+
+    pub(crate) fn is_remote_guard(&self) -> bool {
+        self.remote_guard
+    }
+
+    fn remote_guard_kerberos(&mut self) -> Result<&mut Kerberos> {
+        if !self.remote_guard {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "remote credential guard is not enabled for this context",
+            ));
+        }
+        if self.state != NegotiateState::Ok {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "Negotiate context is not established",
+            ));
+        }
+
+        match &mut self.protocol {
+            NegotiatedProtocol::Kerberos(kerberos) => Ok(kerberos),
+            _ => Err(Error::new(
+                ErrorKind::InternalError,
+                "remote credential guard context is not using Kerberos",
+            )),
+        }
+    }
+
+    /// Builds the encoded `TSCredentials` with `TSRemoteGuardCreds` for the authenticated context.
+    pub(crate) async fn build_remote_guard_credentials(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        target_name: &str,
+        ntlm: Option<&rcg::NtlmRedirectionPolicy>,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+        self.remote_guard_kerberos()?
+            .build_remote_guard_credentials(yield_point, target_name, ntlm)
+            .await
+    }
+
+    /// Takes the authenticated Remote Credential Guard context out of this Negotiate context.
+    pub(crate) fn take_remote_guard_session(&mut self) -> Result<rcg::RemoteGuardSession> {
+        self.remote_guard_kerberos()?.take_remote_guard_session()
     }
 
     #[cfg(feature = "__test-data")]
@@ -378,6 +470,13 @@ impl Negotiate {
             // We disable NTLM completely when the target server has selected Kerberos.
             self.package_list.ntlm = false;
 
+            if self.remote_guard && !self.protocol.is_kerberos() {
+                return Err(Error::new(
+                    ErrorKind::InternalError,
+                    "remote credential guard context is not using Kerberos",
+                ));
+            }
+
             if self.protocol_name() != kerberos::PKG_NAME {
                 let kerberos = Kerberos::new_client_from_config(KerberosConfig {
                     client_computer_name: self.client_computer_name.clone(),
@@ -406,6 +505,13 @@ impl Negotiate {
         }
 
         if mech_type == &oids::ntlm_ssp() {
+            if self.remote_guard {
+                return Err(Error::new(
+                    ErrorKind::DowngradeDetected,
+                    "the server selected NTLM, but remote credential guard requires Kerberos",
+                ));
+            }
+
             if !enabled_packages.ntlm {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
@@ -566,7 +672,7 @@ impl Negotiate {
     }
 
     fn can_downgrade_ntlm(&self) -> bool {
-        self.package_list.ntlm
+        !self.remote_guard && self.package_list.ntlm
     }
 
     fn is_target_name_ip_address(address: &str) -> bool {
@@ -612,6 +718,18 @@ impl Negotiate {
                 .verify_mic_token(mic, &self.mech_types, crate::private::Sealed)?;
 
             self.mic_verified = true;
+        }
+
+        Ok(())
+    }
+
+    /// Fails unless the peer's `mechListMIC` was verified, when Remote Credential Guard is enabled.
+    fn check_remote_guard_mic(&self) -> Result<()> {
+        if self.remote_guard && !self.mic_verified {
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
+                "remote credential guard requires the server to send a valid mechListMIC",
+            ));
         }
 
         Ok(())
@@ -912,3 +1030,6 @@ impl<'a> Negotiate {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

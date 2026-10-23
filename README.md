@@ -75,6 +75,37 @@ let mut negotiate = SecurityPackage::from_package_type(
 );
 ```
 
+## CredSSP delegation modes
+
+Both `CredSspClient::new` and, with the `tsssp` feature, `SspiCredSsp::new_client_with_mode` accept an explicit `CredSspMode`.
+`SspiCredSsp::new_client` preserves ordinary delegation for compatibility.
+
+| Mode | Authentication | Final credentials |
+|------|----------------|-------------------|
+| `WithCredentials` | Ordinary configured negotiation | Supplied password or smart-card credentials |
+| `CredentialLess` (Restricted Admin) | Ordinary configured negotiation, including Kerberos or NTLM | Empty type-1 `TSPasswordCreds`, regardless of the authentication credential source |
+| `RemoteGuard` | Fresh Kerberos-enabled Negotiate; no NTLM or password-delegation fallback | Type-6 `TSRemoteGuardCreds`; continuing RDPEAR session available after completion |
+
+Restricted Admin is non-delegating, not anonymous: the client still authenticates.
+It does not delegate a password or smart-card PIN and does not create an RDPEAR session.
+Restricted Admin and Remote Credential Guard reject conflicting `DELEGATE` requirements.
+RDP connectors must separately request the selected mode and require the matching server capability; selecting a CredSSP mode does not negotiate RDP flags.
+These are Rust client APIs, not support for native extended credential structures or server-side type-6 credential import.
+
+Remote Credential Guard keeps reusable TGT keys and the CredSSP protection key client-owned.
+Ordinary service-ticket session keys are intentionally returned inside protected RDPEAR replies, and retained only for session-authorized operations.
+TGS authenticators with peer-supplied subkeys fail explicitly because such keys would let the peer decrypt TGT replies outside the client.
+There is no generic raw-key export API.
+Remote Credential Guard requires `KdcResolution::KdcUrl` for direct KDC or KDC-proxy communication; IAKerb proxy negotiation is not supported in this mode.
+
+Bounded Windows integration has verified initial logon and optional redirected NTLMv2 authentication on a fresh target logon; initial authentication still requires Kerberos.
+Successful outbound Kerberos authentication remains unverified.
+The service-key and authenticator-skew corrections have local synthetic validation only.
+Reconnecting to an existing target logon retained an old credential binding in the tested setup; a fresh target logon is required and no credential state is transferred between connections.
+See [`sspi::rcg`] for the specific results and limitations.
+
+[`sspi::rcg`]: https://docs.rs/sspi/latest/sspi/rcg/
+
 ## Projects using sspi-rs
 
 * [Devolutions Gateway](https://github.com/Devolutions/devolutions-gateway)

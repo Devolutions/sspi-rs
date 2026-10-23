@@ -654,7 +654,7 @@ impl KdcMock {
             from: _,
             till: _,
             rtime: _,
-            nonce: _,
+            nonce,
             etype: _,
             addresses: _,
             enc_authorization_data: _,
@@ -717,7 +717,6 @@ impl KdcMock {
         let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
         let mut session_key = vec![0; cipher.key_size()];
         rng.fill_bytes(&mut session_key);
-        let nonce = rng.next_u32();
 
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);
@@ -733,7 +732,8 @@ impl KdcMock {
                     auth_time - Duration::hours(1),
                 ))),
             }])),
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce.to_be_bytes().to_vec())),
+            // RFC 4120 3.3.3: the KDC copies the nonce of the request.
+            nonce: ExplicitContextTag2::from(nonce.0),
             key_expiration: Optional::from(None),
             flags: ExplicitContextTag4::from(kdc_options.0.clone()),
             auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),

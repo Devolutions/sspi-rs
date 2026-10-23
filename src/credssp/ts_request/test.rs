@@ -578,6 +578,131 @@ fn encode_ts_credentials_with_restricted_admin_mode_required() {
 }
 
 #[test]
+fn encode_ts_credentials_never_delegates_password_in_remote_guard_mode() {
+    let identity = &AUTH_IDENTITY_STRONG_USERNAME_AND_PASSWORD;
+
+    let error = write_ts_credentials(identity, CredSspMode::RemoteGuard).unwrap_err();
+
+    assert_eq!(error.error_type, ErrorKind::UnsupportedFunction);
+}
+
+#[test]
+fn encode_ts_credentials_credential_less_strips_nonempty_password_fields() {
+    let encoded = write_ts_credentials(
+        &AUTH_IDENTITY_SIMPLE_WITH_USERNAME_AND_DOMAIN_AND_PASSWORD,
+        CredSspMode::CredentialLess,
+    )
+    .unwrap();
+
+    assert_eq!(encoded, TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED);
+}
+
+fn keytab_credentials() -> CredentialsBuffers {
+    CredentialsBuffers::Keytab(crate::KeytabIdentity {
+        principal: Username::parse("synthetic@EXAMPLE.COM").unwrap(),
+        key: vec![0x91; 32].into(),
+        key_enctype: picky_krb::crypto::CipherSuite::Aes256CtsHmacSha196,
+    })
+}
+
+#[test]
+fn encode_ts_credentials_credential_less_accepts_keytab_as_empty_password_creds() {
+    let encoded = write_ts_credentials(&keytab_credentials(), CredSspMode::CredentialLess).unwrap();
+
+    assert_eq!(encoded, TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED);
+}
+
+#[test]
+fn encode_ts_credentials_with_credentials_rejects_keytab() {
+    let error = write_ts_credentials(&keytab_credentials(), CredSspMode::WithCredentials).unwrap_err();
+
+    assert_eq!(error.error_type, ErrorKind::UnsupportedPreAuth);
+}
+
+#[test]
+fn encode_ts_credentials_remote_guard_rejects_keytab() {
+    let error = write_ts_credentials(&keytab_credentials(), CredSspMode::RemoteGuard).unwrap_err();
+
+    assert_eq!(error.error_type, ErrorKind::UnsupportedFunction);
+}
+
+#[cfg(feature = "scard")]
+fn smart_card_credentials() -> CredentialsBuffers {
+    let certificate = picky::x509::Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer")).unwrap();
+    CredentialsBuffers::SmartCard(crate::SmartCardIdentityBuffers {
+        username: "synthetic@EXAMPLE.COM".into(),
+        certificate: certificate.to_der().unwrap().try_into().unwrap(),
+        card_name: crate::NonEmpty::new("synthetic card".into()),
+        reader_name: "synthetic reader".into(),
+        container_name: crate::NonEmpty::new("synthetic container".into()),
+        csp_name: "synthetic provider".into(),
+        pin: ZeroizedUtf16String("12345678".into()).into(),
+        private_key_pem: None,
+        scard_type: crate::SmartCardType::Emulated {
+            scard_pin: b"87654321".to_vec().into(),
+        },
+    })
+}
+
+#[test]
+#[cfg(feature = "scard")]
+fn encode_ts_credentials_credential_less_strips_smart_card_pin_and_csp_data() {
+    let encoded = write_ts_credentials(&smart_card_credentials(), CredSspMode::CredentialLess).unwrap();
+
+    assert_eq!(encoded, TS_CREDENTIALS_WITH_RESTRICTED_ADMIN_MODE_REQUIRED);
+}
+
+#[test]
+#[cfg(feature = "scard")]
+fn encode_ts_credentials_with_credentials_preserves_smart_card_fields() {
+    use picky_krb::credssp::TsSmartCardCreds;
+
+    for include_optional_names in [false, true] {
+        let CredentialsBuffers::SmartCard(mut identity) = smart_card_credentials() else {
+            unreachable!()
+        };
+        if !include_optional_names {
+            identity.card_name = None;
+            identity.container_name = None;
+        }
+        let encoded =
+            write_ts_credentials(&CredentialsBuffers::SmartCard(identity), CredSspMode::WithCredentials).unwrap();
+        let credentials: TsCredentials = picky_asn1_der::from_bytes(&encoded).unwrap();
+        assert_eq!(credentials.cred_type.0, IntegerAsn1::from(vec![2]));
+        let card: TsSmartCardCreds = picky_asn1_der::from_bytes(&credentials.credentials.0.0).unwrap();
+        assert_eq!(card.pin.0.0, Utf16String::from("12345678").to_bytes_le());
+        let csp = card.csp_data.0;
+        assert_eq!(csp.key_spec.0, IntegerAsn1::from(vec![1]));
+        assert_eq!(
+            csp.reader_name.0.unwrap().0.0,
+            Utf16String::from("synthetic reader").to_bytes_le()
+        );
+        assert_eq!(
+            csp.csp_name.0.unwrap().0.0,
+            Utf16String::from("synthetic provider").to_bytes_le()
+        );
+        assert_eq!(
+            csp.card_name.0.map(|name| name.0.0),
+            include_optional_names.then(|| Utf16String::from("synthetic card").to_bytes_le())
+        );
+        assert_eq!(
+            csp.container_name.0.map(|name| name.0.0),
+            include_optional_names.then(|| Utf16String::from("synthetic container").to_bytes_le())
+        );
+        assert!(card.user_hint.0.is_none());
+        assert!(card.domain_hint.0.is_none());
+    }
+}
+
+#[test]
+#[cfg(feature = "scard")]
+fn encode_ts_credentials_remote_guard_rejects_smart_card_credentials() {
+    let error = write_ts_credentials(&smart_card_credentials(), CredSspMode::RemoteGuard).unwrap_err();
+
+    assert_eq!(error.error_type, ErrorKind::UnsupportedFunction);
+}
+
+#[test]
 fn decode_ts_request_fails_on_incomplete_buffer() {
     let mut buffer = NTLM_3_PHASE_TS_REQUEST.to_vec();
     let _ = buffer.split_off(buffer.len() - 1);

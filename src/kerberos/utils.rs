@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::kerberos::encryption_params::EncryptionParams;
 use crate::{Error, ErrorKind, Result, Secret};
 
-pub(super) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
+pub(crate) fn serialize_message<T: ?Sized + Serialize>(v: &T) -> Result<Vec<u8>> {
     let mut data = Vec::new();
     // 4 bytes: length of the message
     data.write_all(&[0, 0, 0, 0])?;

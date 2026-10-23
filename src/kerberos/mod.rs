@@ -38,12 +38,15 @@ use crate::kerberos::server::KerberosServerState;
 use crate::network_client::NetworkProtocol;
 #[cfg(feature = "scard")]
 use crate::pk_init::DhParameters;
+/// Compatibility re-export; prefer the package-neutral [`crate::rcg`] module.
+#[doc(no_inline)]
+pub use crate::rcg as remote_guard;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
     CredentialUse, Credentials, CredentialsBuffers, DecryptionFlags, Error, ErrorKind, PACKAGE_ID_NONE,
     PackageCapabilities, PackageInfo, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef,
-    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url,
+    SecurityPackageType, SecurityStatus, SessionKeys, Sspi, SspiEx, SspiImpl, detect_kdc_url, rcg,
 };
 
 pub const PKG_NAME: &str = "Kerberos";
@@ -108,6 +111,8 @@ pub struct Kerberos {
     pub(crate) iakerb_cookie: IAKerbCookie,
     /// Transcript of the `IAKerb` `GSS-API` tokens exchanged between the client and the server.
     pub(crate) iakerb_gss_transcript: Vec<u8>,
+    /// Remote Credential Guard state. `None` unless Remote Credential Guard was explicitly enabled.
+    pub(crate) remote_guard: Option<Box<rcg::RemoteGuardState>>,
 }
 
 impl Kerberos {
@@ -130,6 +135,7 @@ impl Kerberos {
             clock_offset: Duration::ZERO,
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
+            remote_guard: None,
         })
     }
 
@@ -152,6 +158,7 @@ impl Kerberos {
             clock_offset: Duration::ZERO,
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
+            remote_guard: None,
         })
     }
 
@@ -208,7 +215,12 @@ impl Kerberos {
     /// [`detect_kdc_url`], so that `SSPI_KDC_URL_<REALM>` environment overrides (and the system
     /// krb5.conf / DNS SRV records) are honored for the referral hop. This lets a single auth
     /// chase a referral into a child/trusted realm without changing the pinned home-realm KDC.
-    async fn send_for_realm(&self, yield_point: &mut YieldPointLocal, realm: &str, data: &[u8]) -> Result<Vec<u8>> {
+    pub(crate) async fn send_for_realm(
+        &self,
+        yield_point: &mut YieldPointLocal,
+        realm: &str,
+        data: &[u8],
+    ) -> Result<Vec<u8>> {
         let kdc_url = if self.realm.as_deref() == Some(realm) {
             match &self.config.kdc_resolution {
                 KdcResolution::KdcUrl(kdc_url) => kdc_url.clone().or_else(|| detect_kdc_url(realm)),
@@ -309,6 +321,10 @@ impl Sspi for Kerberos {
                 ErrorKind::OutOfSequence,
                 format!("Kerberos context is not established: current state: {:?}", self.state),
             ));
+        }
+
+        if let Some(remote_guard) = self.remote_guard.as_deref_mut() {
+            return remote_guard.encrypt_message(message);
         }
 
         trace!(encryption_params = ?self.encryption_params);
@@ -425,6 +441,10 @@ impl Sspi for Kerberos {
                 ErrorKind::OutOfSequence,
                 format!("Kerberos context is not established: current state: {:?}", self.state),
             ));
+        }
+
+        if let Some(remote_guard) = self.remote_guard.as_deref_mut() {
+            return remote_guard.decrypt_message(message);
         }
 
         trace!(encryption_params = ?self.encryption_params);
@@ -548,11 +568,17 @@ impl Sspi for Kerberos {
             ));
         }
 
+        let security_trailer = if self.remote_guard.is_some() {
+            u32::from(SECURITY_TRAILER)
+        } else {
+            u32::from(SECURITY_TRAILER) + u32::from(self.encryption_params.ec)
+        };
+
         Ok(ContextSizes {
             max_token: PACKAGE_INFO.max_token_len,
             max_signature: MAX_SIGNATURE.into(),
             block: 0,
-            security_trailer: u32::from(SECURITY_TRAILER) + u32::from(self.encryption_params.ec),
+            security_trailer,
         })
     }
 
@@ -601,6 +627,13 @@ impl Sspi for Kerberos {
 
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
     fn query_context_session_key(&self) -> Result<SessionKeys> {
+        if self.remote_guard.is_some() {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "the session key of a remote credential guard context cannot be exported",
+            ));
+        }
+
         Ok(SessionKeys {
             session_key: get_encryption_key(&self.encryption_params)?.clone(),
         })
@@ -784,6 +817,13 @@ impl SspiEx for Kerberos {
     }
 
     fn verify_mic_token(&mut self, token: &[u8], data: &[u8], _: crate::private::Sealed) -> Result<()> {
+        if let Some(remote_guard) = self.remote_guard.as_deref_mut() {
+            return remote_guard.verify_mic(token, data).map_err(|mut error| {
+                error.description = format!("SPNEGO mechListMIC verification failed: {}", error.description);
+                error
+            });
+        }
+
         // The sequence number verification is only enforced for the acceptor side.
         // RFC 1964 §1.2.1 / RFC 4121 make sequence-number checking optional and tied to
         // the `SEQUENCE_DETECT`/`REPLAY_DETECT` flags negotiated at context establishment.
@@ -804,6 +844,10 @@ impl SspiEx for Kerberos {
     }
 
     fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> Result<Vec<u8>> {
+        if let Some(remote_guard) = self.remote_guard.as_deref_mut() {
+            return remote_guard.generate_mic(data);
+        }
+
         // Do not increment sequence number for MIC token if security context is not established.
         // We do not want to mess up the sequence number.
         let seq_number = if self.encryption_params.sub_session_key.is_some() {
@@ -888,6 +932,7 @@ pub mod test_data {
             clock_offset: time::Duration::ZERO,
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
+            remote_guard: None,
         }
     }
 
@@ -937,6 +982,7 @@ pub mod test_data {
             clock_offset: time::Duration::ZERO,
             iakerb_cookie: None,
             iakerb_gss_transcript: Vec::new(),
+            remote_guard: None,
         }
     }
 }
