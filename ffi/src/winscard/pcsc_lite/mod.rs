@@ -4,7 +4,6 @@ pub mod functions;
 
 #[cfg(not(target_os = "macos"))]
 use core::ffi::{c_long, c_ulong};
-use std::borrow::Cow;
 use std::env;
 use std::ffi::CString;
 
@@ -142,32 +141,52 @@ pub fn win_scard_ctl_code_to_pcsc_lite(control_code: u32) -> u32 {
     0x4200_0000 + ((control_code >> 2) & 0xFFF)
 }
 
+cfg_select! {
+    target_os = "macos" => {
+        /// Libraries that are tried in order when the user does not set [PCSC_LITE_LIB_PATH_ENV].
+        ///
+        /// System libraries live in the dyld shared cache and do not exist on the disk,
+        /// so we cannot check the path existence. `dlopen` resolves it.
+        const STD_LIB_CANDIDATES: [&str; 1] = ["/System/Library/Frameworks/PCSC.framework/PCSC"];
+    }
+    _ => {
+        /// Libraries that are tried in order when the user does not set [PCSC_LITE_LIB_PATH_ENV].
+        ///
+        /// The bare names go first, so the dynamic linker search (`LD_LIBRARY_PATH`, `ld.so.cache`, default and
+        /// multiarch directories) keeps the precedence. The remaining paths are not searched by default on some
+        /// distributions. Every candidate is passed to `dlopen` instead of just checking that the file exists:
+        /// an existing file may still be unloadable (e.g. a 32-bit library on a 64-bit host).
+        const STD_LIB_CANDIDATES: [&str; 3] = ["libpcsclite.so.1", "libpcsclite.so", "/usr/local/lib/libpcsclite.so.1"];
+    }
+}
+
 pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
     let user_selected_lib = env::var(PCSC_LITE_LIB_PATH_ENV).ok();
-    let pcsc_lite_path = if let Some(lib_path) = user_selected_lib.as_deref() {
-        Cow::Borrowed(lib_path)
+    let candidates: &[&str] = if let Some(lib_path) = user_selected_lib.as_deref() {
+        &[lib_path]
     } else {
-        #[cfg(target_os = "macos")]
-        {
-            Cow::Borrowed("/System/Library/Frameworks/PCSC.framework/PCSC")
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            Cow::Borrowed("libpcsclite.so")
-        }
+        &STD_LIB_CANDIDATES
     };
-    debug!(?pcsc_lite_path);
 
-    let pcsc_lite_path = CString::new(pcsc_lite_path.as_ref())?;
-
-    // SAFETY: FFI call with no outstanding preconditions.
-    let handle = unsafe { dlopen(pcsc_lite_path.as_ptr(), RTLD_LOCAL | RTLD_LAZY) };
+    let mut handle = core::ptr::null_mut();
+    let mut pcsc_lite_path = "";
+    for &candidate in candidates {
+        let c_path = CString::new(candidate)?;
+        // SAFETY: FFI call with no outstanding preconditions.
+        handle = unsafe { dlopen(c_path.as_ptr(), RTLD_LOCAL | RTLD_LAZY) };
+        if !handle.is_null() {
+            pcsc_lite_path = candidate;
+            break;
+        }
+        debug!(pcsc_lite_path = candidate, "Failed to load pcsc-lite library candidate");
+    }
     if handle.is_null() {
         return Err(Error::new(
             ErrorKind::InternalError,
-            format!("Can not load pcsc-lite library: {}", pcsc_lite_path.to_str().unwrap()),
+            format!("cannot load pcsc-lite library, tried: {}", candidates.join(", ")),
         ));
     }
+    debug!(pcsc_lite_path, "Loaded pcsc-lite library");
 
     macro_rules! load_sym {
         ($sym_name:literal) => {{
@@ -240,10 +259,7 @@ pub fn initialize_pcsc_lite_api() -> WinScardResult<PcscLiteApiFunctionTable> {
         if fn_ptr.is_null() {
             return Err(Error::new(
                 ErrorKind::InternalError,
-                format!(
-                    "pcsc-lite library does not export SCardControl132: {}",
-                    pcsc_lite_path.to_str().unwrap()
-                ),
+                format!("pcsc-lite library does not export SCardControl132: {}", pcsc_lite_path),
             ));
         }
 
