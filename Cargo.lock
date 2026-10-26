@@ -2009,9 +2009,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ff038f9360b934342fb3c0a1d6e82c438a2624b51c3c6e3e6d7cf252b6f3ee3"
+checksum = "f9e56b8955035e2593f7f7e7f8d30c9c7a0ce5a5e31cc529f8f087a9e0437526"
 dependencies = [
  "oid",
  "serde",
@@ -2033,9 +2033,9 @@ dependencies = [
 
 [[package]]
 name = "picky-asn1-x509"
-version = "0.15.5"
+version = "0.15.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f110226d163cea4380b0e5ef698a107061d198b279cc27d2b2c1e95c08cd9b0"
+checksum = "98dd311a5e525d1200365273a509b9d07bccf3481aaa901047fdca19830ca721"
 dependencies = [
  "base64 0.23.1",
  "crypto-bigint",
@@ -2049,9 +2049,9 @@ dependencies = [
 
 [[package]]
 name = "picky-krb"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a272e7c4191fbb5ea7e0b34f47208804d47a6f748344351ba9229b0e5a604ed"
+checksum = "9306c2a07e8bfd1faa0985b76bc7b86ab98f2b9a1433fdfa4c9a116b6e4c8a3d"
 dependencies = [
  "aes",
  "block-padding",
@@ -2940,6 +2940,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "oid",
+ "p256",
  "picky",
  "picky-asn1",
  "picky-asn1-der",

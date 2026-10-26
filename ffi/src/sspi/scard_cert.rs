@@ -13,15 +13,17 @@ use std::path::Path;
 use cryptoki::context::{CInitializeArgs, Pkcs11};
 use cryptoki::object::{Attribute, AttributeType, CertificateType, ObjectClass};
 use picky_asn1::wrapper::Utf8StringAsn1;
-use picky_asn1_x509::{Certificate, ExtendedKeyUsage, ExtensionView, GeneralName, oids};
+use picky_asn1_x509::{Certificate, ExtendedKeyUsage, ExtensionView, GeneralName, PublicKey, oids};
 use sspi::{Error, ErrorKind, Result, Utf16String, Utf16StringExt};
-use winscard::MICROSOFT_DEFAULT_CSP;
+use winscard::{MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP};
 
 use crate::winscard::piv::try_get_piv_container_name;
 
 /// Environment variable that specifies a custom CSP name.
 ///
-/// If not set, the default CSP name will be used: [MICROSOFT_DEFAULT_CSP].
+/// If not set, the default provider is selected by the certificate key type:
+/// * [MICROSOFT_DEFAULT_KSP] for EC certificates (the legacy CSP cannot work with EC keys);
+/// * [MICROSOFT_DEFAULT_CSP] otherwise.
 const CSP_NAME_VAR: &str = "SSPI_CSP_NAME";
 
 /// System smart card information.
@@ -111,6 +113,9 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
 
         let csp_name = if let Ok(csp) = env::var(CSP_NAME_VAR) {
             Cow::Owned(csp)
+        } else if is_ec_certificate(&certificate) {
+            // The legacy CSP cannot work with EC keys.
+            Cow::Borrowed(MICROSOFT_DEFAULT_KSP)
         } else {
             Cow::Borrowed(MICROSOFT_DEFAULT_CSP)
         };
@@ -132,6 +137,16 @@ pub fn smart_card_info(username: &[u8], pkcs11_module: &Path) -> Result<SystemSm
         ErrorKind::NoCredentials,
         "smart card does not contain suitable credentials",
     ))
+}
+
+/// Returns `true` if the DER-encoded certificate contains an EC public key.
+fn is_ec_certificate(certificate: &[u8]) -> bool {
+    picky_asn1_der::from_bytes::<Certificate>(certificate).is_ok_and(|certificate| {
+        matches!(
+            certificate.tbs_certificate.subject_public_key_info.subject_public_key,
+            PublicKey::Ec(_)
+        )
+    })
 }
 
 /// Validates smart card certificate.
@@ -247,7 +262,23 @@ mod tests {
     use picky::x509::Cert;
     use picky_asn1_x509::Certificate;
 
-    use super::{extract_upn_from_certificate, validate_certificate};
+    use super::{extract_upn_from_certificate, is_ec_certificate, validate_certificate};
+
+    #[test]
+    fn ec_certificate_detection() {
+        let ec = Cert::from_pem_str(include_str!("../../../test_assets/ec_p256.cer"))
+            .unwrap()
+            .to_der()
+            .unwrap();
+        let rsa = Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer"))
+            .unwrap()
+            .to_der()
+            .unwrap();
+
+        assert!(is_ec_certificate(&ec));
+        assert!(!is_ec_certificate(&rsa));
+        assert!(!is_ec_certificate(&[1, 2, 3]));
+    }
 
     #[test]
     fn upn_extraction() {

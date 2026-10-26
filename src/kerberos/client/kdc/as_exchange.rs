@@ -9,7 +9,7 @@ use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateKeyta
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
 #[cfg(feature = "scard")]
-use crate::pk_init::DhParameters;
+use crate::pk_init::KeyAgreement;
 use crate::{CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
 pub(crate) enum AsExchangeOutput {
@@ -41,7 +41,7 @@ pub struct AsExchange {
     password: Secret<String>,
     salt: Vec<u8>,
     #[cfg(feature = "scard")]
-    dh_parameters: DhParameters,
+    key_agreement: KeyAgreement,
     #[cfg(feature = "scard")]
     authenticator_nonce: u32,
 }
@@ -51,7 +51,7 @@ impl AsExchange {
         kdc_req_body: KdcReqBody,
         password: Secret<String>,
         salt: Vec<u8>,
-        #[cfg(feature = "scard")] dh_parameters: DhParameters,
+        #[cfg(feature = "scard")] key_agreement: KeyAgreement,
         #[cfg(feature = "scard")] authenticator_nonce: u32,
     ) -> Self {
         Self {
@@ -61,7 +61,7 @@ impl AsExchange {
             password,
             salt,
             #[cfg(feature = "scard")]
-            dh_parameters,
+            key_agreement,
             #[cfg(feature = "scard")]
             authenticator_nonce,
         }
@@ -187,8 +187,6 @@ impl AsExchange {
             }),
             #[cfg(feature = "scard")]
             CredentialsBuffers::SmartCard(scard_identity_buffer) => {
-                use sha1::{Digest, Sha1};
-
                 use crate::smartcard::SmartCard;
                 use crate::{SmartCardIdentity, pk_init};
 
@@ -200,14 +198,8 @@ impl AsExchange {
                 AsReqPaDataOptions::SmartCard(Box::new(pk_init::GenerateAsPaDataOptions {
                     p2p_cert,
                     kdc_req_body: &self.kdc_req_body,
-                    dh_parameters: self.dh_parameters.clone(),
-                    sign_data: Box::new(move |data_to_sign| {
-                        let mut sha1 = Sha1::new();
-                        sha1.update(data_to_sign);
-                        let digest = sha1.finalize().to_vec();
-
-                        smart_card.sign(digest)
-                    }),
+                    key_agreement: self.key_agreement.clone(),
+                    sign_data: Box::new(move |data_to_sign| smart_card.sign(data_to_sign)),
                     with_pre_auth: false,
                     authenticator_nonce: self.authenticator_nonce,
                 }))
