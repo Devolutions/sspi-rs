@@ -130,7 +130,7 @@ winscard = { workspace = true, optional = true }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 tracing = { version = "0.1", default-features = true }
 serde = "1"
-picky-krb = "0.13"
+picky-krb = "0.13.1"
 picky-asn1 = { version = "0.10", features = ["time_conversion"] }
 byteorder = "1.5"
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
