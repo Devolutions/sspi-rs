@@ -3,8 +3,6 @@ name: code-review
 description: Review sspi-rs pull requests and diffs using focused intent, compression, style, test, dependency, documentation, prose, and skeptical passes. Use whenever Copilot code review is requested or a proposed change needs review.
 ---
 
-# Code review
-
 Inspect the diff, its stated goal, and repository guidance before selecting conditional reviewers:
 
 - Run `intent-drift-audit` when the diff touches a path governed by an `INTENT*.md` in its directory or an ancestor, or by a `*.intent*.md` beside the changed module, or changes a surface a `CONTRACT*.md` specifies.
@@ -27,7 +25,6 @@ Before the skeptical pass, normalize the initial results.
 Drop claims that lack a concrete location or mechanism, merge findings with the same root cause, and retain disagreements instead of resolving them by vote.
 Give the skeptical reviewer the diff plus the retained findings and ask it to independently review the change, verify or reject each supplied concern, and identify material issues the focused passes missed.
 
-Evaluate the final evidence yourself.
 Report correctness and intent findings first, ordered by severity, then optional compression suggestions.
 Each retained item needs a location, concrete impact, and actionable correction or simplification.
 Merge duplicates across reviewers and do not inflate a maintainability preference into a defect.
