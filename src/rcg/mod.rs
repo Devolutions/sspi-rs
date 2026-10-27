@@ -52,7 +52,6 @@
 //! [2.2.1.2.3 TSRemoteGuardCreds]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/7ef8229c-44ea-4c1b-867f-00369b882b38
 //! [MS-RDPEAR]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpear/
 
-mod asn1;
 mod kerberos;
 mod key_store;
 mod logon;

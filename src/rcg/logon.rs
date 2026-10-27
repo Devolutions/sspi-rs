@@ -29,26 +29,27 @@ use picky_asn1::wrapper::{
 };
 use picky_krb::constants::cred_ssp::TS_REMOTE_GUARD_CREDS;
 use picky_krb::constants::key_usages::{
-    TGS_REP_ENC_SESSION_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
+    KRB_CRED_ENC_PART, TGS_REP_ENC_SESSION_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
+    TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
 };
-use picky_krb::constants::types::{AP_REQ_MSG_TYPE, NT_SRV_HST, NT_SRV_INST, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE};
-use picky_krb::credssp::TsCredentials;
+use picky_krb::constants::types::{
+    AP_REQ_MSG_TYPE, KRB_CRED_MSG_TYPE, NT_SRV_HST, NT_SRV_INST, PA_TGS_REQ_TYPE, TGS_REQ_MSG_TYPE,
+};
+use picky_krb::credssp::{TsCredentials, TsRemoteGuardCreds, TsRemoteGuardPackageCred};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::crypto::aes::checksum_sha_aes;
 use picky_krb::data_types::{
-    ApOptions, Authenticator, AuthenticatorInner, Checksum, EncryptedData, EncryptionKey, KerberosFlags,
-    KerberosStringAsn1, KerberosTime, KrbResult, PaData, PrincipalName, Realm, ResultExt, Ticket,
+    ApOptions, Authenticator, AuthenticatorInner, Checksum, EncKrbCredPart, EncKrbCredPartInner, EncryptedData,
+    EncryptionKey, KerberosFlags, KerberosStringAsn1, KerberosTime, KrbCredInfo, KrbResult, PaData, PrincipalName,
+    Realm, ResultExt, Ticket,
 };
 use picky_krb::messages::{
-    ApReq, ApReqInner, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcReq, KdcReqBody, TgsRep, TgsReq,
+    ApReq, ApReqInner, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcReq, KdcReqBody, KrbCred, KrbCredInner, TgsRep,
+    TgsReq,
 };
 use time::{Duration, OffsetDateTime};
 use zeroize::Zeroizing;
 
-use super::asn1::{
-    EncKrbCredPart, EncKrbCredPartInner, KRB_CRED_ENC_PART_KEY_USAGE, KRB_CRED_MSG_TYPE, KrbCred, KrbCredInfo,
-    KrbCredInner, TsRemoteGuardCreds, TsRemoteGuardPackageCred,
-};
 use super::key_store::KeyRole;
 use super::ntlm::{NTLM_PACKAGE_NAME, NtlmCredential, NtlmRedirectionPolicy};
 use super::{CapturedTgt, ClientBinding, KERBEROS_PACKAGE_NAME, etype_of, integer_to_i32, wrap};
@@ -380,7 +381,7 @@ pub(super) fn build_krb_cred(
     let encoded_enc_part = Zeroizing::new(picky_asn1_der::to_vec(&enc_part)?);
     let cipher = service_ticket.cipher_suite.cipher().encrypt(
         service_ticket.session_key.as_ref(),
-        KRB_CRED_ENC_PART_KEY_USAGE,
+        KRB_CRED_ENC_PART,
         &encoded_enc_part,
     )?;
 

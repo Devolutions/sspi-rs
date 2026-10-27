@@ -13,22 +13,23 @@ use picky_asn1::wrapper::{
     ExplicitContextTag9, ExplicitContextTag10, GeneralizedTimeAsn1, OctetStringAsn1, Optional,
 };
 use picky_krb::constants::error_codes::KDC_ERR_S_PRINCIPAL_UNKNOWN;
-use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_HST, NT_SRV_INST};
-use picky_krb::credssp::TsCredentials;
+use picky_krb::constants::key_usages::KRB_CRED_ENC_PART;
+use picky_krb::constants::types::{KRB_CRED_MSG_TYPE, NT_PRINCIPAL, NT_SRV_HST, NT_SRV_INST};
+use picky_krb::credssp::{TsCredentials, TsRemoteGuardCreds};
 use picky_krb::crypto::aes::{AesSize, checksum_sha_aes};
 use picky_krb::data_types::{
     Authenticator, AuthenticatorInner, AuthorizationData, AuthorizationDataInner, Checksum, EncApRepPart,
-    EncApRepPartInner, EncryptedData, KerberosFlags, KerberosStringAsn1, KerberosTime, LastReqInner, TicketInner,
+    EncApRepPartInner, EncKrbCredPart, EncryptedData, KerberosFlags, KerberosStringAsn1, KerberosTime, LastReqInner,
+    TicketInner,
 };
 use picky_krb::messages::{
-    ApRep, ApRepInner, ApReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReqBody, KrbError, KrbErrorInner,
-    TgsRep, TgsReq,
+    ApRep, ApRepInner, ApReq, EncAsRepPart, EncKdcRepPart, EncTgsRepPart, KdcRep, KdcReqBody, KrbCred, KrbError,
+    KrbErrorInner, TgsRep, TgsReq,
 };
 use rand_core::SeedableRng as _;
 use time::OffsetDateTime;
 use url::Url;
 
-use super::asn1::{EncKrbCredPart, KRB_CRED_ENC_PART_KEY_USAGE, KRB_CRED_MSG_TYPE, KrbCred, TsRemoteGuardCreds};
 use super::key_store::KeyRole;
 use super::logon::{
     KERB_LOGON_FLAG_REDIRECTED, KERB_TICKET_LOGON_HEADER_LEN, KERB_TICKET_LOGON_MESSAGE_TYPE, TgsReply,
@@ -3784,11 +3785,7 @@ fn remote_guard_credentials_delegate_a_forwarded_tgt_to_the_computer_account() {
 
     let enc_part = AES256_SUITE
         .cipher()
-        .decrypt(
-            &COMPUTER_TICKET_KEY,
-            KRB_CRED_ENC_PART_KEY_USAGE,
-            &krb_cred.enc_part.0.cipher.0.0,
-        )
+        .decrypt(&COMPUTER_TICKET_KEY, KRB_CRED_ENC_PART, &krb_cred.enc_part.0.cipher.0.0)
         .unwrap();
     let enc_part: EncKrbCredPart = picky_asn1_der::from_bytes(&enc_part).unwrap();
     let info = &enc_part.0.ticket_info.0.0[0];
