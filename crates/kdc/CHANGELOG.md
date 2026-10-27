@@ -10,14 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### <!-- 4 -->Bug Fixes
 
-- Enforce the sequence number of MIC token only for acce… ([#772](https://github.com/Devolutions/sspi-rs/issues/772)) ([08d8622794](https://github.com/Devolutions/sspi-rs/commit/08d862279488dcdd0030050d7047bef85686a57a)) 
-
-  This PR fixes [#748](https://github.com/Devolutions/sspi-rs/issues/748)
-  by enforcing sequence number verification only on the acceptor side. The
-  initiator verifies the MIC checksum without enforcing the sequence
-  number.
-  
-  ---------
+- Update the `picky-krb` dependency from 0.12 to 0.13. ([#772](https://github.com/Devolutions/sspi-rs/issues/772)) ([08d8622794](https://github.com/Devolutions/sspi-rs/commit/08d862279488dcdd0030050d7047bef85686a57a))
 
 
 
