@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.23.2](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.1...sspi-v0.23.2)] - 2026-10-27
+
+### <!-- 1 -->Features
+
+- Honour DNS SRV port and fail over across multiple KDCs ([#698](https://github.com/Devolutions/sspi-rs/issues/698)) ([f43059048a](https://github.com/Devolutions/sspi-rs/commit/f43059048a0cbfe750467fa7f6f886d24ffcf325)) 
+
+  Kerberos clients resolved a single KDC and never failed over: the
+  Windows DNS SRV lookup read only the first record and hardcoded port 88,
+  krb5.conf parsing kept only the first `kdc =` line of a realm, and every
+  message of an exchange re-resolved the KDC independently, so round-robin
+  DNS could bounce one authentication between KDCs.
+  
+  - Honour the DNS SRV port on Windows by walking every record
+  `DnsQuery_W` returns, keeping the SRV ones and using their `wPort`.
+  - Add `detect_kdc_urls()`, which returns every candidate in resolution
+  order (`SSPI_KDC_URL_<REALM>`, krb5.conf, DNS SRV); `detect_kdc_url()`
+  keeps returning the first.
+  - Read every `kdc =` line of a realm from krb5.conf, one host per line
+  as the MIT documentation specifies.
+  - Try candidates in order and advance on any send error; any KDC reply,
+  including a KRB-ERROR, is returned as-is.
+  - Pin the KDC that answered for a realm for the rest of the exchange and
+  re-resolve only when it stops answering. A configured KDC URL stays the
+  sole candidate for the home realm; referral realms are always resolved.
+  
+  SRV priority and weight are not applied yet; see #787.
+
+
+
 ## [[0.23.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.0...sspi-v0.23.1)] - 2026-10-27
 
 ### <!-- 0 -->Security
