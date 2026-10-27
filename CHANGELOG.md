@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.23.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.0...sspi-v0.23.1)] - 2026-10-27
+
+### <!-- 0 -->Security
+
+- Add IAKerb client authentication through a server proxy with `KerberosConfig::new_with_iakerb`, allowing logon without direct KDC access. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+
+### <!-- 1 -->Features
+
+- [**breaking**] Add `CredSspMode::RemoteGuard` for Kerberos-only Remote Credential Guard logon using a direct KDC or KDC proxy; update exhaustive matches on `CredSspMode`. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Add `sspi::rcg::RemoteGuardSession` for one-time CredSSP context handoff, message protection, and redirected Kerberos operations; outbound Windows Kerberos authentication remains unverified. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Add opt-in redirected NTLMv2 authentication through `enable_remote_guard_ntlm`; it requires a fresh target logon and remains experimental. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Add `SspiCredSsp::new_client_with_mode` with the `tsssp` feature to select the CredSSP delegation mode explicitly. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Add `CredentialsBuffers::extract_password` to retrieve a password or smart-card PIN, returning an empty secret for keytab credentials. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+- [**breaking**] Rename `KerberosConfig::new` to `KerberosConfig::new_with_kdc_url`. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+- [**breaking**] Replace `KerberosConfig::kdc_url` with `kdc_resolution`; use `KdcResolution::KdcUrl(url)` for existing KDC configurations. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+- [**breaking**] Replace the top-level `KerberosState::TgtExchange`, `Preauthentication`, and `ApExchange` variants with `Client` and `Server` states and add `Failed`. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+- [**breaking**] Remove `Copy` from `KerberosState`; clone states explicitly where needed. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+- Update `picky` to `=7.0.0-rc.27`; consumers passing `picky` keys or certificates to `sspi` must use the matching version. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+
+### <!-- 4 -->Bug Fixes
+
+- Accept a local-machine qualifier before an already-qualified username, such as `.\AzureAD\user@example.com`, including when the domain is supplied separately as `.`. ([#767](https://github.com/Devolutions/sspi-rs/issues/767)) ([d87a57a704](https://github.com/Devolutions/sspi-rs/commit/d87a57a7042cbefd1f794a9c3657b33d3cee8037))
+- Accept Windows SPNEGO MIC tokens with sequence number zero on Kerberos clients while retaining checksum validation and acceptor sequence checks. ([#772](https://github.com/Devolutions/sspi-rs/issues/772)) ([08d8622794](https://github.com/Devolutions/sspi-rs/commit/08d862279488dcdd0030050d7047bef85686a57a))
+- Reuse the preauthentication salt when an AS-REP omits PA-ETYPE-INFO2, fixing password logons against MIT and Heimdal KDCs. ([#768](https://github.com/Devolutions/sspi-rs/issues/768)) ([cf91195338](https://github.com/Devolutions/sspi-rs/commit/cf91195338f62a8b01ca5024e06f97c150e03225))
+- Accept AS-REP encrypted parts tagged `EncTGSRepPart` as well as `EncASRepPart` for MIT KDC compatibility. ([#768](https://github.com/Devolutions/sspi-rs/issues/768)) ([cf91195338](https://github.com/Devolutions/sspi-rs/commit/cf91195338f62a8b01ca5024e06f97c150e03225))
+- Preserve explicitly empty salts and use the reply principal's default salt when PA-ETYPE-INFO2 omits the salt field. ([#777](https://github.com/Devolutions/sspi-rs/issues/777)) ([e7ec8e45fd](https://github.com/Devolutions/sspi-rs/commit/e7ec8e45fdd83ef91cd1d90a381892a3557ef8fc))
+- Reuse the negotiated preauthentication salt for password changes when the AS-REP omits its salt hint. ([#777](https://github.com/Devolutions/sspi-rs/issues/777)) ([e7ec8e45fd](https://github.com/Devolutions/sspi-rs/commit/e7ec8e45fdd83ef91cd1d90a381892a3557ef8fc))
+- Reuse the negotiated preauthentication salt when acquiring a password-backed user-to-user acceptor TGT. ([#777](https://github.com/Devolutions/sspi-rs/issues/777)) ([e7ec8e45fd](https://github.com/Devolutions/sspi-rs/commit/e7ec8e45fdd83ef91cd1d90a381892a3557ef8fc))
+- Accept both AS-REP encrypted-part tags in PKU2U session-key extraction. ([#777](https://github.com/Devolutions/sspi-rs/issues/777)) ([e7ec8e45fd](https://github.com/Devolutions/sspi-rs/commit/e7ec8e45fdd83ef91cd1d90a381892a3557ef8fc))
+- Require `picky-krb` 0.13.1 or later to fix PKU2U compilation with fresh dependency resolution. ([#786](https://github.com/Devolutions/sspi-rs/issues/786)) ([f740f00451](https://github.com/Devolutions/sspi-rs/commit/f740f004515f6c96f831a6056aab236233f63927))
+- Make `CredSspMode::CredentialLess` send empty password credentials for all authentication sources, including smart cards and keytabs. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Forward `SspiCredSsp` credential acquisition and custom identity installation to the inner authentication provider. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+- Reject changes to the `SspiCredSsp` target name during authentication. ([#778](https://github.com/Devolutions/sspi-rs/issues/778)) ([9b664dd014](https://github.com/Devolutions/sspi-rs/commit/9b664dd0140846fff4f2f21659c8f94d3c05a673))
+
+
+
 ## [[0.23.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.22.1...sspi-v0.23.0)] - 2026-10-01
 
 ### <!-- 1 -->Features

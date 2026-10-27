@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.4.1](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.4.0...winscard-v0.4.1)] - 2026-10-27
+
+### <!-- 0 -->Security
+
+- Update `picky` to `=7.0.0-rc.27`; consumers passing `picky::key::PrivateKey` to smart-card APIs must use the matching version. ([#751](https://github.com/Devolutions/sspi-rs/issues/751)) ([a738671298](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))
+
+
+
 ## [[0.4.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.3.4...winscard-v0.4.0)] - 2026-10-01
 
 ### <!-- 1 -->Features
