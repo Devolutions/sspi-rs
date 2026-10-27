@@ -1,7 +1,5 @@
 # sspi-rs
 
-Reusable agent skills live in `.agents/skills/` and `.github/skills/`; use the matching skill before committing, opening a pull request, posting a GitHub comment, or writing prose.
-Skills listed in `.github/skills-sync.yml` are overwritten weekly from `Devolutions/devolutions-gateway`; change those upstream, and keep repository-local skills in `.github/skills/`.
 `ffi/`, `crates/dpapi-core/`, `crates/ffi-types/` and `crates/winscard/` have their own `AGENTS.md`; read it before changing those crates.
 
 Start a work session with `/contribute`, which picks the delivery flow by scale and the skills each step needs.

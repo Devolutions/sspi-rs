@@ -1,8 +1,3 @@
+# FFI tests
 
-## Development Environment
-
-Set the `SSPI_RS_IS_RUNNING_TESTS` environment variable when running `ffi` tests:
-
-```bash
-SSPI_RS_IS_RUNNING_TESTS=1 cargo test --features <features list>
-```
+Set `SSPI_RS_IS_RUNNING_TESTS=1` when running this crate's tests, because `build.rs` otherwise applies Windows DLL export-renaming linker settings.
