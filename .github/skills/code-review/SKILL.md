@@ -3,8 +3,6 @@ name: code-review
 description: Review sspi-rs pull requests and diffs using focused intent, compression, style, test, dependency, documentation, prose, and skeptical passes. Use whenever Copilot code review is requested or a proposed change needs review.
 ---
 
-# Code review
-
 Inspect the diff, its stated goal, and repository guidance before selecting conditional reviewers:
 
 - Run `intent-drift-audit` when the diff touches a path governed by an `INTENT.md` in its directory or an ancestor, or by a `*.intent.md` beside the changed module, or changes a surface a `CONTRACT*.md` specifies.
