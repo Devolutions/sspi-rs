@@ -17,6 +17,7 @@ use crate::credssp::sspi_cred_ssp::tls_connection::{DecryptionResult, Decryption
 use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
+use crate::rcg;
 use crate::{
     AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
@@ -36,7 +37,7 @@ pub static PACKAGE_INFO: LazyLock<PackageInfo> = LazyLock::new(|| PackageInfo {
     comment: String::from("CredSsp security package"),
 });
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CredSspState {
     Tls,
     NegoToken,
@@ -44,10 +45,18 @@ enum CredSspState {
     Final,
 }
 
+/// TLS-owning CredSSP security package.
+///
+/// [`Self::new_client`] preserves ordinary credential delegation. Use [`Self::new_client_with_mode`]
+/// to explicitly select Restricted Admin or Remote Credential Guard. RDP mode negotiation is the
+/// connector's responsibility. Server-side authentication and type-6 credential import are unsupported.
 #[derive(Debug)]
 pub struct SspiCredSsp {
     state: CredSspState,
     cred_ssp_context: Box<CredSspContext>,
+    cred_ssp_mode: CredSspMode,
+    remote_guard_ntlm: Option<rcg::NtlmRedirectionPolicy>,
+    target_name: Option<String>,
     auth_identity: Option<CredentialsBuffers>,
     // The TLS connection object will be set on the first initialize security context function call.
     // We need to specify the correct hostname which we'll know only during actual auth.
@@ -56,7 +65,31 @@ pub struct SspiCredSsp {
 }
 
 impl SspiCredSsp {
+    /// Creates a client with ordinary credential delegation.
     pub fn new_client(sspi_context: SspiContext) -> Result<Self> {
+        Self::new_client_with_mode(sspi_context, CredSspMode::WithCredentials)
+    }
+
+    /// Creates a client with an explicit credential delegation policy.
+    ///
+    /// Remote Credential Guard requires a fresh Kerberos-enabled [`crate::Negotiate`] client context.
+    /// It never falls back to NTLM or ordinary delegation. For Restricted Admin and Remote Credential
+    /// Guard, passing [`ClientRequestFlags::DELEGATE`] to `initialize_security_context` is an error.
+    ///
+    /// The first initialization call binds the target SPN exactly. Later calls may omit it, but a
+    /// different supplied value is rejected. Selecting a mode does not configure TLS certificate trust.
+    /// RCG credentials must be acquired or set before the exchange starts and cannot be replaced later.
+    pub fn new_client_with_mode(mut sspi_context: SspiContext, cred_ssp_mode: CredSspMode) -> Result<Self> {
+        if cred_ssp_mode == CredSspMode::RemoteGuard {
+            let SspiContext::Negotiate(negotiate) = &mut sspi_context else {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFunction,
+                    "remote credential guard requires the Negotiate security package",
+                ));
+            };
+            negotiate.enable_remote_guard()?;
+        }
+
         crate::rustls::install_default_crypto_provider_if_necessary().map_err(|()| {
             Error::new(
                 ErrorKind::SecurityPackageNotFound,
@@ -71,6 +104,9 @@ impl SspiCredSsp {
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
+            cred_ssp_mode,
+            remote_guard_ntlm: None,
+            target_name: None,
             auth_identity: None,
             tls_connection: None,
             nonce: Some(nonce),
@@ -89,11 +125,66 @@ impl SspiCredSsp {
         Ok(Self {
             state: CredSspState::Tls,
             cred_ssp_context: Box::new(CredSspContext::new(sspi_context)),
+            cred_ssp_mode: CredSspMode::WithCredentials,
+            remote_guard_ntlm: None,
+            target_name: None,
             auth_identity: None,
             tls_connection: None,
             // nonce for the server will be in the incoming TsRequest
             nonce: None,
         })
+    }
+
+    /// Enables optional NTLMv2 redirection before authentication starts.
+    ///
+    /// This has the same policy and limitations as [`super::CredSspClient::enable_remote_guard_ntlm`].
+    /// Initial authentication remains Kerberos-only.
+    pub fn enable_remote_guard_ntlm(&mut self, names: Option<rcg::NtlmRedirectionNames>) -> Result<()> {
+        if self.cred_ssp_mode != CredSspMode::RemoteGuard {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "the CredSSP client is not in remote credential guard mode",
+            ));
+        }
+        if self.state != CredSspState::Tls || self.target_name.is_some() || self.tls_connection.is_some() {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "NTLM redirection must be enabled before the CredSSP exchange starts",
+            ));
+        }
+
+        self.remote_guard_ntlm = Some(rcg::NtlmRedirectionPolicy::new(names)?);
+
+        Ok(())
+    }
+
+    /// Takes the continuing RCG protection context once the final CredSSP TLS output was produced.
+    ///
+    /// The caller must send that output and discard the session if the remote logon is rejected.
+    /// The session is bound to this connection and preserves the keys and sequencing already consumed
+    /// by CredSSP. TLS protection remains available on this object after the inner context is taken.
+    pub fn take_remote_guard_session(&mut self) -> Result<rcg::RemoteGuardSession> {
+        if self.cred_ssp_mode != CredSspMode::RemoteGuard {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "the CredSSP client is not in remote credential guard mode",
+            ));
+        }
+        if self.state != CredSspState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "the CredSSP exchange is not finished",
+            ));
+        }
+
+        let SspiContext::Negotiate(negotiate) = &mut self.cred_ssp_context.sspi_context else {
+            return Err(Error::new(
+                ErrorKind::InternalError,
+                "remote credential guard requires the Negotiate security package",
+            ));
+        };
+
+        negotiate.take_remote_guard_session()
     }
 
     fn raw_peer_public_key(&mut self) -> Result<Vec<u8>> {
@@ -333,6 +424,15 @@ impl SspiImpl for SspiCredSsp {
         &mut self,
         builder: builders::FilledAcquireCredentialsHandle<'_, Self::CredentialsHandle, Self::AuthenticationData>,
     ) -> Result<AcquireCredentialsHandleResult<Self::CredentialsHandle>> {
+        if self.cred_ssp_mode == CredSspMode::RemoteGuard
+            && (self.state != CredSspState::Tls || self.target_name.is_some() || self.tls_connection.is_some())
+        {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "remote credential guard credentials must be set before authentication starts",
+            ));
+        }
+
         if builder.credential_use == CredentialUse::Outbound && builder.auth_data.is_none() {
             return Err(Error::new(
                 ErrorKind::NoCredentials,
@@ -340,16 +440,13 @@ impl SspiImpl for SspiCredSsp {
             ));
         }
 
-        self.auth_identity = builder
-            .auth_data
-            .cloned()
-            .map(|auth_data| auth_data.try_into())
-            .transpose()?;
+        let result = self
+            .cred_ssp_context
+            .sspi_context
+            .acquire_credentials_handle_impl(builder)?;
+        self.auth_identity = result.credentials_handle.clone();
 
-        Ok(AcquireCredentialsHandleResult {
-            credentials_handle: self.auth_identity.clone(),
-            expiry: None,
-        })
+        Ok(result)
     }
 
     fn initialize_security_context_impl<'ctx, 'b, 'g>(
@@ -396,20 +493,49 @@ impl SspiCredSsp {
         builder: &mut builders::FilledInitializeSecurityContext<'_, '_, <Self as SspiImpl>::CredentialsHandle>,
     ) -> Result<InitializeSecurityContextResult> {
         trace!(?builder);
-        // In the CredSSP we always set DELEGATE flag
-        //
-        // https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/e36b36f6-edf4-4df1-9905-9e53b7d7c7b7
-        // The CredSSP Protocol enables an application to securely delegate a user's credentials from a client to a target server.
-        builder.context_requirements |= ClientRequestFlags::DELEGATE;
+        if self.cred_ssp_mode == CredSspMode::WithCredentials {
+            builder.context_requirements.insert(ClientRequestFlags::DELEGATE);
+        } else if builder.context_requirements.contains(ClientRequestFlags::DELEGATE) {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "credential delegation conflicts with the selected CredSSP mode",
+            ));
+        }
+        builder.context_requirements.insert(ClientRequestFlags::MUTUAL_AUTH);
+        if self.cred_ssp_mode == CredSspMode::RemoteGuard {
+            builder.context_requirements.insert(
+                ClientRequestFlags::USE_SESSION_KEY
+                    | ClientRequestFlags::INTEGRITY
+                    | ClientRequestFlags::CONFIDENTIALITY
+                    | ClientRequestFlags::REPLAY_DETECT
+                    | ClientRequestFlags::SEQUENCE_DETECT,
+            );
+        }
 
-        // The CredSSP flag should be always set in the CredSsp protocol.
-        builder.context_requirements.set(ClientRequestFlags::MUTUAL_AUTH, true);
+        if let Some(target_name) = builder.target_name {
+            if let Some(expected) = &self.target_name {
+                if expected != target_name {
+                    return Err(Error::new(
+                        ErrorKind::InvalidParameter,
+                        "the CredSSP target name changed during authentication",
+                    ));
+                }
+            } else {
+                self.target_name = Some(target_name.to_owned());
+            }
+        }
+        if self.target_name.is_none() {
+            return Err(Error::new(
+                ErrorKind::NoCredentials,
+                "service target name is not provided",
+            ));
+        }
 
         let status = match &self.state {
             CredSspState::Tls => {
                 if self.tls_connection.is_none() {
                     let (_, target_hostname) =
-                        crate::utils::parse_target_name(builder.target_name.ok_or_else(|| {
+                        crate::utils::parse_target_name(self.target_name.as_deref().ok_or_else(|| {
                             Error::new(
                                 ErrorKind::NoCredentials,
                                 "Service target name (service principal name) is not provided",
@@ -488,7 +614,7 @@ impl SspiCredSsp {
                     })?)
                     .with_context_requirements(builder.context_requirements)
                     .with_target_data_representation(DataRepresentation::Native);
-                if let Some(target_name) = &builder.target_name {
+                if let Some(target_name) = &self.target_name {
                     inner_builder = inner_builder.with_target_name(target_name);
                 }
                 let mut inner_builder = inner_builder
@@ -563,15 +689,20 @@ impl SspiCredSsp {
                     peer_version,
                 )?;
 
-                let credentials = builder
-                    .credentials_handle
-                    .take()
-                    .and_then(|c| c.as_ref())
-                    .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present"))?;
+                let credentials = builder.credentials_handle.take().and_then(|c| c.as_ref());
 
                 ts_request.auth_info = Some(
                     self.cred_ssp_context
-                        .encrypt_ts_credentials(credentials, CredSspMode::WithCredentials)?,
+                        .encrypt_client_credentials(
+                            yield_point,
+                            credentials,
+                            self.cred_ssp_mode,
+                            self.target_name.as_deref().ok_or_else(|| {
+                                Error::new(ErrorKind::InternalError, "the CredSSP target name is not set")
+                            })?,
+                            self.remote_guard_ntlm.as_ref(),
+                        )
+                        .await?,
                 );
 
                 let mut encoded_ts_request = Vec::new();
@@ -605,8 +736,22 @@ impl SspiCredSsp {
 impl SspiEx for SspiCredSsp {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> Result<()> {
-        self.auth_identity = Some(identity.try_into()?);
+        if self.cred_ssp_mode == CredSspMode::RemoteGuard
+            && (self.state != CredSspState::Tls || self.target_name.is_some() || self.tls_connection.is_some())
+        {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "remote credential guard credentials must be set before authentication starts",
+            ));
+        }
+
+        let auth_identity = identity.clone().try_into()?;
+        self.cred_ssp_context.sspi_context.custom_set_auth_identity(identity)?;
+        self.auth_identity = Some(auth_identity);
 
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

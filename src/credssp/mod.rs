@@ -29,7 +29,7 @@ use crate::{
     Credentials, CredentialsBuffers, DataRepresentation, DecryptionFlags, EncryptionFlags, Error, ErrorKind,
     FilledAcceptSecurityContext, FilledAcquireCredentialsHandle, FilledInitializeSecurityContext,
     InitializeSecurityContextResult, Negotiate, NegotiateConfig, PackageInfo, SecurityBuffer, SecurityBufferRef,
-    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username, negotiate,
+    SecurityStatus, ServerRequestFlags, Sspi, SspiEx, SspiImpl, StreamSizes, Username, negotiate, rcg,
 };
 
 pub const EARLY_USER_AUTH_RESULT_PDU_SIZE: usize = 4;
@@ -93,13 +93,47 @@ macro_rules! try_cred_ssp_server {
     };
 }
 
-/// Indicates to the `CredSspClient` whether or not to transfer
-/// the credentials in the auth_info `TsRequest` field.
+/// Credential delegation policy for a CredSSP client.
+///
+/// Used by [`CredSspClient`] and, with the `tsssp` feature, `SspiCredSsp::new_client_with_mode`.
+/// The RDP connector must separately negotiate the corresponding mode and reject an unsupported server;
+/// selecting a mode here does not negotiate RDP capabilities.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CredSspMode {
+    /// Delegates the supplied password or smart-card credentials after server binding validation.
     WithCredentials,
-    /// Indicates that the client requires credential-less logon over CredSSP (also known as "restricted admin mode").
+    /// Restricted Admin: authenticates normally, then sends empty `TSPasswordCreds`, regardless of
+    /// the credential source used for authentication.
+    ///
+    /// No password, smart-card PIN, or RCG credential is delegated, and no RDPEAR session is created.
+    /// This does not require Kerberos-only negotiation. The connector must request
+    /// `RESTRICTED_ADMIN_MODE_REQUIRED` and require `RESTRICTED_ADMIN_MODE_SUPPORTED` in the RDP
+    /// negotiation ([2.2.1.1.1 RDP Negotiation Request (RDP_NEG_REQ)]).
+    ///
+    /// [2.2.1.1.1 RDP Negotiation Request (RDP_NEG_REQ)]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/
     CredentialLess,
+    /// Remote Credential Guard (MS-CSSP [2.2.1.2.3 TSRemoteGuardCreds]).
+    ///
+    /// The client authenticates with Kerberos only and sends `TSRemoteGuardCreds` instead of reusable
+    /// credentials: a `KERB_TICKET_LOGON` with a service ticket for the target computer account and a forwarded
+    /// TGT whose session key is replaced by an opaque handle. The server then redirects Kerberos operations back
+    /// to the client over MS-RDPEAR, which uses the [`RemoteGuardSession`](crate::rcg::RemoteGuardSession)
+    /// returned by [`CredSspClient::take_remote_guard_session`].
+    ///
+    /// Requires [`ClientMode::Negotiate`] with Kerberos enabled. NTLM is never negotiated or used as a fallback,
+    /// and the server's `mechListMIC` is mandatory. Replay and sequence detection are requested for the
+    /// continuing protection context (MS-KILE [3.2.5.2 Authenticator Checksum Flags]).
+    ///
+    /// Initial Windows desktop logon and fresh-logon redirected NTLMv2 authentication have been observed
+    /// in a strict-TLS IronRDP integration. Outbound Kerberos and reconnect support remain unverified
+    /// or unsupported. See [`crate::rcg`] for the bounded results and key-release policy.
+    ///
+    /// The RDP connector must request `REDIRECTED_AUTHENTICATION_MODE_REQUIRED` and require
+    /// `REDIRECTED_AUTHENTICATION_MODE_SUPPORTED`; this client does not negotiate RDP capabilities.
+    ///
+    /// [2.2.1.2.3 TSRemoteGuardCreds]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/7ef8229c-44ea-4c1b-867f-00369b882b38
+    /// [3.2.5.2 Authenticator Checksum Flags]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/387806fc-ed78-445e-afd8-c5639fe4a90a
+    RemoteGuard,
 }
 
 /// The result of a CredSSP client processing.
@@ -195,8 +229,7 @@ pub enum ClientMode {
     Ntlm(NtlmConfig),
 }
 
-/// Implements the CredSSP *client*. The client's credentials are to
-/// be securely delegated to the server.
+/// Implements the CredSSP client with the explicit delegation policy selected by [`CredSspMode`].
 ///
 /// # MSDN
 ///
@@ -213,6 +246,7 @@ pub struct CredSspClient {
     ts_request_version: u32,
     client_mode: Option<ClientMode>,
     service_principal_name: String,
+    remote_guard_ntlm: Option<rcg::NtlmRedirectionPolicy>,
 }
 
 impl CredSspClient {
@@ -223,6 +257,8 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        check_client_mode(cred_ssp_mode, &client_mode)?;
+
         let mut rng = StdRng::try_from_rng(&mut SysRng)?;
         let mut client_nonce = [0; NONCE_SIZE];
         rng.fill_bytes(&mut client_nonce);
@@ -237,6 +273,7 @@ impl CredSspClient {
             ts_request_version: TS_REQUEST_VERSION,
             client_mode: Some(client_mode),
             service_principal_name,
+            remote_guard_ntlm: None,
         })
     }
 
@@ -248,6 +285,8 @@ impl CredSspClient {
         client_mode: ClientMode,
         service_principal_name: String,
     ) -> crate::Result<Self> {
+        check_client_mode(cred_ssp_mode, &client_mode)?;
+
         let mut rng = StdRng::try_from_rng(&mut SysRng)?;
         let mut client_nonce = [0; NONCE_SIZE];
         rng.fill_bytes(&mut client_nonce);
@@ -262,6 +301,7 @@ impl CredSspClient {
             ts_request_version,
             client_mode: Some(client_mode),
             service_principal_name,
+            remote_guard_ntlm: None,
         })
     }
 
@@ -289,9 +329,14 @@ impl CredSspClient {
                 .take()
                 .expect("CredSsp client mode should never be empty")
             {
-                ClientMode::Negotiate(negotiate_config) => Some(CredSspContext::new(SspiContext::Negotiate(
-                    Negotiate::new_client(negotiate_config)?,
-                ))),
+                ClientMode::Negotiate(negotiate_config) => {
+                    let mut negotiate = Negotiate::new_client(negotiate_config)?;
+                    if self.cred_ssp_mode == CredSspMode::RemoteGuard {
+                        negotiate.enable_remote_guard()?;
+                    }
+
+                    Some(CredSspContext::new(SspiContext::Negotiate(negotiate)))
+                }
                 ClientMode::Pku2u(pku2u) => Some(CredSspContext::new(SspiContext::Pku2u(
                     Pku2u::new_client_from_config(*pku2u)?,
                 ))),
@@ -321,6 +366,14 @@ impl CredSspClient {
                 )];
                 let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];
 
+                let mut context_requirements = ClientRequestFlags::MUTUAL_AUTH
+                    | ClientRequestFlags::USE_SESSION_KEY
+                    | ClientRequestFlags::INTEGRITY
+                    | ClientRequestFlags::CONFIDENTIALITY;
+                if self.cred_ssp_mode == CredSspMode::RemoteGuard {
+                    context_requirements |= ClientRequestFlags::REPLAY_DETECT | ClientRequestFlags::SEQUENCE_DETECT;
+                }
+
                 let mut credentials_handle = self.credentials_handle.take();
                 let cred_ssp_context = self
                     .context
@@ -330,12 +383,7 @@ impl CredSspClient {
                     .sspi_context
                     .initialize_security_context()
                     .with_credentials_handle(&mut credentials_handle)
-                    .with_context_requirements(
-                        ClientRequestFlags::MUTUAL_AUTH
-                            | ClientRequestFlags::USE_SESSION_KEY
-                            | ClientRequestFlags::INTEGRITY
-                            | ClientRequestFlags::CONFIDENTIALITY,
-                    )
+                    .with_context_requirements(context_requirements)
                     .with_target_data_representation(DataRepresentation::Native)
                     .with_target_name(&self.service_principal_name)
                     .with_input(&mut input_token)
@@ -405,7 +453,14 @@ impl CredSspClient {
                     self.context
                         .as_mut()
                         .unwrap()
-                        .encrypt_ts_credentials(self.credentials_handle.as_ref().unwrap(), self.cred_ssp_mode)?,
+                        .encrypt_client_credentials(
+                            yield_point,
+                            self.credentials_handle.as_ref(),
+                            self.cred_ssp_mode,
+                            &self.service_principal_name,
+                            self.remote_guard_ntlm.as_ref(),
+                        )
+                        .await?,
                 );
                 debug!("tscredentials has been written");
 
@@ -419,6 +474,89 @@ impl CredSspClient {
             )),
         }
     }
+
+    /// Enables NTLM redirection for Remote Credential Guard.
+    ///
+    /// When the client authenticates with a password or an NT hash, an NTLM supplemental credential
+    /// (MS-CSSP [2.2.1.2.3 TSRemoteGuardCreds], behavior note 22) is sent in addition to the Kerberos logon
+    /// credential, and the [`RemoteGuardSession`](rcg::RemoteGuardSession) can then answer
+    /// the RDPEAR NTLMv2 operations. The NT OWF never leaves the client: the supplemental credential only
+    /// carries an opaque handle. With smart card credentials, no supplemental credential is sent.
+    ///
+    /// The initial authentication remains Kerberos-only: this does not enable NTLM in SPNEGO.
+    ///
+    /// Redirected requests are bound to `names`, or to the user and domain of the client credentials when
+    /// `names` is `None`. Windows likely names the SAM account and NetBIOS domain, so `names` should be given
+    /// when the credentials use another form, such as a user principal name.
+    ///
+    /// Must be called in [`CredSspMode::RemoteGuard`], before the first [`process`](Self::process) call.
+    /// Initial Windows desktop logon and redirected NTLMv2 SMB authentication have been observed with
+    /// this supplement enabled. Supplemental NTLM redirection remains experimental and requires a fresh
+    /// target logon: reconnecting to an existing target logon did not refresh its credential binding in
+    /// the tested setup. See [`rcg`] for the bounded result and unresolved outbound Kerberos behavior.
+    ///
+    /// [2.2.1.2.3 TSRemoteGuardCreds]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/7ef8229c-44ea-4c1b-867f-00369b882b38
+    pub fn enable_remote_guard_ntlm(&mut self, names: Option<rcg::NtlmRedirectionNames>) -> crate::Result<()> {
+        if self.cred_ssp_mode != CredSspMode::RemoteGuard {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "the CredSSP client is not in remote credential guard mode",
+            ));
+        }
+        if self.state != CredSspState::NegoToken || self.context.is_some() {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "NTLM redirection must be enabled before the CredSSP exchange starts",
+            ));
+        }
+
+        self.remote_guard_ntlm = Some(rcg::NtlmRedirectionPolicy::new(names)?);
+
+        Ok(())
+    }
+
+    /// Takes the authenticated Remote Credential Guard context after the final CredSSP message was produced.
+    ///
+    /// The returned [`RemoteGuardSession`](rcg::RemoteGuardSession) continues the CredSSP
+    /// Kerberos context with the same keys and sequence numbers, and must be used for the MS-RDPEAR channel of
+    /// this connection only. This client cannot protect messages afterwards, and the session can be taken only
+    /// once: later calls fail with [`ErrorKind::ContextExpired`].
+    ///
+    /// The server may still reject the delegated logon: the caller must keep the session only if the connection
+    /// proceeds.
+    pub fn take_remote_guard_session(&mut self) -> crate::Result<rcg::RemoteGuardSession> {
+        if self.cred_ssp_mode != CredSspMode::RemoteGuard {
+            return Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "the CredSSP client is not in remote credential guard mode",
+            ));
+        }
+        if self.state != CredSspState::Final {
+            return Err(Error::new(
+                ErrorKind::OutOfSequence,
+                "the CredSSP exchange is not finished",
+            ));
+        }
+
+        match self.context.as_mut().map(|context| &mut context.sspi_context) {
+            Some(SspiContext::Negotiate(negotiate)) => negotiate.take_remote_guard_session(),
+            _ => Err(Error::new(
+                ErrorKind::InternalError,
+                "remote credential guard requires the Negotiate security package",
+            )),
+        }
+    }
+}
+
+fn check_client_mode(cred_ssp_mode: CredSspMode, client_mode: &ClientMode) -> crate::Result<()> {
+    if cred_ssp_mode == CredSspMode::RemoteGuard && !matches!(client_mode, ClientMode::Negotiate(_)) {
+        return Err(Error::new(
+            ErrorKind::UnsupportedFunction,
+            "remote credential guard requires the Negotiate client mode with Kerberos",
+        ));
+    }
+
+    Ok(())
 }
 
 /// CredSSP client authentication protocol.
@@ -1357,6 +1495,34 @@ impl CredSspContext {
         cred_ssp_mode: CredSspMode,
     ) -> crate::Result<Vec<u8>> {
         self.encrypt_message(&write_ts_credentials(credentials, cred_ssp_mode)?)
+    }
+
+    async fn encrypt_client_credentials(
+        &mut self,
+        yield_point: &mut YieldPointLocal,
+        credentials: Option<&CredentialsBuffers>,
+        mode: CredSspMode,
+        target_name: &str,
+        ntlm: Option<&rcg::NtlmRedirectionPolicy>,
+    ) -> crate::Result<Vec<u8>> {
+        if mode == CredSspMode::RemoteGuard {
+            let SspiContext::Negotiate(negotiate) = &mut self.sspi_context else {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFunction,
+                    "remote credential guard requires the Negotiate security package",
+                ));
+            };
+            let ts_credentials = negotiate
+                .build_remote_guard_credentials(yield_point, target_name, ntlm)
+                .await?;
+
+            self.encrypt_message(&ts_credentials)
+        } else {
+            let credentials = credentials
+                .ok_or_else(|| Error::new(ErrorKind::WrongCredentialHandle, "credentials handle is not present"))?;
+
+            self.encrypt_ts_credentials(credentials, mode)
+        }
     }
 
     fn decrypt_ts_credentials(&mut self, auth_info: &[u8]) -> crate::Result<CredentialsBuffers> {

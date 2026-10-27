@@ -81,6 +81,7 @@ fn secbuffer_readonly_with_checksum() {
         clock_offset: time::Duration::ZERO,
         iakerb_cookie: None,
         iakerb_gss_transcript: Vec::new(),
+        remote_guard: None,
     };
 
     // RPC header
@@ -264,6 +265,7 @@ fn integrity_only_wrap_decryption() {
         clock_offset: time::Duration::ZERO,
         iakerb_cookie: None,
         iakerb_gss_transcript: Vec::new(),
+        remote_guard: None,
     };
 
     let mut buffer = token_bytes;
