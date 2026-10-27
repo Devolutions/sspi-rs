@@ -5,7 +5,7 @@ description: Review sspi-rs pull requests and diffs using focused intent, compre
 
 Inspect the diff, its stated goal, and repository guidance before selecting conditional reviewers:
 
-- Run `intent-drift-audit` when the diff touches a path governed by an `INTENT.md` in its directory or an ancestor, or by a `*.intent.md` beside the changed module, or changes a surface a `CONTRACT*.md` specifies.
+- Run `intent-drift-audit` when the diff touches a path governed by an `INTENT*.md` in its directory or an ancestor, or by a `*.intent*.md` beside the changed module, or changes a surface a `CONTRACT*.md` specifies.
 - Run `intent-review` when the diff adds or changes an intent file.
 - Run `contract-review` when the diff changes a `CONTRACT*.md`.
 - Run `code-compressor` for every diff, limiting it to changed code.
