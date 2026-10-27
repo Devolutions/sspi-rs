@@ -41,7 +41,7 @@ use picky_krb::messages::{ApReq, AsRep, AsReq, EncAsRepPart, EncKdcRepPart, KdcR
 use picky_krb::negoex::NegoexMessage;
 use picky_krb::negoex::data_types::MessageType;
 use picky_krb::negoex::messages::{Exchange, Nego, Verify};
-use picky_krb::pkinit::{AuthPack, DhRepInfo, KdcDhKeyInfo, KrbFinished, PaPkAsRep, PaPkAsReq, Pku2uNegoReq};
+use picky_krb::pkinit::{DhAuthPack, DhRepInfo, KdcDhKeyInfo, KrbFinished, PaPkAsRep, PaPkAsReq, Pku2uNegoReq};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng as _;
 use sha1::{Digest, Sha1};
@@ -496,7 +496,7 @@ fn build_as_rep(server: &mut Pku2u, as_req: &AsReq) -> Result<AsRep> {
             ));
         }
     };
-    let auth_pack: AuthPack = picky_asn1_der::from_bytes(auth_pack_bytes)?;
+    let auth_pack: DhAuthPack = picky_asn1_der::from_bytes(auth_pack_bytes)?;
 
     // Content binding (RFC 4556 §3.2.1): `paChecksum` must be the SHA1 digest of `KDC-REQ-BODY`, which
     // binds this specific signed request to this specific AS-REQ and prevents it from being replayed
