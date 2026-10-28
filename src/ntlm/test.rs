@@ -1,6 +1,6 @@
 use crate::crypto::{HASH_SIZE, Rc4};
 use crate::ntlm::messages::computations::generate_signing_key;
-use crate::ntlm::messages::test::TEST_CREDENTIALS;
+use crate::ntlm::messages::test::{TEST_CREDENTIALS, nt_proof_for_zeroed_challenge};
 use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
 use crate::ntlm::{
     AuthenticateMessage, CHALLENGE_SIZE, ChallengeMessage, Mic, NegotiateFlags, NegotiateMessage, Ntlm, NtlmState,
@@ -882,7 +882,7 @@ fn complete_auth_token_changes_state() {
         [0x00; CHALLENGE_SIZE],
         0,
     ));
-    context.authenticate_message = Some(AuthenticateMessage::new(
+    let mut authenticate_message = AuthenticateMessage::new(
         vec![
             0x4e, 0x54, 0x4c, 0x4d, 0x53, 0x53, 0x50, 0x00, 0x03, 0x00, 0x00, 0x00, 0x18, 0x00, 0x18, 0x00, 0x98, 0x00,
             0x00, 0x00, 0x7a, 0x01, 0x7a, 0x01, 0xb0, 0x00, 0x00, 0x00, 0x16, 0x00, 0x16, 0x00, 0x58, 0x00, 0x00, 0x00,
@@ -945,10 +945,17 @@ fn complete_auth_token_changes_state() {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ],
         [0xa5, 0x00, 0x28, 0x29, 0xcd, 0x07, 0xe3, 0xbc],
+        [0x00; HASH_SIZE],
+        0,
         Some([
             0x0c, 0x57, 0xc6, 0xb5, 0x0c, 0x14, 0xc1, 0xf0, 0x64, 0xe7, 0xcc, 0x8b, 0xf0, 0x6d, 0x7a, 0x13,
         ]),
-    ));
+    );
+    authenticate_message.nt_proof = nt_proof_for_zeroed_challenge(
+        &authenticate_message.target_info,
+        &authenticate_message.client_challenge,
+    );
+    context.authenticate_message = Some(authenticate_message);
 
     context.complete_auth_token(&mut []).unwrap();
     assert_eq!(context.state, NtlmState::Final);

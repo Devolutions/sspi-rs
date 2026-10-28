@@ -229,28 +229,43 @@ pub(super) fn compute_ntlm_v2_response(
     Ok((nt_challenge_response, key_exchange_key))
 }
 
-pub(super) fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<(Vec<u8>, [u8; CHALLENGE_SIZE])> {
-    let mut response = [0x00; HASH_SIZE];
-    challenge_response.read_exact(response.as_mut())?;
+/// Fields of a received NTLMv2 response that the server needs to verify it.
+pub(super) struct NtlmV2Response {
+    pub(super) nt_proof: [u8; HASH_SIZE],
+    pub(super) target_info: Vec<u8>,
+    pub(super) client_challenge: [u8; CHALLENGE_SIZE],
+    pub(super) timestamp: u64,
+}
+
+pub(super) fn read_ntlm_v2_response(mut challenge_response: &[u8]) -> io::Result<NtlmV2Response> {
+    let mut nt_proof = [0x00; HASH_SIZE];
+    challenge_response.read_exact(nt_proof.as_mut())?;
     let _resp_type = challenge_response.read_u8()?;
     let _hi_resp_type = challenge_response.read_u8()?;
     let _reserved1 = challenge_response.read_u16::<LittleEndian>()?;
     let _reserved2 = challenge_response.read_u32::<LittleEndian>()?;
-    let _timestamp = challenge_response.read_u64::<LittleEndian>()?;
+    let timestamp = challenge_response.read_u64::<LittleEndian>()?;
 
     let mut client_challenge = [0x00; CHALLENGE_SIZE];
     challenge_response.read_exact(client_challenge.as_mut())?;
     let _reserved3 = challenge_response.read_u32::<LittleEndian>()?;
 
-    let mut av_pairs = Vec::with_capacity(challenge_response.len());
-    challenge_response.read_to_end(&mut av_pairs)?;
+    let mut target_info = Vec::with_capacity(challenge_response.len());
+    challenge_response.read_to_end(&mut target_info)?;
 
-    Ok((av_pairs, client_challenge))
+    Ok(NtlmV2Response {
+        nt_proof,
+        target_info,
+        client_challenge,
+        timestamp,
+    })
 }
 
 pub(super) fn get_av_flags_from_response(av_pairs: &[AvPair]) -> io::Result<MsvAvFlags> {
     if let Some(AvPair::Flags(value)) = av_pairs.iter().find(|&av_pair| av_pair.as_u16() == AV_PAIR_FLAGS) {
-        Ok(MsvAvFlags::from_bits(*value).unwrap_or_else(MsvAvFlags::empty))
+        // Keep the bits this crate does not define:
+        // dropping the whole value would hide `MESSAGE_INTEGRITY_CHECK` from a client that also sets another flag.
+        Ok(MsvAvFlags::from_bits_retain(*value))
     } else {
         Ok(MsvAvFlags::empty())
     }
