@@ -3,8 +3,8 @@ use sspi::credssp::SspiContext;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
-    DataRepresentation, EncryptionFlags, InitializeSecurityContextResult, Ntlm, Secret, SecurityBuffer,
-    SecurityBufferFlags, SecurityBufferRef, SecurityStatus, ServerRequestFlags, Sspi, Username,
+    DataRepresentation, EncryptionFlags, ErrorKind, InitializeSecurityContextResult, Ntlm, Secret, SecurityBuffer,
+    SecurityBufferFlags, SecurityBufferRef, SecurityStatus, ServerRequestFlags, ServerResponseFlags, Sspi, Username,
 };
 
 use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryption, test_stream_buffer_encryption};
@@ -115,6 +115,72 @@ fn run_ntlm(config: NtlmConfig, target_name: Option<&str>, username: &str, passw
     panic!("NTLM authentication should not exceed 3 steps")
 }
 
+fn run_anonymous_credentials(
+    client_flags: ClientRequestFlags,
+    server_flags: ServerRequestFlags,
+) -> Result<(SspiContext, SspiContext), ErrorKind> {
+    let anonymous_credentials = Credentials::AuthIdentity(AuthIdentity {
+        username: Username::parse("").unwrap(),
+        password: Secret::from(String::new()),
+    });
+    let config = NtlmConfig {
+        client_computer_name: None,
+    };
+    let mut client = SspiContext::Ntlm(Ntlm::with_config(config.clone()));
+    let mut server = SspiContext::Ntlm(Ntlm::with_config(config));
+
+    let AcquireCredentialsHandleResult {
+        credentials_handle: mut client_credentials_handle,
+        ..
+    } = AcquireCredentialsHandle::<'_, _, _, WithoutCredentialUse>::new()
+        .with_auth_data(&anonymous_credentials)
+        .with_credential_use(CredentialUse::Outbound)
+        .execute(&mut client)
+        .unwrap();
+    let mut server_credentials_handle = None;
+
+    let mut server_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+    let mut client_token = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+
+    for _ in 0..3 {
+        let mut client_builder = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut client_credentials_handle)
+            .with_context_requirements(client_flags)
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_input(&mut server_token)
+            .with_output(&mut client_token);
+        client_builder.target_name = Some(TARGET_NAME);
+        let client_result = match client.initialize_security_context_sync(&mut client_builder) {
+            Ok(result) => result,
+            Err(error) => return Err(error.error_type),
+        };
+        server_token[0].buffer.clear();
+
+        let server_builder = server
+            .accept_security_context()
+            .with_credentials_handle(&mut server_credentials_handle)
+            .with_context_requirements(server_flags)
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_input(&mut client_token)
+            .with_output(&mut server_token);
+        let server_result = match server.accept_security_context_sync(server_builder) {
+            Ok(result) => result,
+            Err(error) => return Err(error.error_type),
+        };
+        client_token[0].buffer.clear();
+
+        if client_result.status == SecurityStatus::Ok {
+            assert_eq!(server_result.status, SecurityStatus::Ok);
+            assert!(client_result.flags.contains(sspi::ClientResponseFlags::NULL_SESSION));
+            assert!(server_result.flags.contains(ServerResponseFlags::NULL_SESSION));
+            return Ok((client, server));
+        }
+    }
+
+    panic!("NTLM NULL-session authentication should not exceed 3 steps")
+}
+
 #[test]
 fn ntlm_with_computer_name() {
     run_ntlm(
@@ -161,4 +227,49 @@ fn ntlm_without_target_name() {
         "test_user",
         "test_password",
     );
+}
+
+#[test]
+fn ntlm_null_session_requires_explicit_two_sided_opt_in() {
+    let (mut client, mut server) =
+        run_anonymous_credentials(ClientRequestFlags::NULL_SESSION, ServerRequestFlags::ALLOW_NULL_SESSION).unwrap();
+    super::test_null_session_security(&mut client);
+    super::test_null_session_security(&mut server);
+}
+
+#[test]
+fn ntlm_null_session_is_rejected_by_default() {
+    assert_eq!(
+        run_anonymous_credentials(ClientRequestFlags::NULL_SESSION, ServerRequestFlags::empty()).unwrap_err(),
+        ErrorKind::LogonDenied
+    );
+    assert_eq!(
+        run_anonymous_credentials(ClientRequestFlags::empty(), ServerRequestFlags::ALLOW_NULL_SESSION).unwrap_err(),
+        ErrorKind::InvalidToken
+    );
+}
+
+#[test]
+fn ntlm_null_session_rejects_required_security() {
+    for requirement in [
+        ClientRequestFlags::INTEGRITY,
+        ClientRequestFlags::CONFIDENTIALITY,
+        ClientRequestFlags::REPLAY_DETECT,
+        ClientRequestFlags::SEQUENCE_DETECT,
+        ClientRequestFlags::MUTUAL_AUTH,
+        ClientRequestFlags::DELEGATE,
+        ClientRequestFlags::USE_SESSION_KEY,
+        ClientRequestFlags::USE_DCE_STYLE,
+        ClientRequestFlags::CONFIDENTIALITY_ONLY,
+        ClientRequestFlags::FORWARD_CREDENTIALS,
+    ] {
+        assert_eq!(
+            run_anonymous_credentials(
+                ClientRequestFlags::NULL_SESSION | requirement,
+                ServerRequestFlags::ALLOW_NULL_SESSION
+            )
+            .unwrap_err(),
+            ErrorKind::InvalidParameter
+        );
+    }
 }

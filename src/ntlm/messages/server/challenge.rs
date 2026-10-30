@@ -83,7 +83,7 @@ fn check_state(state: NtlmState) -> Result<()> {
 }
 
 fn get_flags(negotiate_flags: NegotiateFlags) -> NegotiateFlags {
-    negotiate_flags | NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO
+    negotiate_flags | NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO | NegotiateFlags::NTLM_SSP_NEGOTIATE_ALWAYS_SIGN
 }
 
 fn write_header(

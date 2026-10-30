@@ -24,7 +24,7 @@ use crate::{
     DecryptionFlags, EncryptionFlags, Error, ErrorKind, FilledAcceptSecurityContext, FilledAcquireCredentialsHandle,
     FilledInitializeSecurityContext, InitializeSecurityContextResult, PACKAGE_ID_NONE, PackageCapabilities,
     PackageInfo, Secret, SecurityBuffer, SecurityBufferFlags, SecurityBufferRef, SecurityPackageType, SecurityStatus,
-    ServerResponseFlags, Sspi, SspiEx, SspiImpl,
+    ServerRequestFlags, ServerResponseFlags, Sspi, SspiEx, SspiImpl,
 };
 
 pub const PKG_NAME: &str = "NTLM";
@@ -101,6 +101,10 @@ pub struct Ntlm {
     remote_seq_number: u32,
 
     session_key: Option<[u8; SESSION_KEY_SIZE]>,
+    /// Whether this context was explicitly established as an anonymous NULL session.
+    null_session: bool,
+    /// Server-side policy gate for accepting anonymous NULL sessions.
+    allow_null_session: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -157,6 +161,8 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+            null_session: false,
+            allow_null_session: false,
 
             our_seq_number: 0,
             remote_seq_number: 0,
@@ -188,6 +194,8 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+            null_session: false,
+            allow_null_session: false,
 
             our_seq_number: 0,
             remote_seq_number: 0,
@@ -219,6 +227,8 @@ impl Ntlm {
             send_sealing_key: None,
             recv_sealing_key: None,
             session_key: None,
+            null_session: false,
+            allow_null_session: false,
 
             our_seq_number: 0,
             remote_seq_number: 0,
@@ -327,28 +337,56 @@ impl Ntlm {
         let input = builder
             .input
             .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "Input buffers must be specified"))?;
+        // MS-NLMP 3.2.5.1.2: anonymous logon must not bypass the acceptor's
+        // security policy. Anonymous contexts provide no session security.
+        let allow_null_session = builder
+            .context_requirements
+            .contains(ServerRequestFlags::ALLOW_NULL_SESSION)
+            && !builder.context_requirements.intersects(
+                ServerRequestFlags::INTEGRITY
+                    | ServerRequestFlags::CONFIDENTIALITY
+                    | ServerRequestFlags::REPLAY_DETECT
+                    | ServerRequestFlags::SEQUENCE_DETECT
+                    | ServerRequestFlags::MUTUAL_AUTH
+                    | ServerRequestFlags::DELEGATE
+                    | ServerRequestFlags::USE_SESSION_KEY
+                    | ServerRequestFlags::USE_DCE_STYLE,
+            );
         let status = match self.state {
             NtlmState::Initial => {
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
 
                 self.state = NtlmState::Negotiate;
+                self.allow_null_session = allow_null_session;
                 server::read_negotiate(self, input_token.buffer.as_slice())?;
 
                 server::write_challenge(self, &mut output_token.buffer)?
             }
             NtlmState::Authenticate => {
+                self.allow_null_session &= allow_null_session;
                 let input_token = SecurityBuffer::find_buffer(input, BufferType::Token)?;
-
-                let identity = builder.credentials_handle.cloned().flatten();
-                self.allowed_identities = identity.as_ref().map(|id| vec![id.clone()]);
-                self.identity = identity;
 
                 if let Ok(sec_buffer) = SecurityBuffer::find_buffer(input, BufferType::ChannelBindings) {
                     self.channel_bindings = Some(ChannelBindings::from_bytes(&sec_buffer.buffer)?);
                 }
 
-                server::read_authenticate(self, input_token.buffer.as_slice())?
+                let status = server::read_authenticate(self, input_token.buffer.as_slice())?;
+                if !self.null_session {
+                    let supplied_identity = builder.credentials_handle.cloned().flatten();
+                    self.allowed_identities = supplied_identity.as_ref().map(|id| vec![id.clone()]);
+                    let wire_identity = self.identity.take();
+                    self.identity = supplied_identity
+                        .map(|mut candidate| {
+                            if let Some(wire_identity) = &wire_identity {
+                                candidate.user = wire_identity.user.clone();
+                                candidate.domain = wire_identity.domain.clone();
+                            }
+                            candidate
+                        })
+                        .or(wire_identity);
+                }
+                status
             }
             _ => {
                 return Err(Error::new(
@@ -360,7 +398,11 @@ impl Ntlm {
 
         Ok(AcceptSecurityContextResult {
             status,
-            flags: ServerResponseFlags::empty(),
+            flags: if self.null_session {
+                ServerResponseFlags::NULL_SESSION
+            } else {
+                ServerResponseFlags::empty()
+            },
             expiry: None,
         })
     }
@@ -371,6 +413,28 @@ impl Ntlm {
     ) -> crate::Result<InitializeSecurityContextResult> {
         trace!(?builder);
 
+        let null_session = builder.context_requirements.contains(ClientRequestFlags::NULL_SESSION);
+        if (self.state != NtlmState::Initial && null_session != self.null_session)
+            || (null_session
+                && builder.context_requirements.intersects(
+                    ClientRequestFlags::INTEGRITY
+                        | ClientRequestFlags::CONFIDENTIALITY
+                        | ClientRequestFlags::CONFIDENTIALITY_ONLY
+                        | ClientRequestFlags::REPLAY_DETECT
+                        | ClientRequestFlags::SEQUENCE_DETECT
+                        | ClientRequestFlags::MUTUAL_AUTH
+                        | ClientRequestFlags::DELEGATE
+                        | ClientRequestFlags::USE_SESSION_KEY
+                        | ClientRequestFlags::USE_DCE_STYLE
+                        | ClientRequestFlags::FORWARD_CREDENTIALS,
+                ))
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "NULL sessions cannot change authentication mode or provide authentication or session security",
+            ));
+        }
+
         let status = match self.state {
             NtlmState::Initial => {
                 let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
@@ -380,6 +444,11 @@ impl Ntlm {
                 self.sealing = builder
                     .context_requirements
                     .contains(ClientRequestFlags::CONFIDENTIALITY);
+
+                self.null_session = null_session;
+                if self.null_session {
+                    self.identity = None;
+                }
 
                 // ISC_REQ_USE_DCE_STYLE implies full signing and sealing, matching Windows SSPI
                 // behavior where DCE-style NTLM always negotiates SEAL+KEY_EXCH regardless of
@@ -415,16 +484,20 @@ impl Ntlm {
 
                 client::read_challenge(self, input_token.buffer.as_slice())?;
 
-                client::write_authenticate(
-                    self,
-                    builder
-                        .credentials_handle
-                        .as_ref()
-                        .expect("CredentialsHandle must be passed to the method")
-                        .as_ref()
-                        .expect("CredentialsHandle must be Some for the client's method"),
-                    &mut output_token.buffer,
-                )?
+                if self.null_session {
+                    client::write_anonymous_authenticate(self, &mut output_token.buffer)?
+                } else {
+                    client::write_authenticate(
+                        self,
+                        builder
+                            .credentials_handle
+                            .as_ref()
+                            .expect("CredentialsHandle must be passed to the method")
+                            .as_ref()
+                            .expect("CredentialsHandle must be Some for the client's method"),
+                        &mut output_token.buffer,
+                    )?
+                }
             }
             _ => {
                 return Err(Error::new(
@@ -438,7 +511,11 @@ impl Ntlm {
 
         Ok(InitializeSecurityContextResult {
             status,
-            flags: ClientResponseFlags::empty(),
+            flags: if self.null_session && status == SecurityStatus::Ok {
+                ClientResponseFlags::NULL_SESSION
+            } else {
+                ClientResponseFlags::empty()
+            },
             expiry: None,
         })
     }
@@ -499,6 +576,39 @@ impl Ntlm {
 
         Ok(())
     }
+
+    pub(crate) fn finish_null_session(&mut self) {
+        // MS-NLMP 3.2.5.1.2 defines SessionBaseKey = Z(16), and 3.4
+        // specifies no session security for anonymous logon. Do not retain
+        // or expose that publicly known key as usable cryptographic material.
+        self.null_session = true;
+        self.identity = None;
+        self.allowed_identities = None;
+        self.authenticate_message = None;
+        self.session_key = None;
+        self.send_sealing_key = None;
+        self.recv_sealing_key = None;
+        self.send_signing_key = Secret::new([0; 16]);
+        self.recv_signing_key = Secret::new([0; 16]);
+        self.signing = false;
+        self.sealing = false;
+        self.state = NtlmState::Final;
+    }
+
+    pub(crate) fn is_null_session(&self) -> bool {
+        self.null_session
+    }
+
+    fn ensure_session_security(&self) -> crate::Result<()> {
+        if self.null_session {
+            Err(Error::new(
+                ErrorKind::UnsupportedFunction,
+                "anonymous NULL sessions do not provide signing, encryption, or a session key",
+            ))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Sspi for Ntlm {
@@ -513,6 +623,7 @@ impl Sspi for Ntlm {
         _flags: EncryptionFlags,
         message: &mut [SecurityBufferRef<'_>],
     ) -> crate::Result<SecurityStatus> {
+        self.ensure_session_security()?;
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -554,6 +665,7 @@ impl Sspi for Ntlm {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
+        self.ensure_session_security()?;
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -621,6 +733,11 @@ impl Sspi for Ntlm {
 
     #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
     fn query_context_names(&mut self) -> crate::Result<ContextNames> {
+        if self.null_session && self.state == NtlmState::Final {
+            return Ok(ContextNames {
+                username: crate::Username::new("ANONYMOUS LOGON", Some("NT AUTHORITY"))?,
+            });
+        }
         if let Some(identity_buffers) = &self.identity {
             let identity =
                 AuthIdentity::try_from(identity_buffers).map_err(|e| Error::new(ErrorKind::InvalidParameter, e))?;
@@ -651,6 +768,7 @@ impl Sspi for Ntlm {
 
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
     fn query_context_session_key(&self) -> crate::Result<crate::SessionKeys> {
+        self.ensure_session_security()?;
         if let Some(session_key) = self.session_key {
             Ok(crate::SessionKeys {
                 session_key: session_key.to_vec().into(),
@@ -679,6 +797,7 @@ impl Sspi for Ntlm {
         message: &mut [SecurityBufferRef<'_>],
         sequence_number: u32,
     ) -> crate::Result<()> {
+        self.ensure_session_security()?;
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -694,6 +813,7 @@ impl Sspi for Ntlm {
     }
 
     fn verify_signature(&mut self, message: &mut [SecurityBufferRef<'_>], sequence_number: u32) -> crate::Result<u32> {
+        self.ensure_session_security()?;
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -713,6 +833,7 @@ impl Sspi for Ntlm {
 impl SspiEx for Ntlm {
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identity(&mut self, identity: Self::AuthenticationData) -> crate::Result<()> {
+        self.ensure_session_security()?;
         // If `self.identity` is already set, it means that the NTLM has accepted the final authentication message,
         // and read username/domain from it. In this case, we only update the password.
         if let Some(credentials) = &mut self.identity {
@@ -731,6 +852,7 @@ impl SspiEx for Ntlm {
 
     #[instrument(level = "trace", ret, fields(state = ?self.state), skip(self))]
     fn custom_set_auth_identities(&mut self, identities: Vec<Self::AuthenticationData>) -> crate::Result<()> {
+        self.ensure_session_security()?;
         let Some(first_identity) = identities.first() else {
             return Err(Error::new(ErrorKind::NoCredentials, "no credentials provided"));
         };
@@ -753,6 +875,7 @@ impl SspiEx for Ntlm {
     }
 
     fn verify_mic_token(&mut self, signature: &[u8], data: &[u8], _: crate::private::Sealed) -> crate::Result<()> {
+        self.ensure_session_security()?;
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
@@ -769,6 +892,7 @@ impl SspiEx for Ntlm {
     }
 
     fn generate_mic_token(&mut self, data: &[u8], _: crate::private::Sealed) -> crate::Result<Vec<u8>> {
+        self.ensure_session_security()?;
         if self.send_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;
         }
