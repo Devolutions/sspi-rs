@@ -78,7 +78,6 @@ impl EcdhParameters {
     #[cfg(feature = "scard")]
     pub(crate) fn generate(rng: &mut rand::rngs::StdRng) -> Self {
         use rand_core::Rng as _;
-
         use zeroize::Zeroizing;
 
         let private_key = loop {

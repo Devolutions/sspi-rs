@@ -607,7 +607,7 @@ mod scard_credentials {
         pub csp_name: Utf16String,
         /// UTF-16 encoded smart card PIN code
         pub pin: Secret<ZeroizedUtf16String>,
-        /// UTF-16 string with PEM-encoded RSA 2048-bit private key
+        /// UTF-16 string with PEM-encoded private key (RSA 2048-bit or EC P-256) of the emulated smart card
         pub private_key_pem: Option<Secret<NonEmpty<ZeroizedUtf16String>>>,
         /// Smart card type.
         pub scard_type: SmartCardType,
@@ -630,7 +630,7 @@ mod scard_credentials {
         pub csp_name: String,
         /// ASCII encoded mart card PIN code
         pub pin: Secret<Vec<u8>>,
-        /// RSA 2048-bit private key
+        /// Private key (RSA 2048-bit or EC P-256) of the emulated smart card
         pub private_key: Option<SecretPrivateKey>,
         /// Smart card type.
         pub scard_type: SmartCardType,

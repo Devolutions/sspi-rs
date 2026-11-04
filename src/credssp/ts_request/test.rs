@@ -785,3 +785,19 @@ fn buffer_len_correct_returns_len_with_garbage() {
         usize::from(ts_request.buffer_len().unwrap())
     );
 }
+
+#[cfg(feature = "scard")]
+#[test]
+fn smart_card_key_spec_depends_on_the_key_type() {
+    use picky::x509::Cert;
+
+    let load_certificate = |pem| picky_asn1_x509::Certificate::from(Cert::from_pem_str(pem).unwrap());
+
+    // EC keys have no legacy key specification: the provider has to detect the key type by itself.
+    let ec = load_certificate(include_str!("../../../test_assets/ec_p256.cer"));
+    assert_eq!(0, smart_card_key_spec(&ec));
+
+    // AT_KEYEXCHANGE.
+    let rsa = load_certificate(include_str!("../../../test_assets/pw11.cer"));
+    assert_eq!(1, smart_card_key_spec(&rsa));
+}

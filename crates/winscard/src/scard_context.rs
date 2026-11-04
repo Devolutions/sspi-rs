@@ -4,13 +4,13 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 
-use picky::key::PrivateKey;
+use picky::key::{KeyKind, PrivateKey};
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
 use secret::{Secret, SecretPrivateKey};
 use uuid::Uuid;
 
 use crate::cache::Cache;
-use crate::scard::{SUPPORTED_CONNECTION_PROTOCOL, SmartCard};
+use crate::scard::{CardIdentity, SUPPORTED_CONNECTION_PROTOCOL, SmartCard, card_identity};
 use crate::winscard::{
     CurrentState, DeviceTypeId, Icon, Protocol, ProviderId, ReaderState, ScardConnectData, ShareMode, WinScardContext,
 };
@@ -29,8 +29,42 @@ const NEW_READER_NOTIFICATION: &str = "\\\\?PnP?\\Notification";
 /// has no reason to write an item with such a name, so it is safe to use it as a marker.
 const CARD_CACHE_INITIALIZED: &str = "is_card_initialized";
 
+/// The maximal key container name length in UTF-16 code units, without the terminating null character.
+///
+/// The `wszGuid` field of the `CONTAINER_MAP_RECORD` structure has a fixed size.
+const MAX_CONTAINER_NAME_LEN: usize = 39;
+
+/// Encodes the key container name into the fixed-size `wszGuid` field of the `CONTAINER_MAP_RECORD` structure.
+///
+/// Fails if the name is too long. Truncating it would break the logon: the target machine looks for
+/// the key container using the full name.
+pub(crate) fn encode_container_name(container_name: &str) -> WinScardResult<Vec<u8>> {
+    let mut encoded = container_name
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+
+    if encoded.len() > MAX_CONTAINER_NAME_LEN * 2 {
+        return Err(Error::new(
+            ErrorKind::InvalidParameter,
+            format!("key container name is too long: the maximum is {MAX_CONTAINER_NAME_LEN} UTF-16 code units"),
+        ));
+    }
+
+    encoded.resize((MAX_CONTAINER_NAME_LEN + 1) * 2, 0);
+
+    Ok(encoded)
+}
+
+/// The size of the P-256 curve coordinate (and private key) in bytes.
+const EC_P256_COORDINATE_SIZE: usize = 32;
+
 /// Default name of the emulated smart card.
 pub const DEFAULT_CARD_NAME: &str = "Sspi-rs emulated smart card";
+/// The card type name the YubiKey Smart Card Minidriver registers for the emulated YubiKey ATR.
+pub const YUBIKEY_CARD_NAME: &str = "YubiKey Smart Card";
+/// The YubiKey Smart Card Minidriver location.
+pub const YUBIKEY_SCARD_DRIVER_LOCATION: &str = "ykmd.dll\0";
 /// Default CSP name.
 pub const MICROSOFT_DEFAULT_CSP: &str = "Microsoft Base Smart Card Crypto Provider";
 /// Default KSP name.
@@ -144,6 +178,8 @@ pub struct ScardContext<'a> {
     /// scoped by it.
     card_id: Uuid,
     cache: Box<dyn Cache>,
+    /// How the smart card of this context presents itself.
+    identity: CardIdentity,
 }
 
 impl<'a> ScardContext<'a> {
@@ -152,12 +188,16 @@ impl<'a> ScardContext<'a> {
     /// On the first call, the provided [Cache] is filled with the items that describe the emulated
     /// smart card. The subsequent calls leave the cache as is: see [CARD_CACHE_INITIALIZED].
     pub fn new(smart_card_info: SmartCardInfo<'a>, card_id: Uuid, mut cache: Box<dyn Cache>) -> WinScardResult<Self> {
+        let identity = card_identity(smart_card_info.auth_pk.as_ref())?;
+        let container = encode_container_name(smart_card_info.container_name.as_ref())?;
+
         // The zero freshness counter means that any cached item revision suits us.
         if cache.read(card_id, 0, CARD_CACHE_INITIALIZED).is_ok() {
             return Ok(Self {
                 smart_card_info,
                 card_id,
                 cache,
+                identity,
             });
         }
 
@@ -227,6 +267,21 @@ impl<'a> ScardContext<'a> {
                 value
             },
         );
+        // The key exchange key size in bits. The emulated smart card key is registered as the key exchange key,
+        // the same as the Windows PIV minidriver does for the PIV authentication key.
+        let key_exchange_key_size_bits: [u8; 2] = match smart_card_info.auth_pk.as_ref().kind() {
+            // 2048 bits.
+            KeyKind::Rsa => [0, 8],
+            // 256 bits: the P-256 curve.
+            KeyKind::Ec => [0, 1],
+            _ => {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "only RSA 2048 and EC P-256 keys are supported",
+                ));
+            }
+        };
+
         cache.write(card_id, u32::MAX, "Cached_GeneralFile/mscp/cmapfile".into(), {
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
@@ -235,32 +290,19 @@ impl<'a> ScardContext<'a> {
             // https://github.com/selfrender/Windows-Server-2003/blob/5c6fe3db626b63a384230a1aa6b92ac416b0765f/ds/security/csps/wfsccsp/inc/basecsp.h#L104-L110
             value.extend_from_slice(&86_u32.to_le_bytes());
             // CONTAINER_MAP_RECORD:
-            let container = smart_card_info
-                .container_name
-                .as_ref()
-                .encode_utf16()
-                .chain(core::iter::once(0))
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<_>>();
             value.extend_from_slice(&container); // wszGuid
             value.extend_from_slice(&[3, 0]); // bFlags
             value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
-            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+            value.extend_from_slice(&key_exchange_key_size_bits); // wKeyExchangeKeySizeBits
 
             value
         });
         cache.write(card_id, u32::MAX, "Cached_CardmodFile\\Cached_CMAPFile".into(), {
             // CONTAINER_MAP_RECORD:
-            let mut value = smart_card_info
-                .container_name
-                .as_ref()
-                .encode_utf16()
-                .chain(core::iter::once(0))
-                .flat_map(|v| v.to_le_bytes())
-                .collect::<Vec<_>>(); // wszGuid
+            let mut value = container.clone(); // wszGuid
             value.extend_from_slice(&[3, 0]); // bFlags
             value.extend_from_slice(&[0, 0]); // wSigKeySizeBits
-            value.extend_from_slice(&[0, 8]); // wKeyExchangeKeySizeBits
+            value.extend_from_slice(&key_exchange_key_size_bits); // wKeyExchangeKeySizeBits
 
             value
         });
@@ -276,64 +318,100 @@ impl<'a> ScardContext<'a> {
             value
         });
         cache.write(card_id, u32::MAX, "Cached_ContainerInfo_00".into(), {
-            // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys.
+            // Note. We can hardcode lengths values in this cache item because we support only 2048 RSA keys and P-256 EC keys.
             // RSA 4096 is not defined in the specification so we don't support it.
             // https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34
             // 5.3 Cryptographic Mechanism Identifiers
             // '07' - RSA 2048
+            // '11' - ECC: Curve P-256
 
             let mut value = CACHE_ITEM_HEADER.to_vec();
             // unkown flags
             value.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-            // actual data len (precalculated)
-            value.extend_from_slice(&292_u32.to_le_bytes());
 
-            value.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14, 0x01, 0x00, 0x00]); // container info header
-
-            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-publickeystruc
-            // PUBLICKEYSTRUC
-            value.push(0x06); // bType = PUBLICKEYBLOB
-            value.push(0x02); // bVersion = 0x2
-            value.extend_from_slice(&[0x00, 0x00]); // reserved
-            value.extend_from_slice(&[0x00, 0xa4, 0x00, 0x00]); // aiKeyAlg = CALG_RSA_KEYX
-
-            // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-rsapubkey
-            // RSAPUBKEY
-            value.extend_from_slice(b"RSA1"); // magic = RSA1
-            value.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
-
-            // let pub_key = smart_cards_info.
             let public_key = smart_card_info
                 .auth_pk
                 .as_ref()
                 .to_public_key()
-                .expect("RSA private key to public key");
+                .expect("private key to public key");
             let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
-            let (modulus, public_exponent) = match &public_key.subject_public_key {
-                PublicKey::Rsa(rsa) => (
-                    {
-                        let mut modulus = rsa.0.modulus.to_vec();
-                        modulus.reverse();
-                        modulus.resize(256, 0);
-                        modulus
-                    },
-                    {
-                        let mut pub_exp = rsa.0.public_exponent.to_vec();
-                        pub_exp.reverse();
-                        pub_exp.resize(4, 0);
-                        pub_exp
-                    },
-                ),
+
+            // The key is always registered as the key exchange key (the signature key is empty).
+            // CONTAINER_INFO: dwVersion, dwReserved, cbSigPublicKey, cbKeyExPublicKey, pbSigPublicKey, pbKeyExPublicKey.
+            let key_blob = match &public_key.subject_public_key {
+                PublicKey::Rsa(rsa) => {
+                    let mut key_blob = Vec::with_capacity(276);
+
+                    // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-publickeystruc
+                    // PUBLICKEYSTRUC
+                    key_blob.push(0x06); // bType = PUBLICKEYBLOB
+                    key_blob.push(0x02); // bVersion = 0x2
+                    key_blob.extend_from_slice(&[0x00, 0x00]); // reserved
+                    key_blob.extend_from_slice(&[0x00, 0xa4, 0x00, 0x00]); // aiKeyAlg = CALG_RSA_KEYX
+
+                    // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/ns-wincrypt-rsapubkey
+                    // RSAPUBKEY
+                    key_blob.extend_from_slice(b"RSA1"); // magic = RSA1
+                    key_blob.extend_from_slice(&2048_u32.to_le_bytes()); // bitlen = 2048
+
+                    let mut modulus = rsa.0.modulus.to_vec();
+                    modulus.reverse();
+                    modulus.resize(256, 0);
+
+                    let mut pub_exp = rsa.0.public_exponent.to_vec();
+                    pub_exp.reverse();
+                    pub_exp.resize(4, 0);
+
+                    key_blob.extend_from_slice(&pub_exp); // pubexp
+                    key_blob.extend_from_slice(&modulus); // public key
+
+                    key_blob
+                }
+                PublicKey::Ec(point) => {
+                    // The uncompressed point: `0x04 || X || Y`.
+                    // https://www.secg.org/sec1-v2.pdf#page=17
+                    let point = point.0.payload_view();
+                    let (x, y) = match point.split_first() {
+                        Some((0x04, coordinates)) if coordinates.len() == 2 * EC_P256_COORDINATE_SIZE => {
+                            coordinates.split_at(EC_P256_COORDINATE_SIZE)
+                        }
+                        _ => {
+                            return Err(Error::new(
+                                ErrorKind::UnsupportedFeature,
+                                "only uncompressed EC P-256 public keys are supported",
+                            ));
+                        }
+                    };
+
+                    let mut key_blob = Vec::with_capacity(8 + 2 * EC_P256_COORDINATE_SIZE);
+
+                    // https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/ns-bcrypt-bcrypt_ecckey_blob
+                    // BCRYPT_ECCKEY_BLOB
+                    key_blob.extend_from_slice(b"ECK1"); // dwMagic = BCRYPT_ECDH_PUBLIC_P256_MAGIC
+                    key_blob.extend_from_slice(&32_u32.to_le_bytes()); // cbKey = the P-256 coordinate size
+                    key_blob.extend_from_slice(x);
+                    key_blob.extend_from_slice(y);
+
+                    key_blob
+                }
                 _ => {
                     return Err(Error::new(
                         ErrorKind::UnsupportedFeature,
-                        "only RSA 2048 keys are supported",
+                        "only RSA 2048 and EC P-256 keys are supported",
                     ));
                 }
             };
 
-            value.extend_from_slice(&public_exponent); // pubexp
-            value.extend_from_slice(&modulus); // public key
+            // actual data len: the container info header + the key blob
+            let data_len = u32::try_from(16 + key_blob.len())
+                .map_err(|_| Error::new(ErrorKind::InternalError, "container info is too large for u32"))?;
+            value.extend_from_slice(&data_len.to_le_bytes());
+
+            let key_blob_len = u32::try_from(key_blob.len())
+                .map_err(|_| Error::new(ErrorKind::InternalError, "public key blob is too large for u32"))?;
+            value.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]); // dwVersion, dwReserved, cbSigPublicKey
+            value.extend_from_slice(&key_blob_len.to_le_bytes()); // cbKeyExPublicKey
+            value.extend_from_slice(&key_blob);
 
             value
         });
@@ -438,6 +516,7 @@ impl<'a> ScardContext<'a> {
             smart_card_info,
             card_id,
             cache,
+            identity,
         })
     }
 
@@ -462,13 +541,16 @@ impl WinScardContext for ScardContext<'_> {
         }
 
         Ok(ScardConnectData {
-            handle: Box::new(SmartCard::new(
-                Cow::Owned(reader_name.to_owned()),
-                self.card_id,
-                self.smart_card_info.pin.as_ref().clone(),
-                self.smart_card_info.auth_cert_der.clone(),
-                self.smart_card_info.auth_pk.as_ref().clone(),
-            )?),
+            handle: Box::new(
+                SmartCard::new(
+                    Cow::Owned(reader_name.to_owned()),
+                    self.card_id,
+                    self.smart_card_info.pin.as_ref().clone(),
+                    self.smart_card_info.auth_cert_der.clone(),
+                    self.smart_card_info.auth_pk.as_ref().clone(),
+                )?
+                .with_container_name(self.smart_card_info.container_name.as_ref())?,
+            ),
             protocol: SUPPORTED_CONNECTION_PROTOCOL,
         })
     }
@@ -541,8 +623,7 @@ impl WinScardContext for ScardContext<'_> {
     }
 
     fn get_status_change(&mut self, _timeout: u32, reader_states: &mut [ReaderState<'_>]) -> WinScardResult<()> {
-        use crate::ATR;
-
+        let atr = self.identity.atr;
         let supported_readers = self.list_readers()?;
 
         for reader_state in reader_states {
@@ -551,8 +632,8 @@ impl WinScardContext for ScardContext<'_> {
                     | CurrentState::SCARD_STATE_INUSE
                     | CurrentState::SCARD_STATE_PRESENT
                     | CurrentState::SCARD_STATE_CHANGED;
-                reader_state.atr[0..ATR.len()].copy_from_slice(&ATR);
-                reader_state.atr_len = ATR.len();
+                reader_state.atr[0..atr.len()].copy_from_slice(atr);
+                reader_state.atr_len = atr.len();
             } else if reader_state.reader_name.as_ref() == NEW_READER_NOTIFICATION {
                 reader_state.event_state = CurrentState::SCARD_STATE_UNNAMED_CONSTANT;
             } else {
@@ -568,8 +649,8 @@ impl WinScardContext for ScardContext<'_> {
         _atr: Option<&[u8]>,
         _required_interfaces: Option<&[Uuid]>,
     ) -> WinScardResult<Vec<Cow<'_, str>>> {
-        // we have only one smart card with only one default name
-        Ok(vec![DEFAULT_CARD_NAME.into()])
+        // we have only one smart card with only one name
+        Ok(vec![self.identity.name.into()])
     }
 
     fn get_card_type_provider_name(&self, _card_name: &str, provider_id: ProviderId) -> WinScardResult<Cow<'_, str>> {
@@ -582,7 +663,166 @@ impl WinScardContext for ScardContext<'_> {
             }
             ProviderId::Csp => MICROSOFT_DEFAULT_CSP.into(),
             ProviderId::Ksp => MICROSOFT_DEFAULT_KSP.into(),
-            ProviderId::CardModule => MICROSOFT_SCARD_DRIVER_LOCATION.into(),
+            ProviderId::CardModule => self.identity.card_module.into(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::collections::BTreeMap;
+    use alloc::rc::Rc;
+    use core::cell::RefCell;
+
+    use super::*;
+    use crate::test_keys::{EC_P256_PRIVATE_KEY, EC_P256_PUBLIC_POINT, EC_P384_PRIVATE_KEY, RSA_2048_PRIVATE_KEY};
+
+    /// The cache that can be inspected after it is moved into the context.
+    #[derive(Debug, Clone, Default)]
+    struct SharedCache(Rc<RefCell<BTreeMap<String, Vec<u8>>>>);
+
+    impl Cache for SharedCache {
+        fn read(&self, _card_id: Uuid, _freshness_counter: u32, key: &str) -> WinScardResult<Vec<u8>> {
+            self.0
+                .borrow()
+                .get(key)
+                .cloned()
+                .ok_or_else(|| Error::new(ErrorKind::CacheItemNotFound, format!("item {key} not found")))
+        }
+
+        fn write(&mut self, _card_id: Uuid, _freshness_counter: u32, key: String, value: Vec<u8>) {
+            self.0.borrow_mut().insert(key, value);
+        }
+    }
+
+    /// Initializes the cache of the emulated smart card with the provided key.
+    fn init_cache(private_key_pem: &str) -> WinScardResult<SharedCache> {
+        let cache = SharedCache::default();
+        let info = SmartCardInfo::new(
+            "test-container".into(),
+            "Reader 0".into(),
+            b"123456".to_vec(),
+            vec![0xff; 1024],
+            private_key_pem.into(),
+            PrivateKey::from_pem_str(private_key_pem).unwrap(),
+        );
+
+        ScardContext::new(info, Uuid::from_u128(1), Box::new(cache.clone()))?;
+
+        Ok(cache)
+    }
+
+    /// Returns the value of the cache item without the common item header (6 bytes), the unknown flags (6 bytes)
+    /// and the data length (4 bytes). The data length is returned separately.
+    fn item_data(cache: &SharedCache, key: &str) -> (u32, Vec<u8>) {
+        let item = cache
+            .0
+            .borrow()
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| panic!("item {key} is missing"));
+        let data_len = u32::from_le_bytes(item[12..16].try_into().unwrap());
+
+        (data_len, item[16..].to_vec())
+    }
+
+    fn container_name_utf16() -> Vec<u8> {
+        let mut name = "test-container"
+            .encode_utf16()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>();
+        // The `wszGuid` field has a fixed size.
+        name.resize(80, 0);
+
+        name
+    }
+
+    #[test]
+    fn container_name_is_padded_to_the_record_field_size() {
+        assert_eq!(container_name_utf16(), encode_container_name("test-container").unwrap());
+        assert_eq!(80, encode_container_name(&"a".repeat(39)).unwrap().len());
+    }
+
+    #[test]
+    fn too_long_container_name_is_rejected() {
+        let error = encode_container_name(&"a".repeat(40)).unwrap_err();
+
+        assert_eq!(ErrorKind::InvalidParameter, error.error_kind);
+    }
+
+    #[test]
+    fn cmapfile_keeps_its_declared_size_with_a_short_container_name() {
+        let cache = init_cache(RSA_2048_PRIVATE_KEY).unwrap();
+
+        let (data_len, data) = item_data(&cache, "Cached_GeneralFile/mscp/cmapfile");
+
+        assert_eq!(86, data_len);
+        assert_eq!(86, data.len());
+    }
+
+    #[test]
+    fn ec_container_info_matches_the_real_card_layout() {
+        let cache = init_cache(EC_P256_PRIVATE_KEY).unwrap();
+
+        let (data_len, data) = item_data(&cache, "Cached_ContainerInfo_00");
+
+        // The layout is taken from the real YubiKey (P-256) RDP smart card logon capture:
+        // 12 zero bytes (dwVersion, dwReserved, cbSigPublicKey), cbKeyExPublicKey = 0x48, then the BCRYPT_ECCKEY_BLOB.
+        let mut expected = vec![0; 12];
+        expected.extend_from_slice(&0x48_u32.to_le_bytes());
+        expected.extend_from_slice(b"ECK1");
+        expected.extend_from_slice(&32_u32.to_le_bytes());
+        // X and Y coordinates (without the 0x04 point tag).
+        expected.extend_from_slice(&EC_P256_PUBLIC_POINT[1..]);
+
+        assert_eq!(0x58, data_len);
+        assert_eq!(expected, data);
+    }
+
+    #[test]
+    fn rsa_container_info_is_unchanged() {
+        let cache = init_cache(RSA_2048_PRIVATE_KEY).unwrap();
+
+        let (data_len, data) = item_data(&cache, "Cached_ContainerInfo_00");
+
+        assert_eq!(292, data_len);
+        assert_eq!(292, data.len());
+        // dwVersion, dwReserved, cbSigPublicKey = 0, cbKeyExPublicKey = 276.
+        assert_eq!([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x14, 0x01, 0, 0], data[..16]);
+        // PUBLICKEYSTRUC (PUBLICKEYBLOB, CALG_RSA_KEYX) and RSAPUBKEY (RSA1, 2048).
+        assert_eq!([0x06, 0x02, 0, 0, 0x00, 0xa4, 0, 0], data[16..24]);
+        assert_eq!(b"RSA1", &data[24..28]);
+        assert_eq!(2048_u32.to_le_bytes(), data[28..32]);
+    }
+
+    #[test]
+    fn container_map_records_have_the_key_size_of_the_key() {
+        for (key, key_exchange_key_size_bits) in [(EC_P256_PRIVATE_KEY, [0, 1]), (RSA_2048_PRIVATE_KEY, [0, 8])] {
+            let cache = init_cache(key).unwrap();
+
+            // CONTAINER_MAP_RECORD: wszGuid, bFlags, wSigKeySizeBits, wKeyExchangeKeySizeBits.
+            let mut record = container_name_utf16();
+            record.extend_from_slice(&[3, 0]);
+            record.extend_from_slice(&[0, 0]);
+            record.extend_from_slice(&key_exchange_key_size_bits);
+
+            assert_eq!(
+                record,
+                cache
+                    .read(Uuid::from_u128(1), 0, "Cached_CardmodFile\\Cached_CMAPFile")
+                    .unwrap()
+            );
+
+            let (data_len, data) = item_data(&cache, "Cached_GeneralFile/mscp/cmapfile");
+            assert_eq!(86, data_len);
+            assert_eq!(record, data);
+        }
+    }
+
+    #[test]
+    fn unsupported_keys_do_not_initialize_the_cache() {
+        let error = init_cache(EC_P384_PRIVATE_KEY).unwrap_err();
+
+        assert_eq!(ErrorKind::UnsupportedFeature, error.error_kind);
     }
 }
