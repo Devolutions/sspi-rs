@@ -1,3 +1,5 @@
+#[cfg(feature = "scard")]
+use picky_krb::constants::error_codes::KDC_ERR_ETYPE_NOSUPP;
 use picky_krb::constants::error_codes::KRB_AP_ERR_SKEW;
 use picky_krb::data_types::KrbResult;
 use picky_krb::messages::{AsRep, AsReq, KdcReqBody, KrbError};
@@ -104,9 +106,15 @@ impl AsExchange {
                         ));
                     }
 
-                    if let Some(salt) =
+                    let krb_error = as_rep.unwrap_err();
+
+                    if is_smart_card_preauth_hint(credentials, &krb_error) {
+                        debug!(
+                            "KDC replied with KDC_ERR_ETYPE_NOSUPP to the smart card AS_REQ; continuing with PKINIT"
+                        );
+                    } else if let Some(salt) =
                         extract_preauth_salt(
-                            &as_rep.unwrap_err(),
+                            &krb_error,
                             self.kdc_req_body.realm.0.0.as_utf8(),
                             self.kdc_req_body.cname.0.as_ref().ok_or_else(|| {
                                 Error::new(ErrorKind::InvalidParameter, "missing client name in AS-REQ")
@@ -214,6 +222,25 @@ impl AsExchange {
             }
         })
     }
+}
+
+/// Returns `true` when the KDC reply to the AS-REQ without pre-authentication data should
+/// be treated as `preauth required`.
+///
+/// The Windows Server 2016 KDC answers a smart card AS-REQ without pre-authentication data
+/// with `KDC_ERR_ETYPE_NOSUPP` instead of `KDC_ERR_PREAUTH_REQUIRED`. The error is misleading,
+/// since the subsequent AS-REQ offers the same encryption types along with pre-authentication
+/// data and succeeds.
+///
+/// Note: this is workaround for the Windows Server 2016 KDC behavior, which is not compliant with RFC 4120.
+#[cfg(feature = "scard")]
+fn is_smart_card_preauth_hint(credentials: &CredentialsBuffers, error: &KrbError) -> bool {
+    matches!(credentials, CredentialsBuffers::SmartCard(_)) && error.0.error_code.0 == KDC_ERR_ETYPE_NOSUPP
+}
+
+#[cfg(not(feature = "scard"))]
+fn is_smart_card_preauth_hint(_credentials: &CredentialsBuffers, _error: &KrbError) -> bool {
+    false
 }
 
 pub(crate) fn clock_offset_from_error(error: &KrbError, received_at: OffsetDateTime) -> Result<Duration> {
