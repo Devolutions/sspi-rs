@@ -57,6 +57,7 @@ pub(crate) fn write_negotiate(context: &mut Ntlm, mut transport: impl io::Write)
             .config
             .client_computer_name
             .as_ref()
+            .filter(|_| !context.null_session)
             .map(|workstation| workstation.as_bytes().to_vec()),
     )?;
 
@@ -88,17 +89,19 @@ fn get_flags(context: &Ntlm) -> NegotiateFlags {
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_UNICODE
         | NegotiateFlags::NTLM_SSP_NEGOTIATE_VERSION;
 
-    if context.sealing {
+    if context.null_session {
+        flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_ANONYMOUS;
+    } else if context.sealing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_LM_KEY;
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SEAL;
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     }
 
-    if context.signing {
+    if !context.null_session && context.signing {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_SIGN;
     }
 
-    if context.config().client_computer_name.is_some() {
+    if !context.null_session && context.config().client_computer_name.is_some() {
         flags |= NegotiateFlags::NTLM_SSP_NEGOTIATE_WORKSTATION_SUPPLIED;
     }
 
