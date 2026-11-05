@@ -803,7 +803,7 @@ pub fn generate_tgs_ap_req(
     }))
 }
 
-#[instrument(level = "trace", ret)]
+#[instrument(level = "trace", ret, skip_all)]
 pub fn generate_ap_req(
     ticket: Ticket,
     session_key: &Secret<Vec<u8>>,
@@ -817,11 +817,7 @@ pub fn generate_ap_req(
     let encoded_authenticator = picky_asn1_der::to_vec(&authenticator)?;
     let encrypted_authenticator = cipher.encrypt(session_key.as_ref(), AP_REQ_AUTHENTICATOR, &encoded_authenticator)?;
 
-    trace!(
-        plain = ?encoded_authenticator,
-        encrypted = ?encrypted_authenticator,
-        "AP_REQ authenticator",
-    );
+    trace!(encrypted = ?encrypted_authenticator, "AP_REQ authenticator");
 
     Ok(ApReq::from(ApReqInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -843,7 +839,7 @@ pub fn get_mech_list() -> MechTypeList {
     MechTypeList::from(vec![MechType::from(oids::ms_krb5()), MechType::from(oids::krb5())])
 }
 
-#[instrument(level = "trace", ret)]
+#[instrument(level = "trace", ret, skip_all)]
 pub fn generate_krb_priv_request(
     ticket: Ticket,
     session_key: &Secret<Vec<u8>>,
@@ -877,12 +873,8 @@ pub fn generate_krb_priv_request(
 
     let enc_part = cipher.encrypt(encryption_key, KRB_PRIV_ENC_PART, &encoded_krb_priv)?;
 
-    trace!(?encryption_key, ?encryption_type, "KRB_PRIV encryption params",);
-    trace!(
-        plain = ?encoded_krb_priv,
-        encrypted = ?enc_part,
-        "KRB_PRIV encrypted part",
-    );
+    trace!(?encryption_type, "KRB_PRIV encryption params",);
+    trace!(encrypted = ?enc_part, "KRB_PRIV encrypted part");
 
     let krb_priv = KrbPriv::from(KrbPrivInner {
         pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
@@ -903,6 +895,7 @@ pub fn generate_krb_priv_request(
 #[cfg(test)]
 mod tests {
     use picky_krb::constants::types::NT_PRINCIPAL;
+    use picky_krb::data_types::TicketInner;
 
     use super::*;
 
@@ -1105,5 +1098,101 @@ mod tests {
             timestamp - Duration::milliseconds(123)
         );
         assert_eq!(decoded.pausec.0.unwrap().0.0, 123_000_u32.to_be_bytes());
+    }
+
+    #[derive(Clone, Default)]
+    struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for CapturedLogs {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn krb_string(value: &str) -> KerberosStringAsn1 {
+        KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap())
+    }
+
+    fn principal() -> PrincipalName {
+        PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![krb_string("alice")])),
+        }
+    }
+
+    #[test]
+    fn krb_priv_request_does_not_trace_new_password_or_subkey() {
+        let new_password = b"hunter2-new-password";
+        let sub_key = vec![0xA5_u8; 32];
+        let session_key = Secret::from(vec![0x5A_u8; 32]);
+
+        let ticket = Ticket::from(TicketInner {
+            tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+            realm: ExplicitContextTag1::from(krb_string("EXAMPLE.COM")),
+            sname: ExplicitContextTag2::from(principal()),
+            enc_part: ExplicitContextTag3::from(EncryptedData {
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                kvno: Optional::from(None),
+                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(vec![0x11; 16])),
+            }),
+        });
+        let authenticator = Authenticator::from(AuthenticatorInner {
+            authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
+            crealm: ExplicitContextTag1::from(krb_string("EXAMPLE.COM")),
+            cname: ExplicitContextTag2::from(principal()),
+            cksum: Optional::from(None),
+            cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0])),
+            ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(
+                OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+            ))),
+            subkey: Optional::from(Some(ExplicitContextTag6::from(EncryptionKey {
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key.clone())),
+            }))),
+            seq_number: Optional::from(None),
+            authorization_data: Optional::from(None),
+        });
+        let enc_params = EncryptionParams {
+            encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
+            ..EncryptionParams::default_for_client()
+        };
+
+        let logs = CapturedLogs::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_writer({
+                let logs = logs.clone();
+                move || logs.clone()
+            })
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            generate_krb_priv_request(
+                ticket,
+                &session_key,
+                new_password,
+                &authenticator,
+                &enc_params,
+                1,
+                "HOST",
+            )
+            .expect("generate KRB_PRIV request");
+        });
+
+        let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+        assert!(!output.is_empty(), "the trace subscriber captured nothing");
+        // Byte slices are rendered by `Debug` as `[a, b, ...]` and ASN.1 octet strings as `0xabcd...`.
+        for (name, secret) in [("new password", &new_password[..]), ("sub-session key", &sub_key[..])] {
+            let list = format!("{secret:?}");
+            let hex: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
+            for rendered in [list, hex] {
+                assert!(!output.contains(&rendered), "trace output leaks the {name}: {output}");
+            }
+        }
     }
 }
