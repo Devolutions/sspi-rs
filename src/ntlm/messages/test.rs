@@ -1,6 +1,8 @@
 use std::sync::LazyLock;
 
-use crate::ntlm::{AuthIdentityBuffers, NTLM_VERSION_SIZE};
+use crate::crypto::HASH_SIZE;
+use crate::ntlm::messages::computations::{compute_ntlm_v2_hash, compute_ntlm_v2_response};
+use crate::ntlm::{AuthIdentityBuffers, CHALLENGE_SIZE, NTLM_VERSION_SIZE};
 use crate::*;
 
 pub(crate) const SIGNATURE_SIZE: usize = 8;
@@ -127,3 +129,19 @@ pub(crate) static TEST_CREDENTIALS: LazyLock<AuthIdentityBuffers> = LazyLock::ne
     }
     .into()
 });
+
+/// `NTProofStr` that the server recomputes for [`TEST_CREDENTIALS`] when the challenge message
+/// has an all-zero server challenge and the authenticate message carries a zero client blob timestamp.
+pub(crate) fn nt_proof_for_zeroed_challenge(target_info: &[u8], client_challenge: &[u8]) -> [u8; HASH_SIZE] {
+    let ntlm_v2_hash = compute_ntlm_v2_hash(&TEST_CREDENTIALS).unwrap();
+    let (nt_challenge_response, _) = compute_ntlm_v2_response(
+        client_challenge,
+        &[0x00; CHALLENGE_SIZE],
+        target_info,
+        ntlm_v2_hash.as_ref(),
+        0,
+    )
+    .unwrap();
+
+    *nt_challenge_response.first_chunk().unwrap()
+}
