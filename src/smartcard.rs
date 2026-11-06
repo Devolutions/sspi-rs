@@ -19,6 +19,7 @@ use picky::key::PrivateKey;
 use uuid::Uuid;
 use winscard::SmartCard as PivSmartCard;
 
+use crate::pk_init::SigningScheme;
 use crate::{Error, ErrorKind, Result, Secret, SmartCardIdentity, SmartCardType};
 
 /// Smart cad API to use.
@@ -68,6 +69,8 @@ impl fmt::Debug for SmartCardApi {
 pub(crate) struct SmartCard {
     smart_card_type: SmartCardApi,
     pin: Secret<Vec<u8>>,
+    /// Signature scheme determined by the type of the smart card certificate key.
+    signing_scheme: SigningScheme,
 }
 
 impl SmartCard {
@@ -86,6 +89,7 @@ impl SmartCard {
         } = credentials;
 
         let user_pin = user_pin.clone();
+        let signing_scheme = SigningScheme::from_certificate(certificate)?;
 
         match scard_type {
             SmartCardType::Emulated { scard_pin } => {
@@ -104,11 +108,12 @@ impl SmartCard {
                     user_pin,
                     private_key,
                     picky_asn1_der::to_vec(certificate)?,
+                    signing_scheme,
                 )
             }
             #[cfg(not(target_arch = "wasm32"))]
             SmartCardType::SystemProvided { pkcs11_module_path } => {
-                Self::new_system_provided(pkcs11_module_path, user_pin, reader_name.clone())
+                Self::new_system_provided(pkcs11_module_path, user_pin, reader_name.clone(), signing_scheme)
             }
             #[cfg(target_os = "windows")]
             SmartCardType::WindowsNative => Self::new_windows_native(
@@ -117,6 +122,7 @@ impl SmartCard {
                     .as_ref()
                     .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?
                     .to_owned(),
+                signing_scheme,
             ),
         }
     }
@@ -128,6 +134,7 @@ impl SmartCard {
         user_pin: Secret<Vec<u8>>,
         private_key: PrivateKey,
         auth_cert_der: Vec<u8>,
+        signing_scheme: SigningScheme,
     ) -> Result<Self> {
         // This smart card is not backed by any resource manager context, so it has no externally
         // assigned identity: generate a fresh one for it.
@@ -136,21 +143,32 @@ impl SmartCard {
         Ok(Self {
             smart_card_type: SmartCardApi::PivEmulated(Box::new(scard)),
             pin: user_pin,
+            signing_scheme,
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside (Windows API).
     #[cfg(target_os = "windows")]
-    fn new_windows_native(user_pin: Secret<Vec<u8>>, container_name: String) -> Result<Self> {
+    fn new_windows_native(
+        user_pin: Secret<Vec<u8>>,
+        container_name: String,
+        signing_scheme: SigningScheme,
+    ) -> Result<Self> {
         Ok(Self {
             smart_card_type: SmartCardApi::Windows { container_name },
             pin: user_pin,
+            signing_scheme,
         })
     }
 
     /// Creates a new [SmartCard] instance with the system provided smart card inside.
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_system_provided(pkcs11_module_path: &Path, user_pin: Secret<Vec<u8>>, reader_name: String) -> Result<Self> {
+    fn new_system_provided(
+        pkcs11_module_path: &Path,
+        user_pin: Secret<Vec<u8>>,
+        reader_name: String,
+        signing_scheme: SigningScheme,
+    ) -> Result<Self> {
         use cryptoki::context::CInitializeFlags;
 
         let pkcs11 = Pkcs11::new(pkcs11_module_path)?;
@@ -162,13 +180,25 @@ impl SmartCard {
                 reader_name,
             },
             pin: user_pin,
+            signing_scheme,
         })
     }
 
-    /// Signs the provided byte slice using smart card.
-    pub(crate) fn sign(&mut self, digest: Vec<u8>) -> Result<Vec<u8>> {
+    /// Signs the provided data using smart card.
+    ///
+    /// The data is hashed according to the signing scheme of the smart card certificate key.
+    pub(crate) fn sign(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        let digest = self.signing_scheme.digest(data);
+
         match &mut self.smart_card_type {
             SmartCardApi::PivEmulated(scard) => {
+                if self.signing_scheme != SigningScheme::RsaSha1 {
+                    return Err(Error::new(
+                        ErrorKind::OperationNotSupported,
+                        "emulated smart cards support only RSA keys",
+                    ));
+                }
+
                 scard.verify_pin(self.pin.as_ref())?;
                 Ok(scard.sign_hashed(digest)?)
             }
@@ -198,16 +228,22 @@ impl SmartCard {
                 let pin = AuthPin::new(pin.into());
                 session.login(UserType::User, Some(&pin))?;
 
-                let objects = session.find_objects(&[
-                    Attribute::Class(ObjectClass::PRIVATE_KEY),
-                    Attribute::KeyType(KeyType::RSA),
-                ])?;
+                let (key_type, mechanism, data_to_sign) = match self.signing_scheme {
+                    // PKCS#1 v1.5 signature over the DER-encoded `DigestInfo`.
+                    SigningScheme::RsaSha1 => (KeyType::RSA, Mechanism::RsaPkcs, encode_digest(digest)?),
+                    // `CKM_ECDSA` signs the raw digest.
+                    SigningScheme::EcdsaP256Sha256 => (KeyType::EC, Mechanism::Ecdsa, digest),
+                };
 
-                let data_to_sign = encode_digest(digest)?;
+                let objects = session
+                    .find_objects(&[Attribute::Class(ObjectClass::PRIVATE_KEY), Attribute::KeyType(key_type)])?;
 
                 for private_key in objects {
-                    if let Ok(signature) = session.sign(&Mechanism::RsaPkcs, private_key, &data_to_sign) {
-                        return Ok(signature);
+                    if let Ok(signature) = session.sign(&mechanism, private_key, &data_to_sign) {
+                        return match self.signing_scheme {
+                            SigningScheme::RsaSha1 => Ok(signature),
+                            SigningScheme::EcdsaP256Sha256 => ecdsa_signature_to_der(&signature),
+                        };
                     }
                 }
 
@@ -219,9 +255,49 @@ impl SmartCard {
                 ))
             }
             #[cfg(target_os = "windows")]
-            SmartCardApi::Windows { container_name } => sign_data_win_api(container_name, self.pin.as_ref(), &digest),
+            SmartCardApi::Windows { container_name } => {
+                if self.signing_scheme != SigningScheme::RsaSha1 {
+                    return Err(Error::new(
+                        ErrorKind::OperationNotSupported,
+                        "EC keys are not supported by the Windows native smart card API yet",
+                    ));
+                }
+
+                sign_data_win_api(container_name, self.pin.as_ref(), &digest)
+            }
         }
     }
+}
+
+/// Converts the raw ECDSA signature returned by PKCS#11 into the DER-encoded `ECDSA-Sig-Value`.
+///
+/// [PKCS #11 Current Mechanisms Specification, ECDSA](https://docs.oasis-open.org/pkcs11/pkcs11-curr/v3.0/pkcs11-curr-v3.0.html):
+/// > The signature octets correspond to the concatenation of the ECDSA values r and s, both represented as an octet string of equal length.
+///
+/// [RFC 5480, ECDSA-Sig-Value](https://www.rfc-editor.org/rfc/rfc5480#section-2.2.3)
+fn ecdsa_signature_to_der(raw_signature: &[u8]) -> Result<Vec<u8>> {
+    use picky_asn1::wrapper::IntegerAsn1;
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct EcdsaSigValue {
+        r: IntegerAsn1,
+        s: IntegerAsn1,
+    }
+
+    if raw_signature.is_empty() || !raw_signature.len().is_multiple_of(2) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "invalid raw ECDSA signature length",
+        ));
+    }
+
+    let (r, s) = raw_signature.split_at(raw_signature.len() / 2);
+
+    Ok(picky_asn1_der::to_vec(&EcdsaSigValue {
+        r: IntegerAsn1::from_bytes_be_unsigned(r.to_vec()),
+        s: IntegerAsn1::from_bytes_be_unsigned(s.to_vec()),
+    })?)
 }
 
 /// Constructs the [DigestInfo] structure and encodes it into byte vector.
@@ -360,4 +436,45 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
     })?;
 
     Ok(signature)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ecdsa_signature_to_der;
+
+    #[test]
+    fn ecdsa_signature_conversion() {
+        let mut raw = vec![0x11; 32];
+        raw.extend_from_slice(&[0x22; 32]);
+
+        let der = ecdsa_signature_to_der(&raw).unwrap();
+
+        let mut expected = vec![0x30, 0x44, 0x02, 0x20];
+        expected.extend_from_slice(&[0x11; 32]);
+        expected.extend_from_slice(&[0x02, 0x20]);
+        expected.extend_from_slice(&[0x22; 32]);
+        assert_eq!(expected, der);
+    }
+
+    #[test]
+    fn ecdsa_signature_conversion_pads_and_trims_integers() {
+        // `r` has the high bit set (needs a leading zero byte), `s` has leading zeros (must be trimmed).
+        let mut raw = vec![0x80; 32];
+        raw.extend_from_slice(&[0x00, 0x00]);
+        raw.extend_from_slice(&[0x33; 30]);
+
+        let der = ecdsa_signature_to_der(&raw).unwrap();
+
+        let mut expected = vec![0x30, 0x44 - 2 + 1, 0x02, 0x21, 0x00];
+        expected.extend_from_slice(&[0x80; 32]);
+        expected.extend_from_slice(&[0x02, 0x1e]);
+        expected.extend_from_slice(&[0x33; 30]);
+        assert_eq!(expected, der);
+    }
+
+    #[test]
+    fn ecdsa_signature_conversion_rejects_invalid_length() {
+        ecdsa_signature_to_der(&[]).unwrap_err();
+        ecdsa_signature_to_der(&[1, 2, 3]).unwrap_err();
+    }
 }
