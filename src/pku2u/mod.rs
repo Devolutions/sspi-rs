@@ -49,7 +49,7 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, RRC};
 use crate::pk_init::{
-    DhParameters, GenerateAsPaDataOptions, extract_server_dh_public_key, generate_pa_datas_for_as_req,
+    DhParameters, GenerateAsPaDataOptions, KeyAgreement, extract_server_dh_public_key, generate_pa_datas_for_as_req,
 };
 use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_peer_p2p_certificate};
 use crate::pku2u::extractors::{extract_krb_rep, extract_krb_result, extract_session_key_and_nonce_from_as_rep};
@@ -1162,7 +1162,7 @@ impl Pku2u {
                 let pa_datas = generate_pa_datas_for_as_req(&mut GenerateAsPaDataOptions {
                     p2p_cert: self.config.p2p_certificate.clone(),
                     kdc_req_body: &kdc_req_body,
-                    dh_parameters: self.dh_parameters.clone(),
+                    key_agreement: KeyAgreement::Dh(self.dh_parameters.clone()),
                     sign_data: Box::new(move |data_to_sign| {
                         private_key.sign(data_to_sign).map_err(|err| {
                             Error::new(
