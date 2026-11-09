@@ -215,7 +215,7 @@ impl ClientPrincipal {
 ///
 /// The structure is defined in [draft-ietf-krb-wg-user2user][user2user].
 ///
-/// [user2user]: https://datatracker.ietf.org/doc/html/draft-ietf-krb-wg-user2user
+/// [user2user]: https://datatracker.ietf.org/doc/html/draft-swift-win2k-krb-user2user-01
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Debug, PartialEq, serde::Serialize))]
 struct TgtReqWithRealm {
@@ -671,7 +671,9 @@ mod tests {
     use crate::generator::{GeneratorState, NetworkRequest};
     use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
     use crate::kerberos::test_data::{TGT_REQ_TOKEN_WITH_REALM, fake_server};
-    use crate::{AuthIdentity, Credentials, DataRepresentation, KeytabIdentity, Sspi, SspiImpl, Username};
+    use crate::{
+        AuthIdentity, Credentials, DataRepresentation, KdcResolution, KeytabIdentity, Sspi, SspiImpl, Username,
+    };
 
     fn password_user() -> CredentialsBuffers {
         CredentialsBuffers::try_from(Credentials::AuthIdentity(AuthIdentity {
@@ -707,8 +709,8 @@ mod tests {
         context_requirements: ServerRequestFlags,
     ) -> Result<NetworkRequest> {
         let mut kerberos = fake_server();
-        kerberos.state = KerberosState::TgtExchange;
-        kerberos.kdc_url = Some(Url::parse("tcp://192.168.1.103:88").unwrap());
+        kerberos.state = KerberosState::Server(KerberosServerState::TgtExchange);
+        kerberos.config.kdc_resolution = KdcResolution::KdcUrl(Some(Url::parse("tcp://192.168.1.103:88").unwrap()));
         kerberos.server.as_mut().unwrap().user = Some(user);
 
         let mut credentials_handle: Option<CredentialsBuffers> = None;
@@ -811,7 +813,7 @@ mod tests {
         let mut kerberos = fake_server();
         kerberos.client_principal = Some(ClientPrincipal::from_ticket(&cname, &crealm));
 
-        kerberos.state = KerberosState::ApExchange;
+        kerberos.state = KerberosState::Server(KerberosServerState::ApExchange);
         assert!(kerberos.client_principal().is_none());
 
         kerberos.state = KerberosState::Final;

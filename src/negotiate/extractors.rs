@@ -111,11 +111,12 @@ mod tests {
     use crate::auth_identity::AuthIdentityBuffers;
     use crate::generator::GeneratorState;
     use crate::kerberos::KerberosState;
+    use crate::kerberos::server::KerberosServerState;
     use crate::kerberos::test_data::{TGT_REQ_TOKEN_WITH_REALM, fake_server};
     use crate::negotiate::generators::generate_neg_token_init;
     use crate::negotiate::{NegotiateMode, NegotiateState, PackageListConfig};
     use crate::{
-        AcceptSecurityContextResult, BufferType, DataRepresentation, SecurityBuffer, SecurityStatus,
+        AcceptSecurityContextResult, BufferType, DataRepresentation, KdcResolution, SecurityBuffer, SecurityStatus,
         ServerRequestFlags, Sspi, SspiImpl,
     };
 
@@ -149,6 +150,7 @@ mod tests {
             mic_verified: false,
             mic_needed: true,
             authorizes_externally: false,
+            remote_guard: false,
         }
     }
 
@@ -218,8 +220,8 @@ mod tests {
         let NegotiatedProtocol::Kerberos(kerberos) = &mut negotiate.protocol else {
             panic!("a Kerberos acceptor is expected");
         };
-        kerberos.state = KerberosState::TgtExchange;
-        kerberos.kdc_url = Some(Url::parse("tcp://192.168.1.103:88").unwrap());
+        kerberos.state = KerberosState::Server(KerberosServerState::TgtExchange);
+        kerberos.config.kdc_resolution = KdcResolution::KdcUrl(Some(Url::parse("tcp://192.168.1.103:88").unwrap()));
         negotiate.state = NegotiateState::Initial;
 
         let token = picky_asn1_der::to_vec(

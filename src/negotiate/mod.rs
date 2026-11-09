@@ -1109,6 +1109,7 @@ mod u2u_tests {
             mic_verified: false,
             mic_needed: true,
             authorizes_externally: false,
+            remote_guard: false,
         }
     }
 
