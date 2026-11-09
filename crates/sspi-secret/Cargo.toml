@@ -1,0 +1,22 @@
+[package]
+name = "sspi-secret"
+version = "0.1.0"
+edition = "2024"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/devolutions/sspi-rs"
+repository = "https://github.com/devolutions/sspi-rs"
+authors = ["Devolutions Inc. <infos@devolutions.net>"]
+description = "Wrappers that keep secrets out of logs and zeroize them on drop"
+
+[features]
+# Adds `SecretPrivateKey`, a wrapper for `picky` private keys.
+picky = ["dep:picky"]
+
+[dependencies]
+picky = { version = "=7.0.0-rc.27", default-features = false, optional = true }
+serde = { version = "1", features = ["derive"] }
+zeroize = { version = "1.8", features = ["zeroize_derive"] }
+
+[lints]
+workspace = true

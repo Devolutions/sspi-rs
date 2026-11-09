@@ -782,6 +782,7 @@ version = "0.1.0"
 dependencies = [
  "dpapi-transport",
  "futures-util",
+ "sspi-secret",
  "tokio",
  "tokio-tungstenite",
  "tracing",
@@ -809,6 +810,7 @@ dependencies = [
 name = "dpapi-transport"
 version = "0.1.0"
 dependencies = [
+ "sspi-secret",
  "thiserror",
  "url",
  "uuid",
@@ -3001,6 +3003,7 @@ dependencies = [
  "serde",
  "sha1",
  "sha2",
+ "sspi-secret",
  "static_assertions",
  "time",
  "tokio",
@@ -3049,6 +3052,15 @@ dependencies = [
  "widestring",
  "windows",
  "winscard",
+]
+
+[[package]]
+name = "sspi-secret"
+version = "0.1.0"
+dependencies = [
+ "picky",
+ "serde",
+ "zeroize",
 ]
 
 [[package]]
