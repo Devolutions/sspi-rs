@@ -34,7 +34,7 @@ pub(crate) fn read_authenticate(context: &mut Ntlm, mut stream: impl Read) -> cr
     let (mut message_fields, flags) = read_header(&mut buffer)?;
     context.flags = flags;
     let _version = try_read_version(context.flags, &mut buffer)?;
-    let mic = read_payload(flags, &mut message_fields, &mut buffer)?;
+    let mic = read_payload(&mut message_fields, &mut buffer)?;
     let message = buffer.into_inner();
 
     let (authenticate_message, updated_identity) = process_message_fields(
@@ -111,23 +111,20 @@ fn read_header(mut buffer: impl Read) -> crate::Result<(AuthenticateMessageField
 }
 
 fn read_payload<T>(
-    negotiate_flags: NegotiateFlags,
     message_fields: &mut AuthenticateMessageFields,
     buffer: &mut io::Cursor<T>,
 ) -> crate::Result<Option<Mic>>
 where
     io::Cursor<T>: Read + io::Seek,
 {
-    let mic = if negotiate_flags.contains(NegotiateFlags::NTLM_SSP_NEGOTIATE_TARGET_INFO) {
-        let mic_offset = u8::try_from(buffer.position())
-            .map_err(|_| crate::Error::new(crate::ErrorKind::InvalidToken, "MIC offset exceeds u8"))?;
-
+    // Whether the message carries a MIC is decided by `MsvAvFlags` in the NT response, which the NT proof authenticates.
+    // The negotiate flags are not authenticated until the MIC is verified, so they cannot gate the MIC.
+    // Thus, the bytes at the MIC position are read unconditionally and `process_message_fields` decides whether to require them.
+    let mic = u8::try_from(buffer.position()).ok().and_then(|mic_offset| {
         let mut mic_value = [0x00; MESSAGE_INTEGRITY_CHECK_SIZE];
-        buffer.read_exact(&mut mic_value)?;
+        buffer.read_exact(&mut mic_value).ok()?;
         Some(Mic::new(mic_value, mic_offset))
-    } else {
-        None
-    };
+    });
 
     message_fields.domain_name.read_buffer_from_cursor(buffer)?;
     message_fields.user_name.read_buffer_from_cursor(buffer)?;
@@ -155,17 +152,22 @@ fn process_message_fields(
         ));
     }
 
-    let (target_info, client_challenge) = read_ntlm_v2_response(message_fields.nt_challenge_response.buffer.as_ref())?;
+    let NtlmV2Response {
+        nt_proof,
+        target_info,
+        client_challenge,
+        timestamp,
+    } = read_ntlm_v2_response(message_fields.nt_challenge_response.buffer.as_ref())?;
 
     let av_pairs = AvPair::buffer_to_av_pairs(target_info.as_ref())?;
 
-    let mic = if mic.is_some() {
-        let challenge_response_av_flags = get_av_flags_from_response(&av_pairs)?;
-        if challenge_response_av_flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
-            mic
-        } else {
-            None
-        }
+    let mic = if get_av_flags_from_response(&av_pairs)?.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK) {
+        Some(mic.ok_or_else(|| {
+            crate::Error::new(
+                crate::ErrorKind::MessageAltered,
+                "MIC is announced in MsvAvFlags but missing from the authenticate message",
+            )
+        })?)
     } else {
         None
     };
@@ -224,6 +226,8 @@ fn process_message_fields(
             mic,
             target_info,
             client_challenge,
+            nt_proof,
+            timestamp,
             encrypted_random_session_key,
         ),
         identity,

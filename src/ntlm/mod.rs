@@ -128,6 +128,11 @@ struct AuthenticateMessage {
     mic: Option<Mic>,
     target_info: Vec<u8>,
     client_challenge: [u8; CHALLENGE_SIZE],
+    /// `NTProofStr` the peer sent (or computed, on the client side) in the NTLMv2 response.
+    nt_proof: [u8; HASH_SIZE],
+    /// `Time` field of the NTLMv2 client blob.
+    /// The proof covers it, and a client may fill it from its own clock instead of the challenge's `MsvAvTimestamp`.
+    timestamp: u64,
     encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]>,
 }
 
@@ -812,6 +817,8 @@ impl AuthenticateMessage {
         mic: Option<Mic>,
         target_info: Vec<u8>,
         client_challenge: [u8; CHALLENGE_SIZE],
+        nt_proof: [u8; HASH_SIZE],
+        timestamp: u64,
         encrypted_random_session_key: Option<[u8; ENCRYPTED_RANDOM_SESSION_KEY_SIZE]>,
     ) -> Self {
         Self {
@@ -819,6 +826,8 @@ impl AuthenticateMessage {
             mic,
             target_info,
             client_challenge,
+            nt_proof,
+            timestamp,
             encrypted_random_session_key,
         }
     }

@@ -349,6 +349,30 @@ fn get_av_flags_from_response_returns_empty_flags_if_flags_are_absent() {
     assert_eq!(expected_flags, flags);
 }
 
+fn av_flags_from_response_with_raw_flags(raw_flags: u32) -> MsvAvFlags {
+    let buffer = AvPair::list_to_buffer(&[AvPair::Flags(raw_flags), AvPair::EOL]).unwrap();
+    let av_pairs = AvPair::buffer_to_av_pairs(&buffer).unwrap();
+
+    get_av_flags_from_response(&av_pairs).unwrap()
+}
+
+// MS-NLMP §2.2.2.1 also defines 0x1 and 0x4, which this crate does not declare.
+// oracle: spec MS-NLMP §2.2.2.1 (MsvAvFlags)
+#[test]
+fn get_av_flags_from_response_keeps_mic_flag_next_to_target_spn_untrusted_flag() {
+    let flags = av_flags_from_response_with_raw_flags(0x0000_0006);
+
+    assert!(flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK));
+}
+
+// oracle: spec MS-NLMP §2.2.2.1 (MsvAvFlags)
+#[test]
+fn get_av_flags_from_response_keeps_mic_flag_next_to_constrained_authentication_flag() {
+    let flags = av_flags_from_response_with_raw_flags(0x0000_0003);
+
+    assert!(flags.contains(MsvAvFlags::MESSAGE_INTEGRITY_CHECK));
+}
+
 #[test]
 fn av_pair_list_to_buffer_with_all_possible_pairs() {
     let expected_buffer = [

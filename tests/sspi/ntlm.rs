@@ -1,4 +1,4 @@
-use sspi::Ntlm;
+use sspi::{AuthIdentity, ErrorKind, Ntlm};
 
 use crate::common::{
     CREDENTIALS, CredentialsProxyImpl, check_messages_encryption, create_client_credentials_handle,
@@ -27,6 +27,36 @@ fn successful_ntlm_authentication_with_client_auth_data() {
     set_identity_and_try_complete_authentication(&mut server, server_status, &mut credentials_proxy).unwrap();
 
     check_messages_encryption(&mut client, &mut server).unwrap();
+}
+
+// The sspi client always sends a MIC, so this wrong-password case is also rejected by the MIC check.
+// The MIC-less path of #172 is covered by the unit tests in `src/ntlm/messages/server/test.rs`.
+#[test]
+fn ntlm_authentication_fails_when_server_knows_different_password() {
+    let server_side_credentials = AuthIdentity {
+        username: CREDENTIALS.username.clone(),
+        password: String::from("NotThePassword").into(),
+    };
+    let mut credentials_proxy = CredentialsProxyImpl::new(&server_side_credentials);
+
+    let mut client = Ntlm::new();
+    let client_credentials_handle = create_client_credentials_handle(&mut client, Some(&*CREDENTIALS)).unwrap();
+
+    let mut server = Ntlm::new();
+    let server_credentials_handle = create_server_credentials_handle(&mut server).unwrap();
+
+    let (client_status, server_status) = process_authentication_without_complete(
+        &mut client,
+        client_credentials_handle,
+        &mut server,
+        server_credentials_handle,
+    )
+    .unwrap();
+    try_complete_authentication(&mut client, client_status).unwrap();
+    let err =
+        set_identity_and_try_complete_authentication(&mut server, server_status, &mut credentials_proxy).unwrap_err();
+
+    assert_eq!(err.error_type, ErrorKind::LogonDenied);
 }
 
 mod nt_hash {
