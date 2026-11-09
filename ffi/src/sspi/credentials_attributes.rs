@@ -5,7 +5,7 @@ use std::slice::from_raw_parts;
 use ffi_types::sspi::SecWChar;
 pub use ffi_types::sspi::{SecPkgCredentialsKdcProxySettingsW, SecPkgCredentialsKdcUrlA, SecPkgCredentialsKdcUrlW};
 use libc::c_void;
-use sspi::{Error, ErrorKind, Result};
+use sspi::{Error, ErrorKind, Result, Secret};
 
 use super::utils::hostname;
 
@@ -13,7 +13,7 @@ use super::utils::hostname;
 pub struct KdcProxySettings {
     pub proxy_server: String,
     #[allow(dead_code)]
-    pub client_tls_cred: Option<String>,
+    pub client_tls_cred: Option<Secret<String>>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -126,7 +126,7 @@ pub unsafe fn extract_kdc_proxy_settings(p_buffer: NonNull<c_void>) -> Result<Kd
 
         let client_tls_cred = String::from_utf16(client_tls_cred_data)?;
 
-        Some(client_tls_cred)
+        Some(Secret::from(client_tls_cred))
     } else {
         None
     };

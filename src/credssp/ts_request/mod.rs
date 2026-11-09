@@ -11,7 +11,7 @@ use widestring::Utf16String;
 
 use super::CredSspMode;
 use crate::utf16string::ZeroizedUtf16String;
-use crate::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Utf16StringExt, ber};
+use crate::{AuthIdentityBuffers, CredentialsBuffers, Error, ErrorKind, Result, Secret, Utf16StringExt, ber};
 
 pub(super) const TS_REQUEST_VERSION: u32 = 6;
 
@@ -255,7 +255,7 @@ impl TsRequest {
 
 #[instrument(ret, level = "debug")]
 #[cfg(feature = "scard")]
-fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -> Result<Vec<u8>> {
+fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -> Result<Secret<Vec<u8>>> {
     use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
     use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
     use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
@@ -287,7 +287,7 @@ fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -
         domain_hint: Optional::from(None),
     };
 
-    Ok(picky_asn1_der::to_vec(&smart_card_creds)?)
+    Ok(Secret::new(picky_asn1_der::to_vec(&smart_card_creds)?))
 }
 
 #[instrument(level = "trace", ret)]
@@ -326,14 +326,17 @@ pub fn write_ts_credentials(credentials: &CredentialsBuffers, cred_ssp_mode: Cre
 
     let ts_creds = TsCredentials {
         cred_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![creds_type])),
-        credentials: ExplicitContextTag1::from(OctetStringAsn1::from(encoded_credentials)),
+        credentials: ExplicitContextTag1::from(OctetStringAsn1::from(Vec::clone(encoded_credentials.as_ref()))),
     };
 
     Ok(picky_asn1_der::to_vec(&ts_creds)?)
 }
 
 #[instrument(ret, level = "debug")]
-fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: CredSspMode) -> io::Result<Vec<u8>> {
+fn write_password_credentials(
+    credentials: &AuthIdentityBuffers,
+    cred_ssp_mode: CredSspMode,
+) -> io::Result<Secret<Vec<u8>>> {
     let empty_identity = AuthIdentityBuffers::default();
     let identity = match cred_ssp_mode {
         CredSspMode::WithCredentials => credentials,
@@ -360,7 +363,7 @@ fn write_password_credentials(credentials: &AuthIdentityBuffers, cred_ssp_mode: 
     /* [2] password (OCTET STRING) */
     ber::write_sequence_octet_string(&mut buffer, 2, identity.password.as_ref().0.as_bytes_le())?;
 
-    Ok(buffer)
+    Ok(Secret::new(buffer))
 }
 
 fn read_password_credentials(data: impl AsRef<[u8]>) -> Result<AuthIdentityBuffers> {

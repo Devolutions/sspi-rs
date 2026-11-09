@@ -1,5 +1,6 @@
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
+use sspi::log_capture::LogCapture;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
@@ -42,6 +43,11 @@ fn test_readonly_buffers_encryption(client: &mut SspiContext, server: &mut SspiC
 }
 
 fn run_ntlm(config: NtlmConfig, target_name: Option<&str>, username: &str, password: &str) {
+    let capture = LogCapture::start(tracing::Level::DEBUG);
+    if !password.is_empty() {
+        LogCapture::record_secret("password", password.as_bytes());
+    }
+
     let credentials = Credentials::AuthIdentity(AuthIdentity {
         username: Username::parse(username).unwrap(),
         password: Secret::from(password.to_owned()),
@@ -104,10 +110,16 @@ fn run_ntlm(config: NtlmConfig, target_name: Option<&str>, username: &str, passw
         output_token[0].buffer.clear();
 
         if status == SecurityStatus::Ok {
+            LogCapture::record_secret(
+                "NTLM session key",
+                client.query_context_session_key().unwrap().session_key.as_ref(),
+            );
             test_encryption(&mut client, &mut server);
             test_stream_buffer_encryption(&mut client, &mut server);
             test_rpc_request_encryption(&mut client, &mut server);
             test_readonly_buffers_encryption(&mut client, &mut server);
+
+            capture.assert_no_secrets();
             return;
         }
     }

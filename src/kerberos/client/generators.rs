@@ -350,8 +350,12 @@ pub fn generate_as_req_kdc_body(options: &GenerateAsReqOptions<'_>) -> Result<Kd
     })
 }
 
-#[instrument(level = "debug", ret, skip_all)]
+// The returned request carries the encrypted timestamp, which is derived from the user's password
+// and allows guessing the password offline. Only `TRACE` logs it.
+#[instrument(level = "trace", ret, skip_all)]
 pub fn generate_as_req(pa_datas: Vec<PaData>, kdc_req_body: KdcReqBody) -> AsReq {
+    debug!(padata_count = pa_datas.len(), "Generating AS_REQ");
+
     AsReq::from(KdcReq {
         pvno: ExplicitContextTag1::from(IntegerAsn1::from(vec![KERBEROS_VERSION])),
         msg_type: ExplicitContextTag2::from(IntegerAsn1::from(vec![AS_REQ_MSG_TYPE])),
@@ -898,6 +902,7 @@ mod tests {
     use picky_krb::data_types::TicketInner;
 
     use super::*;
+    use crate::log_capture::LogCapture;
 
     #[test]
     fn nonce_is_minimal_der() {
@@ -1100,20 +1105,6 @@ mod tests {
         assert_eq!(decoded.pausec.0.unwrap().0.0, 123_000_u32.to_be_bytes());
     }
 
-    #[derive(Clone, Default)]
-    struct CapturedLogs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
-
-    impl std::io::Write for CapturedLogs {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     fn krb_string(value: &str) -> KerberosStringAsn1 {
         KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap())
     }
@@ -1162,37 +1153,21 @@ mod tests {
             ..EncryptionParams::default_for_client()
         };
 
-        let logs = CapturedLogs::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::TRACE)
-            .with_ansi(false)
-            .with_writer({
-                let logs = logs.clone();
-                move || logs.clone()
-            })
-            .finish();
-        tracing::subscriber::with_default(subscriber, || {
-            generate_krb_priv_request(
-                ticket,
-                &session_key,
-                new_password,
-                &authenticator,
-                &enc_params,
-                1,
-                "HOST",
-            )
-            .expect("generate KRB_PRIV request");
-        });
+        let capture = LogCapture::start(tracing::Level::TRACE);
+        LogCapture::record_secret("new password", new_password);
+        LogCapture::record_secret("sub-session key", &sub_key);
 
-        let output = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
-        assert!(!output.is_empty(), "the trace subscriber captured nothing");
-        // Byte slices are rendered by `Debug` as `[a, b, ...]` and ASN.1 octet strings as `0xabcd...`.
-        for (name, secret) in [("new password", &new_password[..]), ("sub-session key", &sub_key[..])] {
-            let list = format!("{secret:?}");
-            let hex: String = secret.iter().map(|byte| format!("{byte:02x}")).collect();
-            for rendered in [list, hex] {
-                assert!(!output.contains(&rendered), "trace output leaks the {name}: {output}");
-            }
-        }
+        generate_krb_priv_request(
+            ticket,
+            &session_key,
+            new_password,
+            &authenticator,
+            &enc_params,
+            1,
+            "HOST",
+        )
+        .expect("generate KRB_PRIV request");
+
+        capture.assert_no_secrets();
     }
 }

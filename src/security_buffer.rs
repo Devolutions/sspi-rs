@@ -1,7 +1,7 @@
 use std::fmt;
 use std::mem::take;
 
-use crate::{BufferType, Error, ErrorKind, Result, SecurityBufferFlags, SecurityBufferType};
+use crate::{BufferType, Error, ErrorKind, Result, SecurityBuffer, SecurityBufferFlags, SecurityBufferType};
 
 /// A security buffer type with a mutable reference to the buffer data.
 /// unflagged
@@ -418,4 +418,77 @@ fn write_buffer(buf: &[u8], buf_name: &str, f: &mut fmt::Formatter<'_>) -> fmt::
     write!(f, "{buf_name}: ")?;
     f.write_str("0x")?;
     buf.iter().try_for_each(|byte| write!(f, "{byte:02X}"))
+}
+
+/// Formats security buffers as their types and lengths, leaving the contents out.
+///
+/// Buffer contents can be plaintext application data or key material.
+/// A log at `DEBUG` level or above must use this wrapper instead of the buffers' own `Debug` output.
+/// Obtain it with [`BufferSummaryExt::summary`].
+pub(crate) struct BufferSummary<'a, B>(&'a [B]);
+
+/// Adds [`summary`](BufferSummaryExt::summary) to slices of security buffers, so that a `tracing` field can be written
+/// as `buffers = ?message.summary()`.
+pub(crate) trait BufferSummaryExt<B> {
+    /// Returns a `Debug` view of the buffers that shows only their types and lengths.
+    fn summary(&self) -> BufferSummary<'_, B>;
+}
+
+impl<B> BufferSummaryExt<B> for [B] {
+    fn summary(&self) -> BufferSummary<'_, B> {
+        BufferSummary(self)
+    }
+}
+
+impl fmt::Debug for BufferSummary<'_, SecurityBufferRef<'_>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_summary(f, self.0.iter().map(|buf| (buf.buffer_type(), buf.buf_len())))
+    }
+}
+
+impl fmt::Debug for BufferSummary<'_, SecurityBuffer> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_summary(
+            f,
+            self.0.iter().map(|buf| (buf.buffer_type.buffer_type, buf.buffer.len())),
+        )
+    }
+}
+
+fn write_summary(f: &mut fmt::Formatter<'_>, bufs: impl Iterator<Item = (BufferType, usize)>) -> fmt::Result {
+    f.write_str("[")?;
+    for (idx, (buffer_type, len)) in bufs.enumerate() {
+        if idx != 0 {
+            f.write_str(", ")?;
+        }
+        write!(f, "{buffer_type:?}(len = {len})")?;
+    }
+    f.write_str("]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_of_borrowed_buffers_lists_types_and_lengths_only() {
+        let mut token = [0xDE, 0xAD, 0xBE, 0xEF];
+        let mut data = [0xCA; 3];
+        let buffers = [
+            SecurityBufferRef::token_buf(&mut token),
+            SecurityBufferRef::data_buf(&mut data),
+        ];
+
+        assert_eq!(format!("{:?}", buffers.summary()), "[Token(len = 4), Data(len = 3)]");
+    }
+
+    #[test]
+    fn summary_of_owned_buffers_lists_types_and_lengths_only() {
+        let buffers = [
+            SecurityBuffer::new(vec![0xDE, 0xAD], BufferType::Token),
+            SecurityBuffer::new(Vec::new(), BufferType::Data),
+        ];
+
+        assert_eq!(format!("{:?}", buffers.summary()), "[Token(len = 2), Data(len = 0)]");
+    }
 }

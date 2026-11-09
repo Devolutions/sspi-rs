@@ -5,6 +5,7 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 
 use dpapi_transport::{ConnectOptions, DEFAULT_RPC_PORT, Stream, Transport};
+use secret::Secret;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
@@ -75,10 +76,10 @@ impl NativeTransport {
     async fn ws_connect(
         mut proxy: Url,
         session_id: Uuid,
-        session_token: &str,
+        session_token: &Secret<String>,
     ) -> Result<TokioStream<ErasedReadWrite>, Error> {
         proxy.path_segments_mut().unwrap().extend([session_id.to_string()]);
-        proxy.query_pairs_mut().append_pair("token", session_token);
+        proxy.query_pairs_mut().append_pair("token", session_token.as_ref());
 
         let (ws, _) = tokio_tungstenite::connect_async(proxy.as_str()).await.map_err(|err| {
             error!(?err, "Failed to establish WS connection.");
@@ -147,7 +148,7 @@ impl Transport for NativeTransport {
                 let session_id = Uuid::new_v4();
                 let session_token = get_session_token(session_id, destination.clone()).await?;
 
-                Self::ws_connect(proxy.clone(), session_id, session_token.as_ref()).await
+                Self::ws_connect(proxy.clone(), session_id, &session_token).await
             }
         }
     }

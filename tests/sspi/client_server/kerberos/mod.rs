@@ -20,6 +20,7 @@ use picky_krb::gss_api::{KrbMessage, MechTypeList};
 use picky_krb::messages::ApReq;
 use sspi::credssp::SspiContext;
 use sspi::kerberos::ServerProperties;
+use sspi::log_capture::LogCapture;
 use sspi::network_client::NetworkClient;
 use sspi::{
     AuthIdentity, BufferType, ClientRequestFlags, Credentials, CredentialsBuffers, DataRepresentation, ErrorKind,
@@ -242,6 +243,10 @@ fn run_kerberos(
                 accept_security_context(server, server_credentials_handle, server_flags, token, network_client);
             }
 
+            LogCapture::record_secret(
+                "Kerberos session key",
+                client.query_context_session_key().unwrap().session_key.as_ref(),
+            );
             test_encryption(client, server);
             test_stream_buffer_encryption(client, server);
             test_rpc_request_encryption(client, server);
@@ -299,6 +304,12 @@ fn kerberos_auth() {
         target_name,
         target_service_name,
     } = init_krb_environment();
+
+    let capture = LogCapture::start(tracing::Level::DEBUG);
+    LogCapture::record_secret(
+        "password",
+        credentials.to_auth_identity().unwrap().password.as_ref().as_bytes(),
+    );
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -383,6 +394,8 @@ fn kerberos_auth() {
         2,
         EmptySspiContextValidator,
     );
+
+    capture.assert_no_secrets();
 }
 
 /// Authenticates the test user against a [KdcMock] configured by `configure_kdc`.
@@ -399,6 +412,12 @@ fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure
         target_name,
         target_service_name,
     } = environment;
+
+    let capture = LogCapture::start(tracing::Level::DEBUG);
+    LogCapture::record_secret(
+        "password",
+        credentials.to_auth_identity().unwrap().password.as_ref().as_bytes(),
+    );
 
     let ticket_decryption_key = keys[&UserName(target_service_name.clone())].clone();
 
@@ -462,6 +481,8 @@ fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure
         2,
         EmptySspiContextValidator,
     );
+
+    capture.assert_no_secrets();
 }
 
 /// MIT and Heimdal KDCs send PA-ETYPE-INFO2 only in the pre-authentication error.

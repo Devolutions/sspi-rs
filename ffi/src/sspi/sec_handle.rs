@@ -1990,6 +1990,7 @@ mod tests {
     use num_traits::ToPrimitive;
     use sspi::SecurityStatus::ContinueNeeded;
     use sspi::credssp::SspiContext;
+    use sspi::log_capture::LogCapture;
     use sspi::{
         AuthIdentityBuffers, CredentialsBuffers, ErrorKind, Ntlm, PackageCapabilities, SecurityStatus, U16CString,
         Utf16String, Utf16StringExt,
@@ -2246,6 +2247,10 @@ mod tests {
     #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_w() {
+        const PASSWORD: &str = "password";
+        let capture = LogCapture::start(tracing::Level::DEBUG);
+        LogCapture::record_secret("password", PASSWORD.as_bytes());
+
         let mut pkg_name = "NTLM\0".encode_utf16().collect::<Vec<_>>();
         let mut pkg_info_ptr: PSecPkgInfoW = null_mut::<SecPkgInfoW>();
 
@@ -2306,7 +2311,7 @@ mod tests {
 
         let user = "user".encode_utf16().collect::<Vec<_>>();
         let domain = "domain".encode_utf16().collect::<Vec<_>>();
-        let password = "password".encode_utf16().collect::<Vec<_>>();
+        let password = PASSWORD.encode_utf16().collect::<Vec<_>>();
 
         let user_length = user.len().try_into().expect("user length is a valid u32");
         let domain_length = domain.len().try_into().expect("domain length is a valid u32");
@@ -2488,6 +2493,7 @@ mod tests {
                 let status = unsafe { FreeCredentialsHandle(&mut server_cred_handle) };
                 assert_eq!(status, 0);
 
+                capture.assert_no_secrets();
                 return;
             }
         }
@@ -2499,6 +2505,10 @@ mod tests {
     #[cfg(not(miri))]
     #[test]
     fn initialize_security_context_a() {
+        const PASSWORD: &str = "password";
+        let capture = LogCapture::start(tracing::Level::DEBUG);
+        LogCapture::record_secret("password", PASSWORD.as_bytes());
+
         let pkg_name = "NTLM\0";
         let mut pkg_info_ptr: PSecPkgInfoA = null_mut::<SecPkgInfoA>();
 
@@ -2539,7 +2549,7 @@ mod tests {
 
         let user = "user";
         let domain = "domain";
-        let password = "password";
+        let password = PASSWORD;
 
         let user_length = user.len().try_into().expect("user length is a valid u32");
         let domain_length = domain.len().try_into().expect("domain length is a valid u32");
@@ -2721,6 +2731,7 @@ mod tests {
                 let status = unsafe { FreeCredentialsHandle(&mut server_cred_handle) };
                 assert_eq!(status, 0);
 
+                capture.assert_no_secrets();
                 return;
             }
         }

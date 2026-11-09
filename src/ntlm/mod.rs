@@ -17,6 +17,7 @@ pub use self::config::NtlmConfig;
 use super::channel_bindings::ChannelBindings;
 use crate::crypto::{HASH_SIZE, Rc4, compute_hmac_md5};
 use crate::generator::{GeneratorAcceptSecurityContext, GeneratorInitSecurityContext};
+use crate::security_buffer::BufferSummaryExt as _;
 use crate::utils::{extract_encrypted_data, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
@@ -512,7 +513,7 @@ impl Sspi for Ntlm {
         server::complete_authenticate(self)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
@@ -557,7 +558,7 @@ impl Sspi for Ntlm {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         if self.recv_sealing_key.is_none() {
             self.complete_auth_token(&mut [])?;

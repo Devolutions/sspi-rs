@@ -1,4 +1,4 @@
-# sspi-secret
+# secret
 
 Wrappers that keep secrets out of logs and zeroize them on drop.
 

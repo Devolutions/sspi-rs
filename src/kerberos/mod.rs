@@ -42,6 +42,7 @@ use crate::pk_init::KeyAgreement;
 /// Compatibility re-export; prefer the package-neutral [`crate::rcg`] module.
 #[doc(no_inline)]
 pub use crate::rcg as remote_guard;
+use crate::security_buffer::BufferSummaryExt as _;
 use crate::utils::{extract_encrypted_data, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, BufferType, ContextNames, ContextSizes,
@@ -394,7 +395,7 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn encrypt_message(
         &mut self,
         _flags: crate::EncryptionFlags,
@@ -518,7 +519,7 @@ impl Sspi for Kerberos {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         if self.state != KerberosState::Final {
             return Err(Error::new(

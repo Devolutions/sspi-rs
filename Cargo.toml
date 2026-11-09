@@ -26,7 +26,7 @@ members = [
   "crates/dpapi-fuzzing",
   "crates/dpapi-web",
   "crates/kdc",
-  "crates/sspi-secret",
+  "crates/secret",
 ]
 exclude = [
   "tools/wasm-testcompile",
@@ -81,7 +81,7 @@ unused_result_ok = "warn"
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.4", path = "crates/winscard" }
-sspi-secret = { version = "0.1.0", path = "crates/sspi-secret" }
+secret = { version = "0.1.0", path = "crates/secret" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
@@ -133,7 +133,7 @@ uuid = { version = "1.23", default-features = true, features = ["v4"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
-sspi-secret = { workspace = true, features = ["picky"] }
+secret = { workspace = true, features = ["picky", "serde"] }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 tracing = { version = "0.1", default-features = true }
 tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["fmt"] }

@@ -4,6 +4,7 @@ use std::str;
 
 use dpapi_transport::GetSessionTokenFn;
 use ffi_types::Uuid as CUuid;
+use sspi::Secret;
 use url::Url;
 use uuid::Uuid;
 
@@ -63,7 +64,7 @@ pub(super) unsafe fn session_token_fn(get_session_token: CGetSessionTokenFn) -> 
             };
 
             str::from_utf8(token_bytes)
-                .map(|token| token.to_owned())
+                .map(|token| Secret::from(token.to_owned()))
                 .map_err(|err| {
                     Error::new(
                         ErrorKind::InvalidData,

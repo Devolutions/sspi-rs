@@ -1,6 +1,7 @@
 use std::io::Error;
 
 use dpapi_transport::GetSessionTokenFn;
+use sspi::Secret;
 use url::Url;
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -26,6 +27,7 @@ pub(crate) fn session_token_fn(get_session_token: js_sys::Function) -> Box<GetSe
 
             session_token
                 .as_string()
+                .map(Secret::from)
                 .ok_or_else(|| Error::other("obtained session token is not a String"))
         })
     })

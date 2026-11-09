@@ -147,8 +147,11 @@ impl SmartCard<'_> {
     }
 
     /// This functions handles one APDU command.
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state, data_len = data.len()), skip_all, err)]
     pub fn handle_command(&mut self, data: &[u8]) -> WinScardResult<Response> {
+        // The command data of a VERIFY command is the PIN, so the raw bytes are traced only.
+        trace!(?data, "APDU command");
+
         let cmd = Command::<1024>::try_from(data).map_err(|error| {
             error!(?error, "APDU command parsing error");
             Error::new(
@@ -179,7 +182,8 @@ impl SmartCard<'_> {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
             return Ok(Status::SecurityStatusNotSatisfied.into());
         }
-        match cmd.instruction() {
+        let instruction = cmd.instruction();
+        let response = match instruction {
             Instruction::Select => self.select(cmd),
             Instruction::GetData => self.get_data(cmd),
             Instruction::Verify => self.verify(cmd),
@@ -189,10 +193,16 @@ impl SmartCard<'_> {
                 error!(instruction = ?cmd.instruction(), "unimplemented instruction");
                 Ok(Status::InstructionNotSupported.into())
             }
-        }
+        }?;
+
+        // The response data can be a signature or other card data, so only its length is logged.
+        debug!(?instruction, status = ?response.status, data_len = response.data.as_ref().map(Vec::len), "APDU command handled");
+        trace!(data = ?response.data, "APDU response data");
+
+        Ok(response)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state), skip_all, err)]
     fn select(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.1
         // PIV SELECT command
@@ -231,7 +241,7 @@ impl SmartCard<'_> {
         Ok(Response::new(Status::OK, Some(data.to_vec())))
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state), skip_all, err)]
     fn verify(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.1
         // PIV VERIFY command
@@ -285,7 +295,7 @@ impl SmartCard<'_> {
         Ok(Status::OK.into())
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state), skip_all, err)]
     fn get_data(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.1.2
         // PIV GET DATA command
@@ -331,7 +341,7 @@ impl SmartCard<'_> {
         }
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state), skip_all, err)]
     fn get_response(&mut self) -> WinScardResult<Response> {
         // ISO/IEC 7816-4, Section 7.6.1
         // The smart card uses the standard (short) APDU response form, so the maximum amount of data transferred in one response is 256 bytes
@@ -353,7 +363,7 @@ impl SmartCard<'_> {
         }
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", fields(state = ?self.state), skip_all, err)]
     fn general_authenticate(&mut self, cmd: Command<1024>) -> WinScardResult<Response> {
         // NIST.SP.800-73-4, Part 2, Section 3.2.4
         // PIV GENERAL AUTHENTICATE command

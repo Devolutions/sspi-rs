@@ -506,7 +506,7 @@ mod scard_credentials {
     use picky_asn1_der::Asn1DerError;
     use picky_asn1_x509::Certificate;
 
-    use crate::secret::SecretPrivateKey;
+    use crate::SecretPrivateKey;
     use crate::utf16string::ZeroizedUtf16String;
     use crate::{Error, ErrorKind, NonEmpty, Secret, Utf16String};
 

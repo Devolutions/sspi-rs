@@ -6,8 +6,8 @@ use picky::key::PrivateKey;
 use picky::signature::SignatureAlgorithm;
 use picky_asn1_x509::Certificate;
 
+use crate::SecretPrivateKey;
 use crate::negotiate::{NegotiatedProtocol, ProtocolConfig};
-use crate::secret::SecretPrivateKey;
 use crate::{Error, ErrorKind, Pku2u, Result};
 
 type SignFn = dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync;

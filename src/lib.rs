@@ -77,8 +77,10 @@ mod crypto;
 mod dns;
 mod kdc;
 mod krb;
+#[cfg(any(test, feature = "__test-data"))]
+#[doc(hidden)]
+pub mod log_capture;
 mod rustls;
-mod secret;
 mod security_buffer;
 mod smartcard;
 mod utils;
@@ -130,11 +132,11 @@ pub use self::negotiate::{Negotiate, NegotiateConfig, NegotiatedProtocol};
 pub use self::ntlm::Ntlm;
 pub use self::ntlm::hash::{NTLM_HASH_PREFIX, NtlmHash, NtlmHashError};
 pub use self::pku2u::{Pku2u, Pku2uConfig, Pku2uCredential, Pku2uPrivateKey, Pku2uState};
-pub use self::secret::{Secret, SecretPrivateKey};
 use crate::builders::{
     EmptyAcceptSecurityContext, EmptyAcquireCredentialsHandle, EmptyInitializeSecurityContext,
     InitializeSecurityContext,
 };
+pub use secret::{Secret, SecretPrivateKey};
 
 /// Representation of SSPI-related result operation. Makes it easier to return a `Result` with SSPI-related `Error`.
 pub type Result<T> = result::Result<T, Error>;

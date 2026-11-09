@@ -23,6 +23,7 @@ use crate::kerberos::ClientPrincipal;
 use crate::kerberos::client::principal::{get_client_principal_name, get_client_principal_realm};
 use crate::kerberos::config::KdcResolution;
 use crate::ntlm::NtlmConfig;
+use crate::security_buffer::BufferSummaryExt as _;
 #[allow(unused)]
 use crate::utils::is_azure_ad_domain;
 use crate::{
@@ -849,7 +850,7 @@ impl SspiEx for Negotiate {
 }
 
 impl Sspi for Negotiate {
-    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(protocol = self.protocol.protocol_name(), buffers = ?token.summary()), skip_all)]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> Result<SecurityStatus> {
         match &mut self.protocol {
             NegotiatedProtocol::Pku2u(pku2u) => pku2u.complete_auth_token(token),

@@ -1,5 +1,6 @@
 use sspi::builders::{AcquireCredentialsHandle, WithoutCredentialUse};
 use sspi::credssp::SspiContext;
+use sspi::log_capture::LogCapture;
 use sspi::ntlm::NtlmConfig;
 use sspi::{
     AcquireCredentialsHandleResult, AuthIdentity, BufferType, ClientRequestFlags, CredentialUse, Credentials,
@@ -12,6 +13,11 @@ use crate::client_server::{TARGET_NAME, test_encryption, test_rpc_request_encryp
 const CLIENT_COMPUTER_NAME: &str = "DESKTOP-IHPPQ95.example.com";
 
 fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mic_expected: bool) {
+    let capture = LogCapture::start(tracing::Level::DEBUG);
+    if !password.is_empty() {
+        LogCapture::record_secret("password", password.as_bytes());
+    }
+
     let ntlm_config = NtlmConfig {
         client_computer_name: Some(CLIENT_COMPUTER_NAME.to_owned()),
     };
@@ -112,6 +118,7 @@ fn run_spnego_ntlm(target_name: Option<&str>, username: &str, password: &str, mi
             test_stream_buffer_encryption(&mut client, &mut server);
             test_rpc_request_encryption(&mut client, &mut server);
 
+            capture.assert_no_secrets();
             return;
         }
     }

@@ -31,6 +31,7 @@ use picky_krb::messages::{
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng as _, SeedableRng as _, TryRng as _};
 use sspi::kerberos::KERBEROS_VERSION;
+use sspi::log_capture::LogCapture;
 use time::{Duration, OffsetDateTime};
 
 pub(crate) const MAX_TIME_SKEW: StdDuration = StdDuration::from_secs(3);
@@ -466,6 +467,7 @@ impl KdcMock {
         let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
         let mut session_key = vec![0; cipher.key_size()];
         rng.fill_bytes(&mut session_key);
+        LogCapture::record_secret("TGT session key", &session_key);
 
         let initial_key = cipher
             .generate_key_from_password(
@@ -717,6 +719,7 @@ impl KdcMock {
         let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
         let mut session_key = vec![0; cipher.key_size()];
         rng.fill_bytes(&mut session_key);
+        LogCapture::record_secret("service ticket session key", &session_key);
 
         let auth_time = OffsetDateTime::now_utc();
         let end_time = auth_time + Duration::days(1);

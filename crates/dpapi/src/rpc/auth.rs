@@ -109,7 +109,12 @@ impl<'a> AuthProvider<'a> {
     /// * `security_trailer_data`: RPC PDU security trailer `auth_value`. Basically, it's a Kerberos Wrap Token.
     ///
     /// All encryption is performed in-place.
-    #[instrument(ret, level = "debug", skip(self))]
+    #[instrument(
+        level = "debug",
+        fields(header_len = header.len(), body_len = body.len()),
+        skip_all,
+        err
+    )]
     pub fn wrap_with_header_sign(
         &mut self,
         header: &mut [u8],
@@ -163,7 +168,12 @@ impl<'a> AuthProvider<'a> {
     /// * `security_trailer_data`: `auth_value` of the RPC PDU security trailer. Basically, it's a Kerberos Wrap Token.
     ///
     /// All decryption is performed in-place.
-    #[instrument(ret, level = "debug", skip(self))]
+    #[instrument(
+        level = "debug",
+        fields(header_len = header.len(), body_len = body.len()),
+        skip_all,
+        err
+    )]
     pub fn unwrap_with_header_sign(
         &mut self,
         header: &mut [u8],
@@ -193,7 +203,7 @@ impl<'a> AuthProvider<'a> {
     /// * `security_trailer_data`: `auth_value` of the RPC PDU security trailer. Basically, it's a Kerberos Wrap Token.
     ///
     /// All decryption is performed in-place.
-    #[instrument(ret, level = "debug", skip(self))]
+    #[instrument(level = "debug", fields(body_len = body.len()), skip_all, err)]
     pub fn unwrap(&mut self, body: &mut [u8], security_trailer_data: &mut [u8]) -> AuthResult<Vec<u8>> {
         let mut message = vec![
             SecurityBufferRef::data_buf(body),
@@ -208,7 +218,12 @@ impl<'a> AuthProvider<'a> {
     /// Performs one step in authorization process.
     ///
     /// The client should call this method until `self.is_finished()` is `true`.
-    #[instrument(ret, level = "debug", fields(state = ?self.is_finished), skip(self))]
+    #[instrument(
+        level = "debug",
+        fields(state = ?self.is_finished, in_token_len = in_token.len()),
+        skip_all,
+        err
+    )]
     pub async fn initialize_security_context(&mut self, in_token: Vec<u8>) -> AuthResult<SecurityTrailer> {
         let mut input_token = [SecurityBuffer::new(in_token, BufferType::Token)];
         let mut output_token = vec![SecurityBuffer::new(Vec::with_capacity(1024), BufferType::Token)];

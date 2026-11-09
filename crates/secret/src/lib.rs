@@ -2,10 +2,10 @@ use std::fmt;
 
 #[cfg(feature = "picky")]
 use picky::key::PrivateKey;
-use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-#[derive(Zeroize, ZeroizeOnDrop, Eq, PartialEq, Default, Clone, Serialize, Deserialize)]
+#[derive(Zeroize, ZeroizeOnDrop, Eq, PartialEq, Default, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Secret<T: Zeroize>(T);
 
 impl<T: Zeroize> Secret<T> {

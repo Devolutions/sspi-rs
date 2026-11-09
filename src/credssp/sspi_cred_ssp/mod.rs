@@ -18,6 +18,7 @@ use crate::generator::{
     GeneratorAcceptSecurityContext, GeneratorChangePassword, GeneratorInitSecurityContext, YieldPointLocal,
 };
 use crate::rcg;
+use crate::security_buffer::BufferSummaryExt as _;
 use crate::{
     AcquireCredentialsHandleResult, BufferType, CertContext, CertEncodingType, CertTrustErrorStatus,
     CertTrustInfoStatus, CertTrustStatus, ClientRequestFlags, ClientResponseFlags, ConnectionInfo, ContextNames,
@@ -242,7 +243,7 @@ impl Sspi for SspiCredSsp {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, _flags))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn encrypt_message(
         &mut self,
         _flags: EncryptionFlags,
@@ -278,7 +279,7 @@ impl Sspi for SspiCredSsp {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         // CredSsp decrypt_message function just calls corresponding function from the Schannel
         // MSDN: message must contain four buffers
