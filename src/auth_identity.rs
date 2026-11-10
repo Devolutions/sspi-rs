@@ -506,7 +506,7 @@ mod scard_credentials {
     use picky_asn1_der::Asn1DerError;
     use picky_asn1_x509::Certificate;
 
-    use crate::secret::SecretPrivateKey;
+    use crate::SecretPrivateKey;
     use crate::utf16string::ZeroizedUtf16String;
     use crate::{Error, ErrorKind, NonEmpty, Secret, Utf16String};
 
@@ -608,7 +608,7 @@ mod scard_credentials {
         /// UTF-16 encoded smart card PIN code
         pub pin: Secret<ZeroizedUtf16String>,
         /// UTF-16 string with PEM-encoded RSA 2048-bit private key
-        pub private_key_pem: Option<NonEmpty<Utf16String>>,
+        pub private_key_pem: Option<Secret<NonEmpty<ZeroizedUtf16String>>>,
         /// Smart card type.
         pub scard_type: SmartCardType,
     }
@@ -641,12 +641,14 @@ mod scard_credentials {
 
         fn try_from(value: SmartCardIdentity) -> Result<Self, Self::Error> {
             let private_key = if let Some(key) = value.private_key {
-                NonEmpty::new(Utf16String::from(key.as_ref().to_pem_str().map_err(|e| {
+                let pem = key.as_ref().to_pem_str().map_err(|e| {
                     Error::new(
                         ErrorKind::InternalError,
                         format!("Unable to serialize a smart card private key: {e}"),
                     )
-                })?))
+                })?;
+
+                NonEmpty::new(ZeroizedUtf16String(Utf16String::from(pem))).map(Secret::new)
             } else {
                 None
             };
@@ -670,7 +672,7 @@ mod scard_credentials {
 
         fn try_from(value: &SmartCardIdentityBuffers) -> Result<Self, Self::Error> {
             let private_key = if let Some(key) = &value.private_key_pem {
-                let pem_string = key.as_ref().to_string();
+                let pem_string = key.as_ref().as_ref().0.to_string();
 
                 Some(SecretPrivateKey::new(PrivateKey::from_pem_str(&pem_string).map_err(
                     |e| {

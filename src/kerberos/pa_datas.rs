@@ -69,11 +69,11 @@ impl AsReqPaDataOptions<'_> {
 pub(super) enum AsRepSessionKeyExtractor<'a> {
     AuthIdentity {
         salt: &'a str,
-        password: &'a str,
+        password: &'a Secret<String>,
         enc_params: &'a EncryptionParams,
     },
     Keytab {
-        key: &'a [u8],
+        key: &'a Secret<Vec<u8>>,
         enc_params: &'a EncryptionParams,
     },
     #[cfg(feature = "scard")]
@@ -91,9 +91,9 @@ impl AsRepSessionKeyExtractor<'_> {
                 salt,
                 password,
                 enc_params,
-            } => extract_session_key_from_as_rep(as_rep, salt, password, enc_params),
+            } => extract_session_key_from_as_rep(as_rep, salt, password.as_ref(), enc_params),
             AsRepSessionKeyExtractor::Keytab { key, enc_params } => {
-                extract_session_key_from_as_rep_with_key(as_rep, key, enc_params)
+                extract_session_key_from_as_rep_with_key(as_rep, key.as_ref(), enc_params)
             }
             #[cfg(feature = "scard")]
             AsRepSessionKeyExtractor::SmartCard {

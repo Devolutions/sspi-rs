@@ -5,6 +5,7 @@ use std::pin::Pin;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use sspi::Secret;
 use url::Url;
 use uuid::Uuid;
 
@@ -27,7 +28,7 @@ struct TokenResponse {
 /// Parameters:
 /// * `session_id` - connection session id.
 /// * `destination` - target RPC server address.
-pub fn get_session_token(session_id: Uuid, destination: Url) -> Pin<Box<dyn Future<Output = Result<String>>>> {
+pub fn get_session_token(session_id: Uuid, destination: Url) -> Pin<Box<dyn Future<Output = Result<Secret<String>>>>> {
     let connection_url = Url::parse(&env::var("DG_CONNECTION_URL").unwrap()).unwrap();
 
     Box::pin(async move {
@@ -49,6 +50,6 @@ pub fn get_session_token(session_id: Uuid, destination: Url) -> Pin<Box<dyn Futu
             .await
             .map_err(Error::other)?;
 
-        Ok(token)
+        Ok(Secret::from(token))
     })
 }

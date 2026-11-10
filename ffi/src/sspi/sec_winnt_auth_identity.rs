@@ -494,10 +494,9 @@ fn collect_smart_card_creds(
                 container_name: NonEmpty::new(container_name.as_ref().into()),
                 csp_name: MICROSOFT_DEFAULT_CSP.into(),
                 pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
-                private_key_pem: NonEmpty::new(auth_pk_pem.as_ref().into()),
-                scard_type: SmartCardType::Emulated {
-                    scard_pin: scard_pin.into(),
-                },
+                private_key_pem: NonEmpty::new(ZeroizedUtf16String(auth_pk_pem.as_ref().as_str().into()))
+                    .map(Secret::new),
+                scard_type: SmartCardType::Emulated { scard_pin },
             })
         }
         SCARD_SYSTEM_PROVIDED => {

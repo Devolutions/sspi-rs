@@ -179,7 +179,7 @@ pub(crate) fn write_authenticate(
     context.recv_sealing_key = Some(Rc4::new(
         generate_signing_key(session_key.as_ref(), SERVER_SEAL_MAGIC).as_ref(),
     ));
-    context.session_key = Some(session_key);
+    context.session_key = Some(session_key.into());
 
     context.authenticate_message = Some(AuthenticateMessage::new(
         message,

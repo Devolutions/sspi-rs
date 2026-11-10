@@ -2,6 +2,7 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::pin::Pin;
 
+use secret::Secret;
 use thiserror::Error;
 use url::{Host, Url};
 use uuid::Uuid;
@@ -13,7 +14,7 @@ use uuid::Uuid;
 /// Parameters:
 /// * `Uuid` is the session id.
 /// * `Url` is the destination of the proxied connection.
-pub type GetSessionTokenFn = dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<String>>>>;
+pub type GetSessionTokenFn = dyn Fn(Uuid, Url) -> Pin<Box<dyn Future<Output = std::io::Result<Secret<String>>>>>;
 
 /// Default port for RPC communication.
 pub const DEFAULT_RPC_PORT: u16 = 135;

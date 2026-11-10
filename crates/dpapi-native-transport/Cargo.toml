@@ -12,6 +12,7 @@ url = "2.5"
 uuid = { version = "1.23", default-features = false, features = ["v4"] }
 tracing = { version = "0.1", default-features = false }
 dpapi-transport = { path = "../dpapi-transport", version = "0.1.0" }
+secret.workspace = true
 futures-util = "0.3"
 
 [lints]

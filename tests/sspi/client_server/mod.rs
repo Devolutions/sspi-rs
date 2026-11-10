@@ -7,12 +7,14 @@ mod negotiate;
 mod ntlm;
 
 use sspi::credssp::SspiContext;
+use sspi::log_capture::LogCapture;
 use sspi::{EncryptionFlags, SecurityBufferFlags, SecurityBufferRef, Sspi};
 
 const TARGET_NAME: &str = "TERMSRV/DESKTOP-8F33RFH.example.com";
 
 fn test_encryption(client: &mut SspiContext, server: &mut SspiContext) {
     let plain_message = b"Devolutions/sspi-rs";
+    LogCapture::record_secret("plain message", plain_message);
 
     let mut token = [0; 1024];
     let mut data = plain_message.to_vec();
@@ -70,6 +72,7 @@ fn test_rpc_request_encryption(client: &mut SspiContext, server: &mut SspiContex
         96, 89, 120, 185, 79, 82, 223, 17, 139, 109, 131, 220, 222, 215, 32, 133, 1, 0, 0, 0, 51, 5, 113, 113, 186,
         190, 55, 73, 131, 25, 181, 219, 239, 156, 204, 54, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
+    LogCapture::record_secret("RPC request body", &plaintext);
     // RPC security trailer header
     let trailer = [16, 6, 8, 0, 0, 0, 0, 0];
 

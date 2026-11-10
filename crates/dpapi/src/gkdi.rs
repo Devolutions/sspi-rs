@@ -89,8 +89,13 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
         let mut private_key = vec![0; group_key.private_key_length.div_ceil(8).try_into()?];
         rand.fill_bytes(private_key.as_mut_slice());
 
-        let kek = compute_kek(hash_alg, &group_key.secret_algorithm, &private_key, &group_key.l2_key)?;
-        let key_info = compute_public_key(&group_key.secret_algorithm, &private_key, &group_key.l2_key)?;
+        let kek = compute_kek(
+            hash_alg,
+            &group_key.secret_algorithm,
+            &private_key,
+            group_key.l2_key.as_ref(),
+        )?;
+        let key_info = compute_public_key(&group_key.secret_algorithm, &private_key, group_key.l2_key.as_ref())?;
 
         (kek, key_info)
     } else {
@@ -99,7 +104,7 @@ pub fn new_kek(group_key: &GroupKeyEnvelope) -> Result<(Vec<u8>, KeyIdentifier)>
 
         let kek = kdf(
             hash_alg,
-            &group_key.l2_key,
+            group_key.l2_key.as_ref(),
             KDS_SERVICE_LABEL,
             &key_info,
             AES256_KEY_SIZE,

@@ -119,7 +119,7 @@ pub(crate) fn complete_authenticate(context: &mut Ntlm) -> crate::Result<Securit
             // identity so downstream consumers get the authenticated result.
             debug!(candidate_index = i, "credential candidate matched");
             context.identity = Some(candidate);
-            context.session_key = Some(session_key);
+            context.session_key = Some(session_key.into());
             context.state = NtlmState::Final;
 
             return Ok(SecurityStatus::Ok);

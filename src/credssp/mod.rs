@@ -23,6 +23,7 @@ use crate::generator::{
 use crate::kerberos::{self, Kerberos};
 use crate::ntlm::{self, Ntlm, NtlmConfig, SIGNATURE_SIZE};
 use crate::pku2u::{self, Pku2u, Pku2uConfig};
+use crate::security_buffer::BufferSummaryExt as _;
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
     CertContext, CertTrustStatus, ClientRequestFlags, ConnectionInfo, ContextNames, ContextSizes, CredentialUse,
@@ -1104,7 +1105,7 @@ impl<'a> SspiContext {
 }
 
 impl Sspi for SspiContext {
-    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name(), buffers = ?token.summary()), skip_all)]
     fn complete_auth_token(&mut self, token: &mut [SecurityBuffer]) -> crate::Result<SecurityStatus> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.complete_auth_token(token),
@@ -1116,7 +1117,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name(), flags = ?flags, buffers = ?message.summary()), skip_all)]
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
@@ -1132,7 +1133,7 @@ impl Sspi for SspiContext {
         }
     }
 
-    #[instrument(ret, level = "debug", fields(security_package = self.package_name()), skip(self))]
+    #[instrument(ret, level = "debug", fields(security_package = self.package_name(), buffers = ?message.summary()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> crate::Result<DecryptionFlags> {
         match self {
             SspiContext::Ntlm(ntlm) => ntlm.decrypt_message(message),

@@ -204,7 +204,7 @@ pub(super) fn handle_tgs_req(
     } = tgs_preauth(
         &kdc_config.realm,
         pa_datas,
-        &kdc_config.krbtgt_key,
+        kdc_config.krbtgt_key.as_ref(),
         kdc_config.max_time_skew,
     )?;
 
@@ -234,7 +234,7 @@ pub(super) fn handle_tgs_req(
 
         let ticket_enc_part: EncTicketPart = picky_asn1_der::from_bytes(
             &cipher
-                .decrypt(&kdc_config.krbtgt_key, TICKET_REP, &ticket_enc_data.0.0)
+                .decrypt(kdc_config.krbtgt_key.as_ref(), TICKET_REP, &ticket_enc_data.0.0)
                 .map_err(|_| KdcError::Modified("TGS_REQ Additional Ticket"))?,
         )
         .map_err(|_| KdcError::PreAuthFailed("unable to decode pa-data value"))?;
@@ -243,7 +243,8 @@ pub(super) fn handle_tgs_req(
     } else {
         kdc_config
             .ticket_decryption_key
-            .clone()
+            .as_ref()
+            .map(|key| key.as_ref().clone())
             .ok_or(KdcError::InternalError("TGS ticket encryption key is not specified"))?
     };
 

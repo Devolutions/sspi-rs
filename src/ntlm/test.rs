@@ -1,4 +1,5 @@
 use crate::crypto::{HASH_SIZE, Rc4};
+use crate::log_capture::LogCapture;
 use crate::ntlm::messages::computations::generate_signing_key;
 use crate::ntlm::messages::test::{TEST_CREDENTIALS, nt_proof_for_zeroed_challenge};
 use crate::ntlm::messages::{CLIENT_SEAL_MAGIC, CLIENT_SIGN_MAGIC, SERVER_SEAL_MAGIC, SERVER_SIGN_MAGIC};
@@ -338,8 +339,8 @@ fn mic_test_pair() -> (Ntlm, Ntlm) {
     let mut server = Ntlm::new();
     client.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
     server.flags = NegotiateFlags::NTLM_SSP_NEGOTIATE_KEY_EXCH;
-    client.session_key = Some(SEALING_KEY);
-    server.session_key = Some(SEALING_KEY);
+    client.session_key = Some(SEALING_KEY.into());
+    server.session_key = Some(SEALING_KEY.into());
 
     client.send_signing_key = generate_signing_key(&SEALING_KEY, CLIENT_SIGN_MAGIC);
     server.recv_signing_key = client.send_signing_key.clone();
@@ -959,4 +960,21 @@ fn complete_auth_token_changes_state() {
 
     context.complete_auth_token(&mut []).unwrap();
     assert_eq!(context.state, NtlmState::Final);
+}
+
+#[test]
+fn debug_output_does_not_contain_keys() {
+    let mut ntlm = Ntlm::new();
+    ntlm.session_key = Some(SEALING_KEY.into());
+    ntlm.send_signing_key = generate_signing_key(&SEALING_KEY, CLIENT_SIGN_MAGIC);
+    ntlm.send_sealing_key = Some(Rc4::new(&SEALING_KEY));
+    let signing_key = ntlm.send_signing_key.as_ref().to_vec();
+
+    let capture = LogCapture::start(tracing::Level::TRACE);
+    LogCapture::record_secret("NTLM session key", &SEALING_KEY);
+    LogCapture::record_secret("NTLM signing key", &signing_key);
+
+    tracing::debug!(?ntlm, "Dumping the context");
+
+    capture.assert_no_secrets();
 }

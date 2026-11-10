@@ -33,6 +33,9 @@ Two environmental variables control logging:
 1. `SSPI_LOG_PATH` enables logging when set and specifies the file where logs will be written.
 2. `SSPI_LOG_LEVEL` sets the log filter. See [`tracing-subscriber`’s documentation][tracing-doc] for more details.
 
+Logs at `DEBUG` level and above do not contain credentials, PINs, session keys, or message contents, so `DEBUG` is safe to enable in production.
+`TRACE` logs can contain them, so do not enable `TRACE` in production.
+
 [tracing-doc]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/
 
 # Note

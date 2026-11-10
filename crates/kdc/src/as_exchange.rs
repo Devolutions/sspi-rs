@@ -55,7 +55,7 @@ fn validate_pa_data_timestamp(
         .cipher();
     let key = Zeroizing::new(
         cipher
-            .generate_key_from_password(domain_user.password.as_bytes(), domain_user.salt.as_bytes())
+            .generate_key_from_password(domain_user.password.as_ref().as_bytes(), domain_user.salt.as_bytes())
             .map_err(|_| KdcError::InternalError("failed to generate user's key"))?,
     );
 
@@ -216,7 +216,7 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
         ticket: ExplicitContextTag5::from(make_ticket(MakeTicketParams {
             realm,
             session_key,
-            ticket_encryption_key: &kdc_config.krbtgt_key,
+            ticket_encryption_key: kdc_config.krbtgt_key.as_ref(),
             kdc_options: kdc_options.0.clone(),
             sname,
             cname: cname.clone(),
@@ -243,7 +243,7 @@ mod tests {
     fn encrypted_timestamp(user: &DomainUser, client_time: OffsetDateTime) -> PaData {
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
         let key = cipher
-            .generate_key_from_password(user.password.as_bytes(), user.salt.as_bytes())
+            .generate_key_from_password(user.password.as_ref().as_bytes(), user.salt.as_bytes())
             .unwrap();
         let timestamp = PaEncTsEnc {
             patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(client_time))),
@@ -276,7 +276,7 @@ mod tests {
     fn encrypted_timestamp_allows_skew_in_both_directions() {
         let user = DomainUser {
             username: "user@example.com".to_owned(),
-            password: "password".to_owned(),
+            password: "password".to_owned().into(),
             salt: "EXAMPLE.COMuser".to_owned(),
         };
         let now = OffsetDateTime::now_utc();

@@ -54,6 +54,7 @@ use crate::pk_init::{
 use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_peer_p2p_certificate};
 use crate::pku2u::extractors::{extract_krb_rep, extract_krb_result, extract_session_key_and_nonce_from_as_rep};
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
+use crate::security_buffer::BufferSummaryExt as _;
 use crate::utils::{generate_random_symmetric_key, get_encryption_key, save_decrypted_data};
 use crate::{
     AcceptSecurityContextResult, AcquireCredentialsHandleResult, AuthIdentity, AuthIdentityBuffers, BufferType,
@@ -715,7 +716,7 @@ impl Sspi for Pku2u {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self, flags))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn encrypt_message(
         &mut self,
         flags: EncryptionFlags,
@@ -813,7 +814,7 @@ impl Sspi for Pku2u {
         Ok(SecurityStatus::Ok)
     }
 
-    #[instrument(level = "debug", ret, fields(state = ?self.state), skip(self))]
+    #[instrument(level = "debug", ret, fields(state = ?self.state, buffers = ?message.summary()), skip_all)]
     fn decrypt_message(&mut self, message: &mut [SecurityBufferRef<'_>]) -> Result<DecryptionFlags> {
         self.ensure_message_protection_ready()?;
         trace!(encryption_params = ?self.encryption_params);
@@ -1324,7 +1325,7 @@ impl Pku2u {
                     seq_num: Some(exchange_seq_number),
                     sub_key: Some(EncKey {
                         key_type: enc_type.clone(),
-                        key_value: authenticator_sub_key.clone(),
+                        key_value: authenticator_sub_key.clone().into(),
                     }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),

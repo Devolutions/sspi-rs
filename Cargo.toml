@@ -26,6 +26,7 @@ members = [
   "crates/dpapi-fuzzing",
   "crates/dpapi-web",
   "crates/kdc",
+  "crates/secret",
 ]
 exclude = [
   "tools/wasm-testcompile",
@@ -80,6 +81,7 @@ unused_result_ok = "warn"
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }
 winscard = { version = "0.4", path = "crates/winscard" }
+secret = { version = "0.1.0", path = "crates/secret" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
@@ -106,7 +108,7 @@ ring = ["rustls?/ring", "reqwest?/rustls-tls-native-roots", "__install-crypto-pr
 
 # Internal (PRIVATE!) features. Do not rely on these whatsoever. They may disappear at anytime.
 
-__test-data = []
+__test-data = ["dep:tracing-subscriber"]
 __rustls-used = ["dep:rustls"]
 __install-crypto-provider = []
 
@@ -131,8 +133,10 @@ uuid = { version = "1.23", default-features = true, features = ["v4"] }
 # `rt-multi-thread` feature is required for `tokio::task::block_in_place` function.
 tokio = { version = "1.52", optional = true, features = ["time", "rt", "rt-multi-thread"] }
 winscard = { workspace = true, optional = true }
+secret = { workspace = true, features = ["picky", "serde"] }
 rsa = { version = "=0.10.0-rc.18", default-features = false }
 tracing = { version = "0.1", default-features = true }
+tracing-subscriber = { version = "0.3", optional = true, default-features = false, features = ["fmt"] }
 serde = "1"
 byteorder = "1.5"
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }

@@ -782,6 +782,7 @@ version = "0.1.0"
 dependencies = [
  "dpapi-transport",
  "futures-util",
+ "secret",
  "tokio",
  "tokio-tungstenite",
  "tracing",
@@ -801,6 +802,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "paste",
+ "secret",
  "thiserror",
  "uuid",
 ]
@@ -809,6 +811,7 @@ dependencies = [
 name = "dpapi-transport"
 version = "0.1.0"
 dependencies = [
+ "secret",
  "thiserror",
  "url",
  "uuid",
@@ -1651,6 +1654,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
+ "secret",
  "thiserror",
  "time",
  "tracing",
@@ -2736,6 +2740,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "secret"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "picky",
+ "serde",
+ "zeroize",
+]
+
+[[package]]
 name = "security-framework"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2998,6 +3012,7 @@ dependencies = [
  "rsa",
  "rustls",
  "rustls-native-certs",
+ "secret",
  "serde",
  "sha1",
  "sha2",
@@ -4001,6 +4016,7 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "rsa",
+ "secret",
  "sha1",
  "time",
  "tracing",

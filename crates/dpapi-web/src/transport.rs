@@ -5,6 +5,7 @@ use dpapi_transport::{ConnectOptions, Stream, Transport};
 use futures_util::{AsyncRead, AsyncWrite};
 use gloo_net::websocket;
 use gloo_net::websocket::futures::WebSocket;
+use sspi::Secret;
 use url::Url;
 use uuid::Uuid;
 
@@ -72,12 +73,15 @@ impl WasmTransport {
     async fn ws_connect(
         mut proxy: Url,
         session_id: Uuid,
-        session_token: &str,
+        session_token: &Secret<String>,
     ) -> Result<FuturesStream<ErasedReadWrite>, Error> {
         proxy.path_segments_mut().unwrap().extend([session_id.to_string()]);
-        proxy.query_pairs_mut().append_pair("token", session_token);
 
-        let ws = WebSocket::open(proxy.as_str()).map_err(Error::other)?;
+        // The token goes only into the URL that opens the connection, so `proxy` is safe to log.
+        let mut ws_url = proxy.clone();
+        ws_url.query_pairs_mut().append_pair("token", session_token.as_ref());
+
+        let ws = WebSocket::open(ws_url.as_str()).map_err(Error::other)?;
 
         // NOTE: ideally, when the WebSocket can’t be opened, the above call should fail with details on why is that
         // (e.g., the proxy hostname could not be resolved, proxy service is not running), but errors are never
@@ -125,7 +129,7 @@ impl Transport for WasmTransport {
                 debug!("session token");
                 let session_token = get_session_token(session_id, destination.clone()).await?;
 
-                Self::ws_connect(proxy.clone(), session_id, session_token.as_ref()).await
+                Self::ws_connect(proxy.clone(), session_id, &session_token).await
             }
         }
     }

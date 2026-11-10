@@ -11,6 +11,7 @@ description = "Common types and traits for implementing DPAPI RPC transport"
 publish = false # not ready yet
 
 [dependencies]
+secret.workspace = true
 url = "2.5"
 thiserror = "2.0"
 uuid = { version = "1.23", default-features = false }

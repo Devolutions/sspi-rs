@@ -341,9 +341,9 @@ pub fn compute_l2_key(
     rk: &GroupKeyEnvelope,
 ) -> CryptoResult<Vec<u8>> {
     let mut l1 = rk.l1;
-    let mut l1_key = rk.l1_key.clone();
+    let mut l1_key = rk.l1_key.as_ref().clone();
     let mut l2 = rk.l2;
-    let mut l2_key = rk.l2_key.clone();
+    let mut l2_key = rk.l2_key.as_ref().clone();
     let mut reseed_l2 = l2 == 31 || rk.l1 != request_l1;
 
     //  MS-GKDI 2.2.4 Group key Envelope

@@ -14,6 +14,7 @@ use sspi::credssp::{
     ClientMode, ClientState, CredSspClient, CredSspMode, CredSspServer, ServerMode, ServerState, TsRequest,
 };
 use sspi::kerberos::ServerProperties;
+use sspi::log_capture::LogCapture;
 use sspi::network_client::NetworkClient;
 use sspi::ntlm::NtlmConfig;
 use sspi::rcg::NtlmRedirectionNames;
@@ -61,6 +62,9 @@ fn run_credssp(
     auth_identity: &AuthIdentity,
     network_client: &mut dyn NetworkClient,
 ) {
+    let capture = LogCapture::start(tracing::Level::DEBUG);
+    LogCapture::record_secret("password", auth_identity.password.as_ref().as_bytes());
+
     let mut ts_request = TsRequest::default();
 
     for _ in 0..5 {
@@ -77,6 +81,8 @@ fn run_credssp(
             ServerState::ReplyNeeded(server_ts_request) => ts_request = server_ts_request,
             ServerState::Finished(received_auth_identity) => {
                 assert_eq!(*auth_identity, received_auth_identity);
+
+                capture.assert_no_secrets();
                 return;
             }
         };

@@ -49,9 +49,10 @@ impl Default for State {
     }
 }
 
+// The state is derived from the key and determines the whole keystream, so it must not be printed.
 impl fmt::Debug for State {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        f.write_str("State")
     }
 }
 
@@ -72,6 +73,12 @@ impl ops::DerefMut for State {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn debug_output_does_not_contain_the_state() {
+        // The state is a permutation derived from the key, so it determines the keystream.
+        assert_eq!(format!("{:?}", Rc4::new(b"key")), "Rc4 { i: 0, j: 0, state: State }");
+    }
 
     #[test]
     fn check_common_case() {
