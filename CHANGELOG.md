@@ -6,6 +6,109 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.24.0](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.1...sspi-v0.24.0)] - 2026-11-10
+
+### <!-- 1 -->Features
+
+- Honour DNS SRV port and fail over across multiple KDCs ([#698](https://github.com/Devolutions/sspi-rs/issues/698)) ([f43059048a](https://github.com/Devolutions/sspi-rs/commit/f43059048a0cbfe750467fa7f6f886d24ffcf325)) 
+
+  Kerberos clients resolved a single KDC and never failed over: the
+  Windows DNS SRV lookup read only the first record and hardcoded port 88,
+  krb5.conf parsing kept only the first `kdc =` line of a realm, and every
+  message of an exchange re-resolved the KDC independently, so round-robin
+  DNS could bounce one authentication between KDCs.
+  
+  - Honour the DNS SRV port on Windows by walking every record
+  `DnsQuery_W` returns, keeping the SRV ones and using their `wPort`.
+  - Add `detect_kdc_urls()`, which returns every candidate in resolution
+  order (`SSPI_KDC_URL_<REALM>`, krb5.conf, DNS SRV); `detect_kdc_url()`
+  keeps returning the first.
+  - Read every `kdc =` line of a realm from krb5.conf, one host per line
+  as the MIT documentation specifies.
+  - Try candidates in order and advance on any send error; any KDC reply,
+  including a KRB-ERROR, is returned as-is.
+  - Pin the KDC that answered for a realm for the rest of the exchange and
+  re-resolve only when it stops answering. A configured KDC URL stays the
+  sole candidate for the home realm; referral realms are always resolved.
+  
+  SRV priority and weight are not applied yet; see #787.
+
+- Ntlm: acceptor authenticates credentials ([#783](https://github.com/Devolutions/sspi-rs/issues/783)) ([fefd5d39a7](https://github.com/Devolutions/sspi-rs/commit/fefd5d39a7709af591e71aa80860a990e35eb792)) 
+
+- System-provided ECDH-based scard logon support ([#781](https://github.com/Devolutions/sspi-rs/issues/781)) ([6d82081224](https://github.com/Devolutions/sspi-rs/commit/6d82081224f4e6d449ad769142bac4284612cd3c)) 
+
+  Hi,
+  
+  I added a system-provided ECDH-based scard logon support in this PR.
+  
+  ---------
+
+- [**breaking**] Make `DEBUG` logging safe in production ([#792](https://github.com/Devolutions/sspi-rs/issues/792)) ([2f447436fe](https://github.com/Devolutions/sspi-rs/commit/2f447436fe6ff696aab9284bd18ab5f6410de5c1)) 
+
+  Hi,
+  
+  I made it safe to enable the `DEBUG` log level in production. Logging at
+  the `DEBUG` log level doesn't leak secrets, private keys, passwords, or
+  PIN codes.
+  
+  Notable changes:
+  
+  * Since we use secrets all over the codebase, I moved the `sspi::Secret`
+  type to a separate crate: `crates/secret`. Now `sspi`, `dpapi`,
+  `winscard`, and many other crates reuse the same `Secret` type
+  implementation.
+  
+  > [!WARNING]
+  > Do not enable `TRACE` log level in production. `TRACE` log level can
+  leak unencrypted data.
+  
+  ---------
+
+### <!-- 4 -->Bug Fixes
+
+- Handle KDC_ERR_ETYPE_NOSUPP as KDC_ERR_PREAUTH_REQUIRED for smart card AS exchange ([#790](https://github.com/Devolutions/sspi-rs/issues/790)) ([27303f67da](https://github.com/Devolutions/sspi-rs/commit/27303f67da1f336980e453e2d70083e5a9e6c3f7)) 
+
+  ### Problem
+  
+  The KDC on Windows Server 2016 responds to the initial `AS-REQ` (without
+  pre-authentication data) with `KDC_ERR_ETYPE_NOSUPP` instead of expected
+  `KDC_ERR_PREAUTH_REQUIRED`.
+  
+  This error is misleading. If we ignore it and proceed with the next
+  `AS-REQ`, including `PA-PK-AS-REQ` and the default salt, the KDC
+  successfully processes the request and returns a `AS-REP`.
+  
+  ### Root cause
+  
+  This issue was introduced in
+  [a738671](https://github.com/Devolutions/sspi-rs/commit/[[a7386712984473147e9d94636859452b98a6fc8f](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f)](https://github.com/Devolutions/sspi-rs/commit/[a7386712984473147e9d94636859452b98a6fc8f](https://github.com/Devolutions/sspi-rs/commit/a7386712984473147e9d94636859452b98a6fc8f))#diff-[[83760691e0de5bc289c19ba0b27f220ae2bce10c](https://github.com/Devolutions/sspi-rs/commit/83760691e0de5bc289c19ba0b27f220ae2bce10c)](https://github.com/Devolutions/sspi-rs/commit/[83760691e0de5bc289c19ba0b27f220ae2bce10c](https://github.com/Devolutions/sspi-rs/commit/83760691e0de5bc289c19ba0b27f220ae2bce10c))2d9744ef2da9b2e3b69b9b35R27-R31)
+  when IAKERB support was added.
+  The change restricted the accepted KDC error codes to
+  `KDC_ERR_PREAUTH_REQUIRED`. As a result, any other error code causes the
+  failure.
+  
+  Previously, `KDC_ERR_ETYPE_NOSUPP` was effectively ignored, so this
+  behavior did not cause a failure before the IAKERB implementation.
+  
+  ### Fix
+  
+  This PR adds workaround to accept `KDC_ERR_ETYPE_NOSUPP` when smart card
+  credentials are used, so that Kerberos authentication flow can proceed.
+
+- Keep secrets out of trace logs ([#789](https://github.com/Devolutions/sspi-rs/issues/789)) ([a53632acb1](https://github.com/Devolutions/sspi-rs/commit/a53632acb1bbc75e2e5d0a4260d40195bf09c321)) 
+
+  The password-change request recorded the new password as a span field,
+  and logged the KRB_PRIV sub-session key and plaintext, which contains
+  the new password.
+  The authenticator, which carries the sub-session key, was also recorded
+  by `generate_ap_req`, both as a span field and as plaintext.
+
+### <!-- 99 -->Please Sort
+
+- Let keytab-only acceptor support Kerberos U2U ([#774](https://github.com/Devolutions/sspi-rs/issues/774)) ([4b56701e18](https://github.com/Devolutions/sspi-rs/commit/4b56701e18a8600617ae6c081473e7b997add2e6)) 
+
+
+
 ## [[0.23.1](https://github.com/Devolutions/sspi-rs/compare/sspi-v0.23.0...sspi-v0.23.1)] - 2026-10-27
 
 ### <!-- 0 -->Security

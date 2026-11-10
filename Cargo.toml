@@ -1,6 +1,6 @@
 [package]
 name = "sspi"
-version = "0.23.1"
+version = "0.24.0"
 edition = "2024"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -80,8 +80,8 @@ unused_result_ok = "warn"
 # Only workspace-internal crates belong here, so release-plz detects external dependency updates.
 [workspace.dependencies]
 ffi-types = { path = "crates/ffi-types" }
-winscard = { version = "0.4", path = "crates/winscard" }
-secret = { version = "0.1.0", path = "crates/secret" }
+winscard = { version = "0.5", path = "crates/winscard" }
+secret = { version = "0.2.0", path = "crates/secret" }
 
 dpapi = { version = "0.0.0", path = "crates/dpapi" }
 dpapi-core = { version = "0.1.0", path = "crates/dpapi-core" }
