@@ -34,10 +34,17 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
     ))
 }
 
+/// Returns whether `now` lies within the validity period of the certificate, bounds included.
+pub(crate) fn is_valid_at(certificate: &Certificate, now: OffsetDateTime) -> Result<bool> {
+    let validity = &certificate.tbs_certificate.validity;
+    let not_before = certificate_time(&validity.not_before)?;
+    let not_after = certificate_time(&validity.not_after)?;
+
+    Ok(now >= not_before && now <= not_after)
+}
+
 pub(crate) fn validate_peer_p2p_certificate(certificate: &Certificate, now: OffsetDateTime) -> Result<()> {
-    let not_before = certificate_time(&certificate.tbs_certificate.validity.not_before)?;
-    let not_after = certificate_time(&certificate.tbs_certificate.validity.not_after)?;
-    if now < not_before || now > not_after {
+    if !is_valid_at(certificate, now)? {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
             format!("PKU2U peer certificate is not valid at {now}"),

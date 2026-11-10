@@ -415,9 +415,11 @@ pub async fn initialize_security_context<'a>(
                                 enc_params: &client.encryption_params,
                             },
                             #[cfg(feature = "scard")]
-                            CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
+                            CredentialsBuffers::SmartCard(scard) => AsRepSessionKeyExtractor::SmartCard {
                                 key_agreement: client.key_agreement.as_mut().unwrap(),
                                 enc_params: &mut client.encryption_params,
+                                ca_cert: scard.ca_cert.as_ref(),
+                                now: time::OffsetDateTime::now_utc(),
                             },
                         };
                         let session_key = session_key_extractor.session_key(&as_rep)?;

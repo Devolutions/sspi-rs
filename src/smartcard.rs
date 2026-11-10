@@ -79,6 +79,7 @@ impl SmartCard {
         let SmartCardIdentity {
             username: _,
             certificate,
+            ca_cert: _,
             reader_name,
             card_name: _,
             container_name: _container_name,

@@ -3035,6 +3035,7 @@ dependencies = [
 name = "sspi-ffi"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "bitflags 2.13.2",
  "cfg-if",
  "cryptoki",

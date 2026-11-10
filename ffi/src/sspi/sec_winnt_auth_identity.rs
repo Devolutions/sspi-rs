@@ -28,6 +28,17 @@ use crate::utils::{credentials_str_into_bytes, into_raw_ptr};
 /// Environment variable name for specifying PKCS11 module path.
 pub const PKCS11_MODULE_PATH_ENV: &str = "SSPI_PKCS11_MODULE_PATH";
 
+/// Path to the PEM file with the CA certificate used to verify the KDC certificate.
+#[cfg(feature = "scard")]
+pub const SCARD_CA_CERT_PATH_ENV: &str = "SSPI_SCARD_CA_CERT_PATH";
+
+/// The CA certificate used to verify the KDC certificate.
+///
+/// *Note.* The variable value should be one-line base64 string containing ASN1 DER certificate data.
+/// It takes precedence over [SCARD_CA_CERT_PATH_ENV].
+#[cfg(feature = "scard")]
+pub const SCARD_CA_CERT_DATA_ENV: &str = "SSPI_SCARD_CA_CERT_DATA";
+
 /// Returns auth identity version and flags.
 ///
 /// # Safety
@@ -261,32 +272,32 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, user_length) };
-        let user = Utf16String::from_utf8_bytes(username_data)?.to_bytes_le();
+        let user = Utf16String::from_utf8_bytes(username_data.as_ref())?.to_bytes_le();
 
         let domain_length = auth_data.domain_length.try_into()?;
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, domain_length) };
-        let domain = Utf16String::from_utf8_bytes(domain_data)?.to_bytes_le();
+        let domain = Utf16String::from_utf8_bytes(domain_data.as_ref())?.to_bytes_le();
 
         let password_length = auth_data.password_length.try_into()?;
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        let password_data = unsafe { credentials_str_into_bytes(auth_data.password, password_length) };
-        let password = Utf16String::from_utf8_bytes(password_data)?.to_bytes_le();
+        let password_data: Secret<Vec<u8>> = unsafe { credentials_str_into_bytes(auth_data.password, password_length) };
+        let password = password_to_utf16le(&password_data)?;
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
+        if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: Utf16String::from_bytes_le(user)?,
             domain: Utf16String::from_bytes_le(domain)?,
-            password: ZeroizedUtf16String::from_bytes_le(password)?.into(),
+            password: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
         }))
     } else {
         let auth_data = p_auth_data.cast::<SecWinntAuthIdentityA>();
@@ -300,32 +311,32 @@ pub unsafe fn auth_data_to_identity_buffers_a(
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let username_data = unsafe { credentials_str_into_bytes(auth_data.user, user_length) };
-        let user = Utf16String::from_utf8_bytes(username_data)?.to_bytes_le();
+        let user = Utf16String::from_utf8_bytes(username_data.as_ref())?.to_bytes_le();
 
         let domain_length = auth_data.domain_length.try_into()?;
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
         let domain_data = unsafe { credentials_str_into_bytes(auth_data.domain, domain_length) };
-        let domain = Utf16String::from_utf8_bytes(domain_data)?.to_bytes_le();
+        let domain = Utf16String::from_utf8_bytes(domain_data.as_ref())?.to_bytes_le();
 
         let password_length = auth_data.password_length.try_into()?;
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        let password_data = unsafe { credentials_str_into_bytes(auth_data.password, password_length) };
-        let password = Utf16String::from_utf8_bytes(password_data)?.to_bytes_le();
+        let password_data: Secret<Vec<u8>> = unsafe { credentials_str_into_bytes(auth_data.password, password_length) };
+        let password = password_to_utf16le(&password_data)?;
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
+        if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
         Ok(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
             user: Utf16String::from_bytes_le(user)?,
             domain: Utf16String::from_bytes_le(domain)?,
-            password: ZeroizedUtf16String::from_bytes_le(password)?.into(),
+            password: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
         }))
     }
 }
@@ -392,16 +403,18 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let user = unsafe { credentials_str_into_bytes(user.cast(), usize::try_from(user_len)? * 2) };
+    let mut user = unsafe { credentials_str_into_bytes(user.cast(), usize::try_from(user_len)? * 2) };
+    let user = core::mem::take(user.as_mut());
     // SAFETY:
     // - Credentials pointers can be NULL.
     // - If credentials are not NULL, then the caller is responsible for the data validity.
-    let domain = unsafe { credentials_str_into_bytes(domain.cast(), usize::try_from(domain_len)? * 2) };
+    let mut domain = unsafe { credentials_str_into_bytes(domain.cast(), usize::try_from(domain_len)? * 2) };
+    let domain = core::mem::take(domain.as_mut());
     let password: Secret<Vec<u8>> =
         // SAFETY:
         // - Credentials pointers can be NULL.
         // - If credentials are not NULL, then the caller is responsible for the data validity.
-        unsafe { credentials_str_into_bytes(password.cast(), usize::try_from(password_len)? * 2) }.into();
+        unsafe { credentials_str_into_bytes(password.cast(), usize::try_from(password_len)? * 2) };
 
     let mut username = user.clone();
     username.extend_from_slice(&[0, 0]);
@@ -415,7 +428,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
     // Try to collect credentials for the emulated/system-provided smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.as_ref().to_vec()) {
+    if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
@@ -424,6 +437,147 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         domain: Utf16String::from_bytes_le(domain)?,
         password: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
     }))
+}
+
+/// Converts a UTF-8 password to UTF-16LE. The intermediate UTF-16 string is zeroized on drop.
+fn password_to_utf16le(password: &Secret<Vec<u8>>) -> Result<Secret<Vec<u8>>> {
+    let utf16 = Secret::new(ZeroizedUtf16String(Utf16String::from_utf8_bytes(password.as_ref())?));
+
+    Ok(utf16.as_ref().0.to_bytes_le().into())
+}
+
+/// Collects the smart card logon credentials and the optional KDC CA certificate from the environment.
+///
+/// Returns `None` if the smart card logon is not configured, so the caller can fall back to the password-based logon.
+/// An unreadable or malformed CA certificate is an error: logging on without the requested KDC verification is unsafe.
+///
+/// The CA certificate is read from the [SCARD_CA_CERT_DATA_ENV] or [SCARD_CA_CERT_PATH_ENV] environment variable.
+/// It is shared by the emulated and the system-provided smart cards.
+#[cfg(feature = "scard")]
+fn collect_smart_card_creds(
+    username: Vec<u8>,
+    domain: Vec<u8>,
+    pin: Secret<Vec<u8>>,
+) -> Result<Option<SmartCardIdentityBuffers>> {
+    let Ok(mut credentials) = collect_smart_card_logon_creds(username, domain, pin) else {
+        return Ok(None);
+    };
+    credentials.ca_cert = ca_cert_from_env()?;
+
+    Ok(Some(credentials))
+}
+
+/// Reads the optional KDC CA certificate from the environment.
+///
+/// See [SCARD_CA_CERT_DATA_ENV] and [SCARD_CA_CERT_PATH_ENV].
+#[cfg(feature = "scard")]
+fn ca_cert_from_env() -> Result<Option<sspi::CertificateRaw>> {
+    return ca_cert_from_values(
+        read(SCARD_CA_CERT_DATA_ENV)?.as_deref(),
+        read(SCARD_CA_CERT_PATH_ENV)?.as_deref(),
+    );
+
+    fn read(name: &str) -> Result<Option<String>> {
+        match std::env::var(name) {
+            Ok(value) => Ok(Some(value)),
+            Err(std::env::VarError::NotPresent) => Ok(None),
+            Err(std::env::VarError::NotUnicode(_)) => Err(Error::new(
+                ErrorKind::InvalidParameter,
+                format!("{name} env variable contains invalid unicode data"),
+            )),
+        }
+    }
+}
+
+/// Parses the optional KDC CA certificate.
+///
+/// `data` is a one-line base64 string with ASN1 DER certificate data. Surrounding whitespace is ignored.
+/// `path` is a path to a PEM certificate file. `data` wins if both are set.
+/// A value that is set but cannot be read or parsed is an error.
+#[cfg(feature = "scard")]
+fn ca_cert_from_values(data: Option<&str>, path: Option<&str>) -> Result<Option<sspi::CertificateRaw>> {
+    let invalid = |err: &dyn std::fmt::Display| {
+        Error::new(
+            ErrorKind::InvalidParameter,
+            format!(
+                "failed to read the CA certificate from {SCARD_CA_CERT_DATA_ENV} or {SCARD_CA_CERT_PATH_ENV}: {err}"
+            ),
+        )
+    };
+
+    let cert = if let Some(data) = data {
+        use base64::Engine;
+
+        let der = base64::engine::general_purpose::STANDARD
+            .decode(data.trim())
+            .map_err(|err| invalid(&err))?;
+
+        picky::x509::Cert::from_der(&der).map_err(|err| invalid(&err))?
+    } else if let Some(path) = path {
+        let pem = std::fs::read_to_string(path).map_err(|err| invalid(&err))?;
+
+        picky::x509::Cert::from_pem_str(&pem).map_err(|err| invalid(&err))?
+    } else {
+        return Ok(None);
+    };
+
+    let der = cert.to_der().map_err(|err| invalid(&err))?;
+
+    Ok(Some(sspi::CertificateRaw::try_from(der).map_err(|err| invalid(&err))?))
+}
+
+#[cfg(all(test, feature = "scard"))]
+mod ca_cert_tests {
+    use super::ca_cert_from_values;
+
+    const LAB_CERT_PEM: &str = include_str!("../../../test_assets/kdc_cert.cer");
+    const LAB_CERT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../test_assets/kdc_cert.cer");
+    const OTHER_CERT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../test_assets/pw11.cer");
+
+    /// The one-line base64 DER form of the lab certificate, which is its PEM body without the line breaks.
+    fn lab_cert_base64() -> String {
+        LAB_CERT_PEM.lines().filter(|line| !line.starts_with("-----")).collect()
+    }
+
+    fn lab_cert_der() -> Vec<u8> {
+        picky::x509::Cert::from_pem_str(LAB_CERT_PEM).unwrap().to_der().unwrap()
+    }
+
+    fn der(values: (Option<&str>, Option<&str>)) -> Vec<u8> {
+        ca_cert_from_values(values.0, values.1).unwrap().unwrap().into()
+    }
+
+    #[test]
+    fn data_value_is_read_as_one_line_base64_der() {
+        assert_eq!(der((Some(&lab_cert_base64()), None)), lab_cert_der());
+    }
+
+    #[test]
+    fn data_value_with_surrounding_whitespace_is_accepted() {
+        let data = format!("\n  {}\r\n", lab_cert_base64());
+
+        assert_eq!(der((Some(&data), None)), lab_cert_der());
+    }
+
+    #[test]
+    fn path_value_is_read_as_a_pem_file() {
+        assert_eq!(der((None, Some(LAB_CERT_PATH))), lab_cert_der());
+    }
+
+    #[test]
+    fn data_value_wins_over_path_value() {
+        assert_eq!(der((Some(&lab_cert_base64()), Some(OTHER_CERT_PATH))), lab_cert_der());
+    }
+
+    #[test]
+    fn malformed_data_value_is_an_error_even_if_the_path_is_valid() {
+        assert!(ca_cert_from_values(Some("not base64 der"), Some(LAB_CERT_PATH)).is_err());
+    }
+
+    #[test]
+    fn data_value_that_is_base64_but_not_a_certificate_is_an_error() {
+        assert!(ca_cert_from_values(Some("AAAA"), Some(LAB_CERT_PATH)).is_err());
+    }
 }
 
 /// Collects credentials for smart card logon.
@@ -437,10 +591,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 ///   environment variables must be set.
 /// * If the user wants to use emulated scard, then the SSPI_SCARD_TYPE=emulated and [winscard]-related environment variables must be set.
 #[cfg(feature = "scard")]
-fn collect_smart_card_creds(
+fn collect_smart_card_logon_creds(
     mut username: Vec<u8>,
     mut domain: Vec<u8>,
-    mut pin: Vec<u8>,
+    pin: Secret<Vec<u8>>,
 ) -> Result<SmartCardIdentityBuffers> {
     use std::env;
 
@@ -451,7 +605,8 @@ fn collect_smart_card_creds(
     const SCARD_SYSTEM_PROVIDED: &str = "system";
 
     username = U16CString::from_bytes_le_truncate(&username)?.to_bytes();
-    pin = U16CString::from_bytes_le_truncate(&pin)?.to_bytes();
+    // The PIN is truncated at the first NUL terminator and is zeroized on drop on every path.
+    let pin: Secret<ZeroizedUtf16String> = ZeroizedUtf16String::from_bytes_le_truncate(pin.as_ref())?.into();
 
     if !username.contains(&b'@') {
         username.extend_from_slice(&[b'@', 0]);
@@ -489,11 +644,12 @@ fn collect_smart_card_creds(
             Ok(SmartCardIdentityBuffers {
                 username: Utf16String::from_bytes_le(username)?,
                 certificate: auth_cert_der.clone().try_into()?,
+                ca_cert: None,
                 card_name: NonEmpty::new(DEFAULT_CARD_NAME.into()),
                 reader_name: reader.name.as_ref().into(),
                 container_name: NonEmpty::new(container_name.as_ref().into()),
                 csp_name: MICROSOFT_DEFAULT_CSP.into(),
-                pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
+                pin,
                 private_key_pem: NonEmpty::new(ZeroizedUtf16String(auth_pk_pem.as_ref().as_str().into()))
                     .map(Secret::new),
                 scard_type: SmartCardType::Emulated { scard_pin },
@@ -534,11 +690,12 @@ fn collect_smart_card_creds(
             Ok(SmartCardIdentityBuffers {
                 username: Utf16String::from_bytes_le(username)?,
                 certificate: certificate.try_into()?,
+                ca_cert: None,
                 card_name,
                 reader_name: Utf16String::from_bytes_le(reader_name)?,
                 container_name,
                 csp_name: Utf16String::from_bytes_le(csp_name)?,
-                pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
+                pin,
                 private_key_pem: None,
                 scard_type: SmartCardType::SystemProvided {
                     pkcs11_module_path: pkcs11_module.into(),
@@ -808,6 +965,7 @@ fn handle_smart_card_creds(mut username: Vec<u8>, password: Secret<Vec<u8>>) -> 
 
     let creds = CredentialsBuffers::SmartCard(SmartCardIdentityBuffers {
         certificate: raw_certificate.try_into()?,
+        ca_cert: ca_cert_from_env()?,
         reader_name: reader_name.into(),
         pin: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
         username: Utf16String::from_bytes_le(username)?,
@@ -978,11 +1136,11 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(
+    if let Some(scard_creds) = collect_smart_card_creds(
         auth_identity_buffers.user.to_bytes_le(),
         auth_identity_buffers.domain.to_bytes_le(),
-        password.as_ref().to_vec(),
-    ) {
+        password.clone(),
+    )? {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
