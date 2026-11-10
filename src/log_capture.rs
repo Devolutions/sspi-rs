@@ -126,6 +126,7 @@ fn renderings(secret: &[u8]) -> Vec<String> {
 
     if let Ok(text) = std::str::from_utf8(secret) {
         renderings.push(text.to_owned());
+        renderings.push(format!("{text:?}"));
 
         let utf16_le: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
         renderings.extend(bytes_renderings(&utf16_le));
