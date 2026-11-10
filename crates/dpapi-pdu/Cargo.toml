@@ -6,10 +6,11 @@ publish = false # not ready yet
 
 [features]
 std = []
-arbitrary = ["uuid/arbitrary", "bitflags/arbitrary", "dep:arbitrary", "std"]
+arbitrary = ["uuid/arbitrary", "bitflags/arbitrary", "dep:arbitrary", "secret/arbitrary", "std"]
 
 [dependencies]
 dpapi-core = { workspace = true, features = ["alloc"] }
+secret.workspace = true
 uuid = { version = "1.23", default-features = false }
 crypto-bigint = { version = "0.7", default-features = false, features = ["alloc"] }
 bitflags = "2.11"

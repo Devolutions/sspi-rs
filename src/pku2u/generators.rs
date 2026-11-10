@@ -364,7 +364,7 @@ pub fn generate_authenticator(options: GenerateAuthenticatorOptions<'_>) -> Resu
         subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type.into()])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value)),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value.as_ref().clone())),
             })
         })),
         seq_number: Optional::from(seq_num.map(|seq_num| {

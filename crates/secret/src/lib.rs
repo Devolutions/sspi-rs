@@ -1,4 +1,6 @@
-use std::fmt;
+#![no_std]
+
+use core::fmt;
 
 #[cfg(feature = "picky")]
 use picky::key::PrivateKey;
@@ -11,6 +13,17 @@ pub struct Secret<T: Zeroize>(T);
 impl<T: Zeroize> Secret<T> {
     pub fn new(inner: T) -> Self {
         Self(inner)
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+impl<'a, T: Zeroize + arbitrary::Arbitrary<'a>> arbitrary::Arbitrary<'a> for Secret<T> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+        T::arbitrary(u).map(Self)
+    }
+
+    fn size_hint(depth: usize) -> (usize, Option<usize>) {
+        T::size_hint(depth)
     }
 }
 

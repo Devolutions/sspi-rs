@@ -407,11 +407,11 @@ pub async fn initialize_security_context<'a>(
                         let mut session_key_extractor = match credentials {
                             CredentialsBuffers::AuthIdentity(_) => AsRepSessionKeyExtractor::AuthIdentity {
                                 salt: &salt,
-                                password: password.as_ref(),
+                                password: &password,
                                 enc_params: &mut client.encryption_params,
                             },
                             CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
-                                key: keytab.key.as_ref(),
+                                key: &keytab.key,
                                 enc_params: &client.encryption_params,
                             },
                             #[cfg(feature = "scard")]
@@ -610,7 +610,7 @@ pub async fn initialize_security_context<'a>(
                             seq_num: Some(client.seq_number + 1),
                             sub_key: Some(EncKey {
                                 key_type: enc_type.clone(),
-                                key_value: authenticator_sub_key,
+                                key_value: authenticator_sub_key.into(),
                             }),
 
                             checksum: Some(ChecksumOptions {

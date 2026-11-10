@@ -19,7 +19,7 @@ use crate::kerberos::client::principal::{
 };
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
 use crate::kerberos::utils::serialize_message;
-use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result};
+use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
 /// Requests the TGT ticket from KDC.
 ///
@@ -57,7 +57,7 @@ pub(crate) async fn request_tgt(
         CredentialsBuffers::AuthIdentity(auth_identity) => {
             let username = auth_identity.user.to_string();
             let domain = auth_identity.domain.to_string();
-            let password = auth_identity.password.as_ref().as_ref().to_string();
+            let password = Secret::new(auth_identity.password.as_ref().as_ref().to_string());
 
             let realm = get_client_principal_realm(&username, &domain);
             let cname_type = get_client_principal_name_type(&username, &domain);
@@ -86,7 +86,7 @@ pub(crate) async fn request_tgt(
                 return Err(Error::new(ErrorKind::InvalidParameter, "keytab principal has no realm"));
             }
 
-            (name.to_owned(), String::new(), realm, name_type)
+            (name.to_owned(), Secret::new(String::new()), realm, name_type)
         }
     };
     server.realm = Some(realm.clone());
@@ -148,7 +148,7 @@ pub(crate) async fn request_tgt(
             enc_params: &server.encryption_params,
         },
         CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
-            key: keytab.key.as_ref(),
+            key: &keytab.key,
             enc_params: &server.encryption_params,
         },
         #[cfg(feature = "scard")]

@@ -101,7 +101,7 @@ pub struct Ntlm {
     our_seq_number: u32,
     remote_seq_number: u32,
 
-    session_key: Option<[u8; SESSION_KEY_SIZE]>,
+    session_key: Option<Secret<[u8; SESSION_KEY_SIZE]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -657,9 +657,9 @@ impl Sspi for Ntlm {
 
     #[instrument(level = "debug", fields(state = ?self.state), skip(self))]
     fn query_context_session_key(&self) -> crate::Result<crate::SessionKeys> {
-        if let Some(session_key) = self.session_key {
+        if let Some(session_key) = self.session_key.as_ref() {
             Ok(crate::SessionKeys {
-                session_key: session_key.to_vec().into(),
+                session_key: session_key.as_ref().to_vec().into(),
             })
         } else {
             Err(Error::new(

@@ -1325,7 +1325,7 @@ impl Pku2u {
                     seq_num: Some(exchange_seq_number),
                     sub_key: Some(EncKey {
                         key_type: enc_type.clone(),
-                        key_value: authenticator_sub_key.clone(),
+                        key_value: authenticator_sub_key.clone().into(),
                     }),
                     checksum: Some(ChecksumOptions {
                         checksum_type: AUTHENTICATOR_CHECKSUM_TYPE.to_vec(),

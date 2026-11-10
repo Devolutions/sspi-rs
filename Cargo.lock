@@ -802,6 +802,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "paste",
+ "secret",
  "thiserror",
  "uuid",
 ]
@@ -1653,6 +1654,7 @@ dependencies = [
  "picky-asn1-der",
  "picky-asn1-x509",
  "picky-krb",
+ "secret",
  "thiserror",
  "time",
  "tracing",
@@ -2741,6 +2743,7 @@ dependencies = [
 name = "secret"
 version = "0.1.0"
 dependencies = [
+ "arbitrary",
  "picky",
  "serde",
  "zeroize",
@@ -4013,6 +4016,7 @@ dependencies = [
  "proptest",
  "rand 0.10.3",
  "rsa",
+ "secret",
  "sha1",
  "time",
  "tracing",

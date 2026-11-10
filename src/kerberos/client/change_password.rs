@@ -61,7 +61,7 @@ pub async fn change_password<'a>(
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
 
     let pa_data_options = AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
-        password: password.as_ref(),
+        password,
         salt: salt.into_bytes(),
         enc_params: client.encryption_params.clone(),
         with_pre_auth: false,
@@ -97,7 +97,7 @@ pub async fn change_password<'a>(
             seq_num: Some(seq_num),
             sub_key: Some(EncKey {
                 key_type: enc_type.clone(),
-                key_value: authenticator_seb_key,
+                key_value: authenticator_seb_key.into(),
             }),
             checksum: None,
             channel_bindings: client.channel_bindings.as_ref(),

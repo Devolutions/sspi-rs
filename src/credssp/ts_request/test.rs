@@ -627,6 +627,10 @@ fn encode_ts_credentials_remote_guard_rejects_keytab() {
     assert_eq!(error.error_type, ErrorKind::UnsupportedFunction);
 }
 
+/// The body of the fixture private key. It is a single line, because `Debug` escapes line breaks.
+#[cfg(feature = "scard")]
+const SMART_CARD_PRIVATE_KEY_BODY: &str = "MIIEvgIBADANBgkqhkiG9w0BAQEFAASC-test-fixture";
+
 #[cfg(feature = "scard")]
 fn smart_card_credentials() -> CredentialsBuffers {
     let certificate = picky::x509::Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer")).unwrap();
@@ -638,7 +642,10 @@ fn smart_card_credentials() -> CredentialsBuffers {
         container_name: crate::NonEmpty::new("synthetic container".into()),
         csp_name: "synthetic provider".into(),
         pin: ZeroizedUtf16String("12345678".into()).into(),
-        private_key_pem: None,
+        private_key_pem: crate::NonEmpty::new(ZeroizedUtf16String(
+            format!("-----BEGIN PRIVATE KEY-----\n{SMART_CARD_PRIVATE_KEY_BODY}\n-----END PRIVATE KEY-----").into(),
+        ))
+        .map(Secret::new),
         scard_type: crate::SmartCardType::Emulated {
             scard_pin: b"87654321".to_vec().into(),
         },
@@ -719,7 +726,15 @@ fn encode_ts_credentials_does_not_log_secrets_at_debug_level() {
     )]
     let mut cases = vec![("password", "p4ssw0rd-9f2c", password_credentials)];
     #[cfg(feature = "scard")]
-    cases.push(("smart card PIN", "12345678", smart_card_credentials()));
+    cases.extend([
+        ("smart card PIN", "12345678", smart_card_credentials()),
+        ("emulated smart card PIN", "87654321", smart_card_credentials()),
+        (
+            "smart card private key",
+            SMART_CARD_PRIVATE_KEY_BODY,
+            smart_card_credentials(),
+        ),
+    ]);
 
     for (name, secret, credentials) in cases {
         let capture = LogCapture::start(tracing::Level::DEBUG);

@@ -183,7 +183,7 @@ impl AsExchange {
     ) -> Result<AsReqPaDataOptions<'a>> {
         Ok(match credentials {
             CredentialsBuffers::AuthIdentity(_) => AsReqPaDataOptions::AuthIdentity(GenerateAsPaDataOptions {
-                password: self.password.as_ref(),
+                password: &self.password,
                 salt: self.salt.clone(),
                 enc_params: enc_params.clone(),
                 with_pre_auth: false,

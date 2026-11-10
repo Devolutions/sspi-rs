@@ -10,6 +10,7 @@ use iso7816_tlv::ber::{Tag, Tlv, Value};
 use picky::key::PrivateKey;
 use rsa::traits::PublicKeyParts;
 use rsa::{Pkcs1v15Sign, RsaPrivateKey};
+use secret::{Secret, SecretPrivateKey};
 use sha1::Sha1;
 use uuid::Uuid;
 
@@ -77,15 +78,15 @@ pub struct SmartCard<'a> {
     reader_name: Cow<'a, str>,
     chuid: [u8; CHUID_LENGTH],
     ccc: Vec<u8>,
-    pin: Vec<u8>,
+    pin: Secret<Vec<u8>>,
     auth_cert: Vec<u8>,
-    auth_pk: PrivateKey,
+    auth_pk: SecretPrivateKey,
     state: SCardState,
     // We don't need to track actual transactions for the emulated smart card.
     // We are using this flag to track incorrect smart card usage.
     transaction: bool,
     pending_command: Option<Command<1024>>,
-    pending_response: Option<Vec<u8>>,
+    pending_response: Option<Secret<Vec<u8>>>,
     // We keep it just for compatibility reasons with WinSCard API.
     // Usually, the mstsc.exe doesn't use scard attributes for connection establishing.
     attributes: BTreeMap<AttributeId, Cow<'a, [u8]>>,
@@ -107,9 +108,9 @@ impl SmartCard<'_> {
             reader_name,
             chuid,
             ccc: build_ccc(),
-            pin: SmartCard::validate_and_pad_pin(pin)?,
+            pin: SmartCard::validate_and_pad_pin(pin)?.into(),
             auth_cert,
-            auth_pk,
+            auth_pk: auth_pk.into(),
             state: SCardState::Ready,
             transaction: false,
             pending_command: None,
@@ -278,7 +279,7 @@ impl SmartCard<'_> {
                     }
                     // Retrieve the number of further allowed retries if the data field is absent
                     // Otherwise just compare the provided PIN with the stored one
-                    if cmd.data().is_empty() || cmd.data() != self.pin.as_slice() {
+                    if cmd.data().is_empty() || cmd.data() != self.pin.as_ref().as_slice() {
                         return Ok(Status::VerificationFailedWithRetries.into());
                     } else {
                         // data field is present and the provided PIN is correct -> change state and return OK
@@ -331,7 +332,7 @@ impl SmartCard<'_> {
                     ) =>
                 {
                     // certificate is almost certainly longer than 256 bytes, so we can just set a pending response and call the GET RESPONSE handler
-                    self.pending_response = Some(self.auth_cert.clone());
+                    self.pending_response = Some(self.auth_cert.clone().into());
                     self.get_response()
                 }
                 CARD_CAPABILITY_CONTAINER_TAG => Ok(Response::new(Status::OK, Some(self.ccc.clone()))),
@@ -436,12 +437,12 @@ impl SmartCard<'_> {
             )?]),
         )?
         .to_vec();
-        self.pending_response = Some(response);
+        self.pending_response = Some(response.into());
         self.get_response()
     }
 
     fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
+        let rsa_private_key = RsaPrivateKey::try_from(self.auth_pk.as_ref())?;
         // According to the specification, the PIV smart card accepts already padded digest.
         // So, it's safe to use the `rsa_decrypt_and_check` function here.
         let signature = rsa::hazmat::rsa_decrypt_and_check(
@@ -462,7 +463,7 @@ impl SmartCard<'_> {
     /// Signs the provided data using the smart card private key.
     /// *Warning 1*. The input data should be a *SHA1* hash of the actually you want to sign.
     pub fn sign_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
-        let rsa_private_key = RsaPrivateKey::try_from(&self.auth_pk)?;
+        let rsa_private_key = RsaPrivateKey::try_from(self.auth_pk.as_ref())?;
         let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
@@ -470,7 +471,7 @@ impl SmartCard<'_> {
 
     /// Verifies the PIN code. This method alters the scard state.
     pub fn verify_pin(&mut self, pin: &[u8]) -> WinScardResult<()> {
-        if self.pin != Self::pad_pin(pin.into()) {
+        if *self.pin.as_ref() != Self::pad_pin(pin.into()) {
             return Err(Error::new(
                 ErrorKind::InvalidValue,
                 "PIN verification error: Invalid PIN",
@@ -483,7 +484,7 @@ impl SmartCard<'_> {
     }
 
     fn get_next_response_chunk(&mut self) -> Option<(Vec<u8>, usize)> {
-        let vec = self.pending_response.as_mut()?;
+        let vec: &mut Vec<u8> = self.pending_response.as_mut()?.as_mut();
         if vec.is_empty() {
             return None;
         }
@@ -838,7 +839,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let uniform = Uniform::new(0, 255).unwrap();
         let data: Vec<u8> = (0..513).map(|_| rng.sample(uniform)).collect();
         // we will have to make 3 calls to get this data
-        scard.pending_response = Some(data.clone());
+        scard.pending_response = Some(data.clone().into());
 
         let mut received_result = vec![];
         // 0 means any valid number in range 0..=256
@@ -949,11 +950,11 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
 
         let data = "My message".as_bytes();
 
-        let rsa_pk = RsaPrivateKey::try_from(&scard.auth_pk).expect("Can't convert the private key");
+        let rsa_pk = RsaPrivateKey::try_from(scard.auth_pk.as_ref()).expect("Can't convert the private key");
         // sign the data using the PKCS1-v1.5 padding scheme
         let signature_algorithm = SignatureAlgorithm::RsaPkcs1v15(HashAlgorithm::SHA3_512);
         let signed_data = signature_algorithm
-            .sign(data, &scard.auth_pk)
+            .sign(data, scard.auth_pk.as_ref())
             .expect("Error while signing the data");
         // extract the padded hash by decrypting the signature using the public key
         // we need to extract the padded hash to calculate the signature ourselves
@@ -1017,6 +1018,7 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
                 .verify(
                     &scard
                         .auth_pk
+                        .as_ref()
                         .to_public_key()
                         .expect("Error while creating public key from a private key"),
                     data,

@@ -117,7 +117,7 @@ pub(super) fn generate_tgt_req(sname: &[&str]) -> Result<TgtReq> {
 /// Parameters for generating pa-datas for [AsReq] message.
 #[derive(Debug)]
 pub struct GenerateAsPaDataOptions<'a> {
-    pub password: &'a str,
+    pub password: &'a Secret<String>,
     /// Salt for deriving the encryption key.
     ///
     /// The salt value should be extracted from the [KrbError] message.
@@ -200,7 +200,7 @@ pub(crate) fn generate_pa_datas_for_as_req_at(
         let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
         let key = encryption_type
             .cipher()
-            .generate_key_from_password(password.as_bytes(), salt)?;
+            .generate_key_from_password(password.as_ref().as_bytes(), salt)?;
         pa_datas.push(encode_enc_timestamp_pa_data(&key, encryption_type, timestamp)?);
     }
 
@@ -620,7 +620,7 @@ pub struct EncKey {
     /// Encryption type.
     pub key_type: CipherSuite,
     /// Encryption key value.
-    pub key_value: Vec<u8>,
+    pub key_value: Secret<Vec<u8>>,
 }
 
 /// Input parameters for generating ApReq Authenticator.
@@ -720,7 +720,7 @@ pub(crate) fn generate_authenticator_at(
         subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type.into()])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value)),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key_value.as_ref().clone())),
             })
         })),
         seq_number: Optional::from(seq_num.map(|seq_num| {
@@ -1013,6 +1013,30 @@ mod tests {
             GssFlags::from(request_flags).bits(),
             (GssFlags::GSS_C_EXTENDED_ERROR_FLAG | GssFlags::GSS_C_IDENTIFY_FLAG | GssFlags::GSS_C_MUTUAL_FLAG).bits()
         );
+    }
+
+    #[test]
+    fn option_structs_debug_output_does_not_contain_secrets() {
+        let password = Secret::from("p4ssw0rd-9f2c".to_owned());
+        let key = vec![0xA5_u8; 32];
+
+        let capture = LogCapture::start(tracing::Level::TRACE);
+        LogCapture::record_secret("password", password.as_ref().as_bytes());
+        LogCapture::record_secret("sub-session key", &key);
+
+        let pa_data_options = GenerateAsPaDataOptions {
+            password: &password,
+            salt: b"EXAMPLE.COMuser".to_vec(),
+            enc_params: EncryptionParams::default_for_client(),
+            with_pre_auth: true,
+        };
+        let sub_key = EncKey {
+            key_type: CipherSuite::Aes256CtsHmacSha196,
+            key_value: key.clone().into(),
+        };
+        tracing::debug!(?pa_data_options, ?sub_key, "Dumping the options");
+
+        capture.assert_no_secrets();
     }
 
     fn cname_components(username: &str) -> Vec<String> {

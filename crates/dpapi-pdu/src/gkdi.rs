@@ -11,6 +11,7 @@ use dpapi_core::{
     OtherErr, ReadCursor, StaticName, WriteCursor, cast_int, cast_length, compute_padding, decode_uuid, encode_uuid,
     ensure_size, read_padding, write_padding,
 };
+use secret::Secret;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -879,9 +880,9 @@ pub struct GroupKeyEnvelope {
     /// This field MUST be the forest name of the server in DNS format.
     pub forest_name: String,
     /// An L1 seed key ADM element in binary form.
-    pub l1_key: Vec<u8>,
+    pub l1_key: Secret<Vec<u8>>,
     /// The L2 seed key ADM element or the group public key ADM element with group key identifier in binary form.
-    pub l2_key: Vec<u8>,
+    pub l2_key: Secret<Vec<u8>>,
 }
 
 impl GroupKeyEnvelope {
@@ -935,8 +936,8 @@ impl Encode for GroupKeyEnvelope {
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.secret_parameters.len())?);
         dst.write_u32(self.private_key_length);
         dst.write_u32(self.public_key_length);
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l1_key.len())?);
-        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l2_key.len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l1_key.as_ref().len())?);
+        dst.write_u32(cast_length!("GroupKeyEnvelope", "", self.l2_key.as_ref().len())?);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_domain_name_len)?);
         dst.write_u32(cast_length!("GroupKeyEnvelope", "", encoded_forest_name_len)?);
 
@@ -946,8 +947,8 @@ impl Encode for GroupKeyEnvelope {
         dst.write_slice(&self.secret_parameters);
         encode_utf16_le(&self.domain_name, dst);
         encode_utf16_le(&self.forest_name, dst);
-        dst.write_slice(&self.l1_key);
-        dst.write_slice(&self.l2_key);
+        dst.write_slice(self.l1_key.as_ref());
+        dst.write_slice(self.l2_key.as_ref());
 
         Ok(())
     }
@@ -969,8 +970,8 @@ impl Encode for GroupKeyEnvelope {
             + self.secret_parameters.len()
             + encoded_domain_name_len
             + encoded_forest_name_len
-            + self.l1_key.len()
-            + self.l2_key.len()
+            + self.l1_key.as_ref().len()
+            + self.l2_key.as_ref().len()
     }
 }
 
@@ -1038,10 +1039,10 @@ impl DecodeOwned for GroupKeyEnvelope {
         let forest_name = read_c_str_utf16_le(forest_len, src)?;
 
         ensure_size!(in: src, size: l1_key_len);
-        let l1_key = src.read_slice(l1_key_len).to_vec();
+        let l1_key = Secret::new(src.read_slice(l1_key_len).to_vec());
 
         ensure_size!(in: src, size: l2_key_len);
-        let l2_key = src.read_slice(l2_key_len).to_vec();
+        let l2_key = Secret::new(src.read_slice(l2_key_len).to_vec());
 
         Ok(Self {
             flags,

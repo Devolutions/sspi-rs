@@ -294,7 +294,7 @@ impl CredentialsHandle {
                 add_bytes(&mut hasher, identity.pin.as_ref().0.as_bytes_le());
                 if let Some(key) = &identity.private_key_pem {
                     hasher.update([1]);
-                    add_bytes(&mut hasher, key.as_ref().as_bytes_le());
+                    add_bytes(&mut hasher, key.as_ref().as_ref().0.as_bytes_le());
                 } else {
                     hasher.update([0]);
                 }

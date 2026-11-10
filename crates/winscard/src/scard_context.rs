@@ -6,6 +6,7 @@ use alloc::{format, vec};
 
 use picky::key::PrivateKey;
 use picky_asn1_x509::{PublicKey, SubjectPublicKeyInfo};
+use secret::{Secret, SecretPrivateKey};
 use uuid::Uuid;
 
 use crate::cache::Cache;
@@ -54,13 +55,13 @@ pub struct SmartCardInfo<'a> {
     /// Container name which stores the certificate along with its private key.
     pub container_name: Cow<'a, str>,
     /// Smart card PIN code.
-    pub pin: Vec<u8>,
+    pub pin: Secret<Vec<u8>>,
     /// DER-encoded smart card certificate.
     pub auth_cert_der: Vec<u8>,
     /// Encoded private key (pem).
-    pub auth_pk_pem: Cow<'a, str>,
+    pub auth_pk_pem: Secret<String>,
     /// Private key.
-    pub auth_pk: PrivateKey,
+    pub auth_pk: SecretPrivateKey,
     /// Information about smart card reader.
     pub reader: Reader<'a>,
 }
@@ -81,7 +82,7 @@ impl<'a> SmartCardInfo<'a> {
 
         let container_name = container_name()?.into();
         let reader_name: Cow<'_, str> = env!(WINSCARD_READER_NAME_ENV)?.into();
-        let pin = env!(WINSCARD_PIN_ENV)?.into();
+        let pin: Vec<u8> = env!(WINSCARD_PIN_ENV)?.into();
 
         let auth_cert_der = auth_cert_from_env()?.to_der()?;
         let (raw_private_key, private_key) = private_key_from_env()?;
@@ -96,10 +97,10 @@ impl<'a> SmartCardInfo<'a> {
 
         Ok(Self {
             container_name,
-            pin,
+            pin: pin.into(),
             auth_cert_der,
-            auth_pk_pem: raw_private_key.into(),
-            auth_pk: private_key,
+            auth_pk_pem: raw_private_key.to_string().into(),
+            auth_pk: private_key.into(),
             reader,
         })
     }
@@ -122,10 +123,10 @@ impl<'a> SmartCardInfo<'a> {
         };
         SmartCardInfo {
             container_name,
-            pin,
+            pin: pin.into(),
             auth_cert_der,
-            auth_pk_pem,
-            auth_pk,
+            auth_pk_pem: auth_pk_pem.into_owned().into(),
+            auth_pk: auth_pk.into(),
             reader,
         }
     }
@@ -304,6 +305,7 @@ impl<'a> ScardContext<'a> {
             // let pub_key = smart_cards_info.
             let public_key = smart_card_info
                 .auth_pk
+                .as_ref()
                 .to_public_key()
                 .expect("RSA private key to public key");
             let public_key: &SubjectPublicKeyInfo = public_key.as_ref();
@@ -463,9 +465,9 @@ impl WinScardContext for ScardContext<'_> {
             handle: Box::new(SmartCard::new(
                 Cow::Owned(reader_name.to_owned()),
                 self.card_id,
-                self.smart_card_info.pin.clone(),
+                self.smart_card_info.pin.as_ref().clone(),
                 self.smart_card_info.auth_cert_der.clone(),
-                self.smart_card_info.auth_pk.clone(),
+                self.smart_card_info.auth_pk.as_ref().clone(),
             )?),
             protocol: SUPPORTED_CONNECTION_PROTOCOL,
         })
