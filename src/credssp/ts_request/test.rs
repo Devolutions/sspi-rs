@@ -706,10 +706,6 @@ fn encode_ts_credentials_remote_guard_rejects_smart_card_credentials() {
 /// The encoded credentials contain the password or the PIN, so logging the encoder's return value leaks it.
 #[test]
 fn encode_ts_credentials_does_not_log_secrets_at_debug_level() {
-    #[cfg_attr(
-        not(feature = "scard"),
-        expect(unused_mut, reason = "the smart card case exists only with the `scard` feature")
-    )]
     let password_credentials = CredentialsBuffers::AuthIdentity(
         AuthIdentity {
             username: Username::new("user", Some("domain")).unwrap(),
@@ -717,6 +713,10 @@ fn encode_ts_credentials_does_not_log_secrets_at_debug_level() {
         }
         .into(),
     );
+    #[cfg_attr(
+        not(feature = "scard"),
+        expect(unused_mut, reason = "the smart card case exists only with the `scard` feature")
+    )]
     let mut cases = vec![("password", "p4ssw0rd-9f2c", password_credentials)];
     #[cfg(feature = "scard")]
     cases.push(("smart card PIN", "12345678", smart_card_credentials()));
