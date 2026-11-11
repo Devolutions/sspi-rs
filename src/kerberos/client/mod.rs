@@ -9,10 +9,10 @@ use std::io::Write;
 pub use change_password::change_password;
 use oid::ObjectIdentifier;
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{PrincipalName, Ticket};
-use picky_krb::messages::{ApRep, AsRep, TgsRep};
+use picky_krb::messages::{AsRep, TgsRep};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng;
 
@@ -33,7 +33,9 @@ use crate::generator::YieldPointLocal;
 use crate::kerberos::client::kdc::as_exchange::{AsExchange, AsExchangeOutput};
 use crate::kerberos::client::kdc::tgs_exchange::{TgsExchange, TgsExchangeOutput};
 use crate::kerberos::config::KdcResolution;
-use crate::kerberos::messages::{decode_krb_message, generate_iakerb_proxy_message, generate_krb_message};
+use crate::kerberos::messages::{
+    decode_ap_rep_message, decode_dce_ap_rep_message, generate_iakerb_proxy_message, generate_krb_message,
+};
 use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsRequestNonces};
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
@@ -681,9 +683,7 @@ pub async fn initialize_security_context<'a>(
                             // it is equal to 0, but during RPC auth it is equal to EC.
                             client.encryption_params.ec = EC;
 
-                            use picky_krb::messages::ApRep;
-
-                            let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                            let ap_rep = decode_dce_ap_rep_message(&input_token.buffer)?;
 
                             let session_key = client
                                 .encryption_params
@@ -721,7 +721,7 @@ pub async fn initialize_security_context<'a>(
                             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                             output_token.buffer.write_all(&ap_rep)?;
                         } else {
-                            let ap_rep = decode_krb_message::<ApRep>(&input_token.buffer, AP_REP_TOKEN_ID)?;
+                            let ap_rep = decode_ap_rep_message(&input_token.buffer)?;
 
                             let session_key = client
                                 .encryption_params
