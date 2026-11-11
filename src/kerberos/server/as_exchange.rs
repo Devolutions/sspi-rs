@@ -208,17 +208,21 @@ pub(crate) async fn as_exchange(
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
-        if as_rep.is_ok() {
-            error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
-
-            return Err(Error::new(
-                ErrorKind::InvalidToken,
-                "KDC server should not process AS_REQ without the pa-pac data",
-            ));
-        }
+        let krb_error = match as_rep {
+            Ok(as_rep) => {
+                // [3.1.3.  Receipt of KRB_AS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3)
+                // If pre-authentication is not required, the KDC replies with the AS-REP right away.
+                //
+                // UNTESTED: the acceptor completes the exchange with the AS-REP to the request without pre-authentication.
+                // The client exchange in `client::kdc::as_exchange` has the same handling and a test;
+                // check both when changing either.
+                return Ok((as_rep, String::from_utf8_lossy(pa_data_options.salt()).into_owned()));
+            }
+            Err(krb_error) => krb_error,
+        };
 
         if let Some(correct_salt) = extract_preauth_salt(
-            &as_rep.unwrap_err(),
+            &krb_error,
             kdc_req_body.realm.0.0.as_utf8(),
             kdc_req_body
                 .cname

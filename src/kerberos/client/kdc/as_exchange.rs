@@ -93,18 +93,21 @@ impl AsExchange {
                         &mut client.iakerb_gss_transcript,
                     )?;
 
-                    if as_rep.is_ok() {
-                        error!(
-                            "KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected."
-                        );
+                    let krb_error = match as_rep {
+                        Ok(as_rep) => {
+                            // [3.1.3.  Receipt of KRB_AS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3)
+                            // If pre-authentication is not required, the KDC replies with the AS-REP right away.
+                            // Active Directory does so for accounts that do not require Kerberos pre-authentication.
+                            debug!("KDC replied with AS_REP to the AS_REQ without pre-authentication data");
 
-                        return Err(Error::new(
-                            ErrorKind::InvalidToken,
-                            "KDC server should not process AS_REQ without the pa-pac data",
-                        ));
-                    }
-
-                    let krb_error = as_rep.unwrap_err();
+                            return Ok(AsExchangeOutput::Done(
+                                as_rep,
+                                String::from_utf8_lossy(&self.salt).into_owned(),
+                                self.nonces,
+                            ));
+                        }
+                        Err(krb_error) => krb_error,
+                    };
 
                     if is_smart_card_preauth_hint(credentials, &krb_error) {
                         debug!(
@@ -255,4 +258,70 @@ pub(crate) fn clock_offset_from_error(error: &KrbError, received_at: OffsetDateT
         .checked_add(Duration::microseconds(i64::from(microseconds)))
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "KDC skew error has invalid server time"))?;
     Ok(server_time - received_at)
+}
+
+#[cfg(test)]
+mod tests {
+    use picky_krb::messages::AsRep;
+
+    use super::{AsExchange, AsExchangeOutput};
+    use crate::kerberos::client::generators::{GenerateAsReqOptions, generate_as_req_kdc_body};
+    use crate::kerberos::client::kdc::tests::as_rep_raw;
+    use crate::kerberos::pa_datas::AsRequestNonces;
+    use crate::kerberos::test_data::fake_client;
+    use crate::{ClientRequestFlags, Secret};
+
+    /// The exchange of `myuser@EXAMPLE.COM` with the request nonce 1.
+    fn as_exchange() -> AsExchange {
+        let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
+            realm: "EXAMPLE.COM",
+            username: "myuser",
+            cname_type: 1,
+            snames: &["krbtgt", "EXAMPLE.COM"],
+            nonce: 1,
+            hostname: "host",
+            context_requirements: ClientRequestFlags::empty(),
+        })
+        .unwrap();
+
+        AsExchange::new(
+            kdc_req_body,
+            AsRequestNonces {
+                kdc_req: 1,
+                #[cfg(feature = "scard")]
+                pk_authenticator: 2,
+            },
+            Secret::new("password".to_owned()),
+            b"EXAMPLE.COMmyuser".to_vec(),
+            #[cfg(feature = "scard")]
+            crate::pk_init::KeyAgreement::Dh(crate::pku2u::generate_client_dh_parameters(
+                &mut <rand::rngs::StdRng as rand_core::SeedableRng>::seed_from_u64(1),
+            )),
+        )
+    }
+
+    // RFC 4120 §3.1.3: the KDC replies with the AS-REP right away if it does not require pre-authentication.
+    // Active Directory does so for accounts with "Do not require Kerberos preauthentication".
+    #[test]
+    fn an_as_rep_to_the_request_without_pre_authentication_completes_the_exchange() {
+        let mut client = fake_client();
+        let credentials = client.auth_identity.clone().unwrap();
+        let mut exchange = as_exchange();
+        assert!(matches!(
+            exchange.step(&mut client, &credentials, &[]).unwrap(),
+            AsExchangeOutput::SendRequest(_)
+        ));
+
+        // The first four bytes are the length of the message.
+        let mut reply = vec![0, 0, 0, 0];
+        reply.extend_from_slice(&as_rep_raw());
+
+        let AsExchangeOutput::Done(as_rep, _salt, nonces) = exchange.step(&mut client, &credentials, &reply).unwrap()
+        else {
+            panic!("the AS-REP must complete the exchange");
+        };
+
+        assert_eq!(as_rep, picky_asn1_der::from_bytes::<AsRep>(&as_rep_raw()).unwrap());
+        assert_eq!(nonces.kdc_req, 1);
+    }
 }

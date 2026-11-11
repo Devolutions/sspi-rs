@@ -59,7 +59,7 @@ mod tests {
     use crate::kerberos::client::kdc::decode_kdc_reply;
     use crate::kerberos::messages::generate_iakerb_proxy_message;
 
-    fn as_rep_raw() -> Vec<u8> {
+    pub(super) fn as_rep_raw() -> Vec<u8> {
         vec![
             107, 130, 2, 192, 48, 130, 2, 188, 160, 3, 2, 1, 5, 161, 3, 2, 1, 11, 162, 43, 48, 41, 48, 39, 161, 3, 2,
             1, 19, 162, 32, 4, 30, 48, 28, 48, 26, 160, 3, 2, 1, 18, 161, 19, 27, 17, 69, 88, 65, 77, 80, 76, 69, 46,
