@@ -490,7 +490,12 @@ pub async fn accept_security_context(
 
             // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
             // The name and realm of the client from the ticket are compared against the same fields in the authenticator.
-            if ticket_enc_part.0.crealm.0 != crealm.0 || ticket_enc_part.0.cname != cname.0 {
+            //
+            // The name-type is only a hint about how to interpret the name components (RFC 4120 §6.2),
+            // and a KDC that canonicalizes names can change it, so only the components are compared.
+            if ticket_enc_part.0.crealm.0 != crealm.0
+                || ticket_enc_part.0.cname.0.name_string.0 != cname.0.name_string.0
+            {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
                     "the name and realm of the client in ticket and authenticator do not match",
@@ -579,7 +584,9 @@ pub async fn accept_security_context(
 
             debug!("ApReq Ticket and Authenticator are valid!");
 
-            server_data.client = Some(client_upn(&cname.0, &crealm.0)?);
+            // The ticket was issued by the KDC. The authenticator was written by the client,
+            // and only its name components are known to match the ticket.
+            server_data.client = Some(client_upn(&ticket_enc_part.0.cname.0, &ticket_enc_part.0.crealm.0)?);
             // The ticket was issued by the KDC. The authenticator was written by the client.
             server.client_principal = Some(ClientPrincipal::from_ticket(
                 &ticket_enc_part.0.cname.0,
@@ -740,7 +747,7 @@ pub async fn accept_security_context(
 #[cfg(test)]
 mod tests {
     use picky_krb::constants::gss_api::TGT_REQ_TOKEN_ID;
-    use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_HST};
+    use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_HST};
     use picky_krb::crypto::CipherSuite;
     use picky_krb::messages::AsReq;
     use url::Url;
@@ -997,6 +1004,8 @@ mod tests {
             cipher_suite: CipherSuite,
             /// The encryption type of the subkey in the authenticator, if the initiator sends one.
             authenticator_subkey: Option<CipherSuite>,
+            /// The client name in the authenticator. The ticket names `alice` as an `NT-PRINCIPAL`.
+            authenticator_cname: PrincipalName,
         }
 
         impl Default for Spec {
@@ -1010,6 +1019,7 @@ mod tests {
                     mutual_auth: false,
                     cipher_suite: CipherSuite::Aes256CtsHmacSha196,
                     authenticator_subkey: None,
+                    authenticator_cname: alice(),
                 }
             }
         }
@@ -1089,7 +1099,7 @@ mod tests {
             let authenticator = Authenticator::from(AuthenticatorInner {
                 authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![spec.authenticator_vno])),
                 crealm: ExplicitContextTag1::from(string("EXAMPLE.COM")),
-                cname: ExplicitContextTag2::from(alice()),
+                cname: ExplicitContextTag2::from(spec.authenticator_cname.clone()),
                 cksum: Optional::from(None),
                 cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0])),
                 ctime: ExplicitContextTag5::from(time(now)),
@@ -1334,6 +1344,59 @@ mod tests {
             #[case] expected: &[u8],
         ) {
             assert_eq!(ap_rep_seq_number(acceptor_seq_number), expected);
+        }
+
+        fn principal(name_type: u8, components: &[&str]) -> PrincipalName {
+            PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![name_type])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
+                    components.iter().map(|component| string(component)).collect::<Vec<_>>(),
+                )),
+            }
+        }
+
+        // RFC 4120 §3.2.3: the client name of the authenticator must match the one of the ticket.
+        // The name-type is a hint about the interpretation (§6.2), so a KDC that canonicalizes it
+        // must not make the acceptor reject its own tickets.
+        #[test]
+        fn the_name_type_of_the_client_is_ignored_when_matching_the_ticket() {
+            let spec = Spec {
+                authenticator_cname: principal(NT_ENTERPRISE, &["alice"]),
+                ..Spec::default()
+            };
+
+            accept(&spec).unwrap();
+        }
+
+        // The client chooses the authenticator, the KDC the ticket. The name of the client that the acceptor reports
+        // comes from the ticket, so the name-type of the authenticator cannot drop the realm from it.
+        #[test]
+        fn the_reported_client_name_comes_from_the_ticket() {
+            let spec = Spec {
+                authenticator_cname: principal(NT_ENTERPRISE, &["alice"]),
+                ..Spec::default()
+            };
+            let mut kerberos = acceptor();
+            let token = picky_asn1_der::to_vec(&ap_req(&spec)).unwrap();
+
+            accept_token(&mut kerberos, &token).unwrap();
+
+            assert_eq!(
+                kerberos.server.as_ref().unwrap().client,
+                Some(Username::new_upn("alice", "example.com").unwrap())
+            );
+        }
+
+        #[test]
+        fn another_client_name_in_the_authenticator_is_rejected() {
+            let spec = Spec {
+                authenticator_cname: principal(NT_PRINCIPAL, &["bob"]),
+                ..Spec::default()
+            };
+
+            let error = accept(&spec).unwrap_err();
+
+            assert_eq!(error.error_type, ErrorKind::InvalidToken, "{error}");
         }
 
         // RFC 4120 §3.2.3: the acceptor must remember the authenticators presented within the clock skew.
