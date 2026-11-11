@@ -367,3 +367,102 @@ fn acceptor_rejects_mic_token_with_invalid_seq_number() {
         ErrorKind::InvalidToken
     );
 }
+
+mod sealed_wrap_rotation {
+    use picky_krb::gss_api::WrapToken;
+    use rstest::rstest;
+
+    use super::*;
+
+    /// Builds a sealed Wrap token as an initiator would, following RFC 4121 §4.2.4 and §4.2.5.
+    ///
+    /// `rotation` is the number of octets the sender right-rotates the body by.
+    /// It is independent of the `rrc` header field, so a test can build a token whose header and rotation disagree.
+    fn sealed_token(server: &Kerberos, plaintext: &[u8], ec: u16, rrc: u16, rotation: usize) -> Vec<u8> {
+        let key = server.encryption_params.sub_session_key.clone().unwrap();
+        let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+        let mut wrap_token = WrapToken::with_seq_number(0);
+        // Sealed (0x02), sent by the initiator (SentByAcceptor clear).
+        wrap_token.flags = 0x02;
+        wrap_token.ec = ec;
+        // The RRC field in the to-be-encrypted header is zero.
+        wrap_token.rrc = 0;
+
+        let mut payload = plaintext.to_vec();
+        payload.extend_from_slice(&vec![0; usize::from(ec)]);
+        payload.extend_from_slice(&wrap_token.header());
+
+        let mut body = cipher.encrypt(key.as_ref(), INITIATOR_SEAL, &payload).unwrap();
+        let body_len = body.len();
+        body.rotate_right(rotation % body_len);
+
+        wrap_token.rrc = rrc;
+        wrap_token.checksum = body;
+
+        let mut raw = Vec::new();
+        wrap_token.encode(&mut raw).unwrap();
+        raw
+    }
+
+    fn decrypt(server: &mut Kerberos, mut token: Vec<u8>) -> crate::Result<Vec<u8>> {
+        let mut message = [
+            SecurityBufferRef::stream_buf(&mut token),
+            SecurityBufferRef::data_buf(&mut []),
+        ];
+
+        server.decrypt_message(&mut message)?;
+
+        Ok(message[1].data().to_vec())
+    }
+
+    // RFC 4121 §4.2.5: the receiver MUST interpret every rotation count, including ones larger than the token.
+    // Rotation is by RRC alone when EC is zero; with a non-zero EC the Windows sender rotates by RRC+EC (MS-KILE 3.4.5.4.1).
+    #[rstest]
+    #[case::no_rotation(0, 0)]
+    #[case::small_rotation(5, 0)]
+    #[case::windows_default(28, 0)]
+    #[case::larger_than_token(1000, 0)]
+    #[case::windows_with_filler(28, 4)]
+    fn sealed_wrap_honors_the_rrc_header_field(#[case] rrc: u16, #[case] ec: u16) {
+        let plaintext = b"sealed payload";
+        let mut server = test_data::fake_server();
+        let token = sealed_token(&server, plaintext, ec, rrc, usize::from(rrc) + usize::from(ec));
+
+        let decrypted = decrypt(&mut server, token).expect("a well-formed sealed token must decrypt");
+
+        assert_eq!(decrypted, plaintext);
+    }
+
+    // A peer controls the token length, so a truncated body must be an error and never a panic.
+    #[rstest]
+    #[case::empty(0)]
+    #[case::one_octet(1)]
+    #[case::shorter_than_default_rotation(27)]
+    fn truncated_sealed_wrap_is_an_error(#[case] body_len: usize) {
+        let mut server = test_data::fake_server();
+        let mut wrap_token = WrapToken::with_seq_number(0);
+        wrap_token.flags = 0x02;
+        wrap_token.rrc = 28;
+        wrap_token.checksum = vec![0xaa; body_len];
+        let mut token = Vec::new();
+        wrap_token.encode(&mut token).unwrap();
+
+        decrypt(&mut server, token).unwrap_err();
+    }
+
+    // The rotation arithmetic must not overflow `u16` for an attacker-chosen RRC/EC pair.
+    #[test]
+    fn huge_rrc_and_ec_are_an_error() {
+        let mut server = test_data::fake_server();
+        let mut wrap_token = WrapToken::with_seq_number(0);
+        wrap_token.flags = 0x02;
+        wrap_token.ec = u16::MAX;
+        wrap_token.rrc = u16::MAX;
+        wrap_token.checksum = vec![0xaa; 64];
+        let mut token = Vec::new();
+        wrap_token.encode(&mut token).unwrap();
+
+        decrypt(&mut server, token).unwrap_err();
+    }
+}

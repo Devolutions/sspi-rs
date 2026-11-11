@@ -193,6 +193,7 @@ picky = { version = "=7.0.0-rc.27", default-features = false, features = ["x509"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 proptest = "1.6"
 cfg-if = "1"
+rstest = "0.26"
 
 [lints]
 workspace = true
