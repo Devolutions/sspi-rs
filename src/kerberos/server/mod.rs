@@ -536,6 +536,13 @@ pub async fn accept_security_context(
                     )
                 })?;
 
+                // An authenticator outside of the allowed clock skew is rejected by the time check above,
+                // so it does not have to be remembered. Forget it, or the cache grows with every request.
+                server_data.authenticators_cache.retain(|record| {
+                    OffsetDateTime::try_from(record.ctime.0.clone())
+                        .is_ok_and(|record_time| (now - record_time).abs() <= max_time_skew)
+                });
+
                 let cache_record = AuthenticatorCacheRecord {
                     cname: cname.0.clone(),
                     sname: ticket_service_name.clone(),
@@ -1064,16 +1071,23 @@ mod tests {
             ap_req
         }
 
-        fn accept(spec: &Spec) -> Result<AcceptSecurityContextResult> {
+        fn acceptor() -> Kerberos {
             let mut kerberos = fake_server();
-            kerberos.state = KerberosState::Server(KerberosServerState::Preauthentication);
             kerberos.server.as_mut().unwrap().ticket_decryption_key = Some(Secret::new(SERVICE_KEY.to_vec()));
 
+            kerberos
+        }
+
+        fn accept(spec: &Spec) -> Result<AcceptSecurityContextResult> {
+            accept_token(&mut acceptor(), &picky_asn1_der::to_vec(&ap_req(spec)).unwrap())
+        }
+
+        /// Feeds the encoded AP-REQ to the acceptor as the first token of a new context.
+        fn accept_token(kerberos: &mut Kerberos, token: &[u8]) -> Result<AcceptSecurityContextResult> {
+            kerberos.state = KerberosState::Server(KerberosServerState::Preauthentication);
+
             let mut credentials_handle: Option<CredentialsBuffers> = None;
-            let mut input = [SecurityBuffer::new(
-                picky_asn1_der::to_vec(&ap_req(spec)).unwrap(),
-                BufferType::Token,
-            )];
+            let mut input = [SecurityBuffer::new(token.to_vec(), BufferType::Token)];
             let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
             let builder = kerberos
                 .accept_security_context()
@@ -1082,7 +1096,7 @@ mod tests {
                 .with_target_data_representation(DataRepresentation::Native)
                 .with_input(&mut input)
                 .with_output(&mut output);
-            let mut generator = SspiImpl::accept_security_context_impl(&mut kerberos, builder)?;
+            let mut generator = SspiImpl::accept_security_context_impl(kerberos, builder)?;
 
             match generator.start() {
                 GeneratorState::Completed(result) => result,
@@ -1108,6 +1122,40 @@ mod tests {
             let error = accept(&spec).unwrap_err();
 
             assert_eq!(error.error_type, ErrorKind::InvalidToken, "{error}");
+        }
+
+        // RFC 4120 §3.2.3: the acceptor must remember the authenticators presented within the clock skew.
+        #[test]
+        fn a_replayed_authenticator_is_rejected() {
+            let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
+            let mut kerberos = acceptor();
+
+            accept_token(&mut kerberos, &token).unwrap();
+            let error = accept_token(&mut kerberos, &token).unwrap_err();
+
+            assert_eq!(error.error_type, ErrorKind::InvalidToken, "{error}");
+            assert!(error.description.contains("replay"), "{error}");
+        }
+
+        // An authenticator older than the clock skew is rejected by the time check, so the cache never needs
+        // to remember it. Keeping it makes the cache of a long-running acceptor grow without bound.
+        #[test]
+        fn authenticators_outside_the_clock_skew_are_dropped_from_the_replay_cache() {
+            let mut kerberos = acceptor();
+            let server_data = kerberos.server.as_mut().unwrap();
+            let max_time_skew = server_data.max_time_skew;
+            let stale_ctime = OffsetDateTime::now_utc() - max_time_skew - TimeDuration::minutes(1);
+            server_data.authenticators_cache.insert(AuthenticatorCacheRecord {
+                cname: alice(),
+                sname: server_data.service_name.clone(),
+                ctime: GeneralizedTime::from(stale_ctime).into(),
+                microseconds: IntegerAsn1::from(vec![0]),
+            });
+
+            let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
+            accept_token(&mut kerberos, &token).unwrap();
+
+            assert_eq!(kerberos.server.as_ref().unwrap().authenticators_cache.len(), 1);
         }
     }
 }
