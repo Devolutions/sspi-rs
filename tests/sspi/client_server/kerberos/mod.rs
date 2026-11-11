@@ -1327,6 +1327,8 @@ mod salt_regressions {
                 return self.network.send(request);
             }
             assert_eq!(self.as_requests.load(Ordering::SeqCst), 2);
+            // RFC 3244 section 2: the password service listens on port 464, not on the port of the KDC.
+            assert_eq!(request.url.port(), Some(464));
             let message = KrbPrivMessage::deserialize(data).expect("actual outgoing password-change request");
             let ApMessage::ApReq(ap_req) = message.ap_message else {
                 panic!("password change must carry an AP-REQ");

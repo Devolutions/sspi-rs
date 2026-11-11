@@ -2,6 +2,7 @@ use picky_krb::crypto::CipherSuite;
 use picky_krb::messages::KrbPrivMessage;
 use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng as _;
+use url::Url;
 
 use crate::builders::ChangePassword;
 use crate::generator::YieldPointLocal;
@@ -17,6 +18,7 @@ use crate::kerberos::client::principal::{get_client_principal_name_type, get_cli
 use crate::kerberos::pa_datas::AsReqPaDataOptions;
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{CHANGE_PASSWORD_SERVICE_NAME, DEFAULT_ENCRYPTION_TYPE, KADMIN, server};
+use crate::network_client::NetworkProtocol;
 use crate::utils::generate_random_symmetric_key;
 use crate::{ClientRequestFlags, Error, ErrorKind, Kerberos, Result};
 
@@ -116,12 +118,12 @@ pub async fn change_password<'a>(
         &client.config.client_computer_name,
     )?;
 
-    if let Some((_realm, mut kdc_url)) = client.get_kdc() {
-        kdc_url
-            .set_port(Some(KPASSWD_PORT))
-            .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC URL"))?;
+    if let Some((realm, kdc_url)) = client.get_kdc() {
+        let kdc_url = kpasswd_url(kdc_url)?;
 
-        let response = client.send(yield_point, &serialize_message(&krb_priv)?).await?;
+        let response = client
+            .send_to(yield_point, &realm, kdc_url, &serialize_message(&krb_priv)?)
+            .await?;
         trace!(?response, "Change password raw response");
 
         let Some(response) = response.get(4..) else {
@@ -158,4 +160,42 @@ pub async fn change_password<'a>(
     }
 
     Ok(())
+}
+
+/// Returns the URL of the password service that runs next to the KDC at `kdc_url`.
+///
+/// Only a TCP or UDP address has a port of the service to change.
+/// The URL of a KDC proxy names the proxy endpoint, and it is used as is.
+fn kpasswd_url(mut kdc_url: Url) -> Result<Url> {
+    if matches!(
+        NetworkProtocol::from_url_scheme(kdc_url.scheme()),
+        Some(NetworkProtocol::Tcp | NetworkProtocol::Udp)
+    ) {
+        kdc_url
+            .set_port(Some(KPASSWD_PORT))
+            .map_err(|_| Error::new(ErrorKind::InvalidParameter, "Cannot set port for KDC URL"))?;
+    }
+
+    Ok(kdc_url)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use url::Url;
+
+    use super::kpasswd_url;
+
+    // RFC 3244 §2: the password service listens on port 464 of the KDC host, over TCP and UDP.
+    #[rstest]
+    #[case::tcp("tcp://dc.example.com:88", "tcp://dc.example.com:464")]
+    #[case::udp("udp://dc.example.com:88", "udp://dc.example.com:464")]
+    // The URL of a KDC proxy names the proxy endpoint, which carries the messages for the services behind it.
+    #[case::kdc_proxy("https://proxy.example.com/KdcProxy", "https://proxy.example.com/KdcProxy")]
+    #[case::kdc_proxy_with_port("http://proxy.example.com:8080/KdcProxy", "http://proxy.example.com:8080/KdcProxy")]
+    fn the_password_service_is_next_to_the_kdc(#[case] kdc_url: &str, #[case] expected: &str) {
+        let url = kpasswd_url(Url::parse(kdc_url).unwrap()).unwrap();
+
+        assert_eq!(url, Url::parse(expected).unwrap());
+    }
 }
