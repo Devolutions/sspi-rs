@@ -132,7 +132,7 @@ impl AsRepSessionKeyExtractor<'_> {
 
                 use crate::pk_init::{
                     KeyAgreement, Wrapper, check_kdc_dh_key_info_nonce, extract_server_dh_public_key,
-                    extract_server_ecdh_public_key,
+                    extract_server_ecdh_public_key, validate_dh_public_key,
                 };
                 use crate::pku2u::{
                     extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data,
@@ -168,6 +168,7 @@ impl AsRepSessionKeyExtractor<'_> {
                         dh_parameters.server_nonce = Some(server_nonce);
 
                         let public_key = extract_server_dh_public_key(&signed_data)?;
+                        validate_dh_public_key(&public_key, &dh_parameters.modulus)?;
                         dh_parameters.other_public_key = Some(public_key);
 
                         generate_key(

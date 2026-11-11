@@ -471,6 +471,50 @@ pub(crate) fn check_kdc_dh_key_info_nonce(signed_data: &SignedData, expected_non
     Ok(())
 }
 
+/// Checks that the server DH public value `y` is in the range `1 < y < p - 1`.
+///
+/// [RFC 2631, Section 2.1.5](https://www.rfc-editor.org/rfc/rfc2631#section-2.1.5):
+/// a value of 0, 1 or `p - 1` makes the shared secret predictable, so a peer can force the session key.
+/// The values are big-endian unsigned integers.
+#[cfg(feature = "scard")]
+pub(crate) fn validate_dh_public_key(public_key: &[u8], modulus: &[u8]) -> Result<()> {
+    use std::cmp::Ordering;
+
+    fn without_leading_zeros(bytes: &[u8]) -> &[u8] {
+        let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
+        &bytes[start..]
+    }
+
+    // Big-endian integers without leading zeros: the longer one is greater.
+    fn compare(left: &[u8], right: &[u8]) -> Ordering {
+        left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+    }
+
+    let public_key = without_leading_zeros(public_key);
+    let modulus = without_leading_zeros(modulus);
+
+    // A DH modulus is odd, so `p - 1` only differs from `p` in the last octet and never borrows.
+    let mut modulus_minus_one = modulus.to_vec();
+    match modulus_minus_one.last_mut() {
+        Some(last) if *last & 1 == 1 => *last -= 1,
+        _ => {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "DH modulus is not an odd number",
+            ));
+        }
+    }
+
+    if compare(public_key, &[1]) != Ordering::Greater || compare(public_key, &modulus_minus_one) != Ordering::Less {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "server DH public key is out of the valid range",
+        ));
+    }
+
+    Ok(())
+}
+
 fn extract_kdc_dh_key_info(signed_data: &SignedData) -> Result<KdcDhKeyInfo> {
     let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
     if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
@@ -838,5 +882,40 @@ mod kdc_dh_key_info_nonce_tests {
         let signed_data = signed_data(nonce, true);
 
         check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
+    }
+}
+
+#[cfg(all(test, feature = "scard"))]
+mod dh_public_key_range_tests {
+    use rstest::rstest;
+
+    use super::validate_dh_public_key;
+    use crate::ErrorKind;
+
+    // RFC 2631 §2.1.5: 1 < y < p - 1. The modulus 23 is a toy safe prime, 0x0101 is 257.
+    #[rstest]
+    #[case::two(&[0x02], &[0x17])]
+    #[case::p_minus_two(&[0x15], &[0x17])]
+    #[case::leading_zero_octet(&[0x00, 0x05], &[0x17])]
+    #[case::multi_octet_modulus(&[0x00, 0xff], &[0x01, 0x01])]
+    fn value_in_range_is_accepted(#[case] public_key: &[u8], #[case] modulus: &[u8]) {
+        validate_dh_public_key(public_key, modulus).unwrap();
+    }
+
+    #[rstest]
+    #[case::empty(&[], &[0x17])]
+    #[case::zero(&[0x00], &[0x17])]
+    #[case::one(&[0x01], &[0x17])]
+    #[case::one_with_leading_zeros(&[0x00, 0x00, 0x01], &[0x17])]
+    #[case::p_minus_one(&[0x16], &[0x17])]
+    #[case::p(&[0x17], &[0x17])]
+    #[case::above_p(&[0x18], &[0x17])]
+    #[case::multi_octet_p_minus_one(&[0x01, 0x00], &[0x01, 0x01])]
+    #[case::multi_octet_above_p(&[0x01, 0xff], &[0x01, 0x01])]
+    #[case::longer_than_p(&[0x01, 0x00, 0x00], &[0x17])]
+    fn value_out_of_range_is_rejected(#[case] public_key: &[u8], #[case] modulus: &[u8]) {
+        let error = validate_dh_public_key(public_key, modulus).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }
