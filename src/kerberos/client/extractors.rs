@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
+use picky_asn1::wrapper::{Asn1SequenceOf, IntegerAsn1, ObjectIdentifierAsn1};
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_krb::constants::error_codes::KDC_ERR_PREAUTH_REQUIRED;
@@ -13,7 +13,7 @@ use picky_krb::messages::{
 };
 use zeroize::Zeroizing;
 
-use crate::kerberos::client::generators::nonce_matches;
+use crate::kerberos::client::generators::{nonce_matches, nonce_values_match};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{Error, ErrorKind, Result, Secret};
 
@@ -178,6 +178,38 @@ pub(crate) fn extract_checked_session_key(
     Ok(enc_part.key.0.key_value.0.to_vec().into())
 }
 
+/// Extracts the session key from the [TgsRep] after checking it against the request.
+///
+/// [RFC 4120, Section 3.3.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.3.5):
+/// the client verifies that the nonce in the encrypted part is the one it sent.
+/// The service name and realm of the encrypted part must also be those of the enclosed ticket,
+/// because only the encrypted part is protected and the client acts on the name of the ticket.
+pub(crate) fn extract_checked_tgs_session_key(
+    tgs_rep: &TgsRep,
+    session_key: &Secret<Vec<u8>>,
+    enc_params: &EncryptionParams,
+    expected_nonce: &IntegerAsn1,
+) -> Result<Secret<Vec<u8>>> {
+    let enc_part = decrypt_tgs_rep(tgs_rep, session_key, enc_params)?;
+
+    if !nonce_values_match(&enc_part.nonce.0, expected_nonce) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "TGS-REP nonce does not match the TGS-REQ nonce",
+        ));
+    }
+
+    let ticket = &tgs_rep.0.ticket.0.0;
+    if enc_part.srealm.0 != ticket.realm.0 || enc_part.sname.0.name_string.0 != ticket.sname.0.name_string.0 {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "the service name of the TGS-REP ticket does not match the encrypted part",
+        ));
+    }
+
+    Ok(enc_part.key.0.key_value.0.to_vec().into())
+}
+
 /// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
@@ -185,6 +217,20 @@ pub fn extract_session_key_from_tgs_rep(
     session_key: &Secret<Vec<u8>>,
     enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
+    Ok(decrypt_tgs_rep(tgs_rep, session_key, enc_params)?
+        .key
+        .0
+        .key_value
+        .0
+        .to_vec()
+        .into())
+}
+
+fn decrypt_tgs_rep(
+    tgs_rep: &TgsRep,
+    session_key: &Secret<Vec<u8>>,
+    enc_params: &EncryptionParams,
+) -> Result<EncKdcRepPart> {
     let cipher = enc_params
         .encryption_type
         .as_ref()
@@ -201,9 +247,9 @@ pub fn extract_session_key_from_tgs_rep(
 
     trace!(?enc_data, "Plain TgsRep::EncData");
 
-    let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
+    let enc_tgs_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
+    Ok(enc_tgs_rep_part.0)
 }
 
 /// Extracts encryption type and salt from [AsRep].
@@ -477,7 +523,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod as_rep_regressions {
+pub(crate) mod as_rep_regressions {
     use picky_asn1::bit_string::BitString;
     use picky_asn1::date::GeneralizedTime;
     use picky_asn1::restricted_string::IA5String;
@@ -870,6 +916,120 @@ mod as_rep_regressions {
 
         let error = extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), expected_nonce)
             .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    /// A TGS-REP for `krbtgt/NEXT.EXAMPLE` encrypted with the session key of the TGT.
+    ///
+    /// The enclosed ticket is named `ticket_sname@ticket_realm`, the encrypted part `enc_sname@enc_realm`.
+    pub(crate) fn encrypted_tgs_rep(
+        nonce: Vec<u8>,
+        ticket_sname: &[&str],
+        ticket_realm: &str,
+    ) -> (TgsRep, Secret<Vec<u8>>) {
+        let tgt_session_key = Secret::new(vec![0x44; 32]);
+        let part = EncKdcRepPart {
+            key: ExplicitContextTag0::from(EncryptionKey {
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(SESSION_KEY.to_vec())),
+            }),
+            last_req: ExplicitContextTag1::from(LastReq::from(Vec::new())),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce)),
+            key_expiration: Optional::from(None),
+            flags: ExplicitContextTag4::from(KerberosFlags::from(BitString::with_bytes(vec![0x40, 0, 0, 0]))),
+            auth_time: ExplicitContextTag5::from(fixed_time(1_700_000_000)),
+            start_time: Optional::from(None),
+            end_time: ExplicitContextTag7::from(fixed_time(1_700_003_600)),
+            renew_till: Optional::from(None),
+            srealm: ExplicitContextTag9::from(krb_string("NEXT.EXAMPLE")),
+            sname: ExplicitContextTag10::from(principal(&["krbtgt", "NEXT.EXAMPLE"])),
+            caddr: Optional::from(None),
+            encrypted_pa_data: Optional::from(None),
+        };
+        let encrypted = |data| EncryptedData {
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+            kvno: Optional::from(None),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(data)),
+        };
+        let plaintext = picky_asn1_der::to_vec(&EncTgsRepPart::from(part)).unwrap();
+        let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+        let reply = TgsRep::from(KdcRep {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![13])),
+            padata: Optional::from(None),
+            crealm: ExplicitContextTag3::from(krb_string("HOME.EXAMPLE")),
+            cname: ExplicitContextTag4::from(principal(&["alice"])),
+            ticket: ExplicitContextTag5::from(Ticket::from(TicketInner {
+                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+                realm: ExplicitContextTag1::from(krb_string(ticket_realm)),
+                sname: ExplicitContextTag2::from(principal(ticket_sname)),
+                enc_part: ExplicitContextTag3::from(encrypted(vec![0x55; 32])),
+            })),
+            enc_part: ExplicitContextTag6::from(encrypted(
+                cipher
+                    .encrypt(tgt_session_key.as_ref(), TGS_REP_ENC_SESSION_KEY, &plaintext)
+                    .unwrap(),
+            )),
+        });
+
+        (reply, tgt_session_key)
+    }
+
+    fn nonce(value: u32) -> IntegerAsn1 {
+        crate::kerberos::client::generators::nonce_to_asn1(value)
+    }
+
+    // RFC 4120 §3.3.5: the client verifies that the nonce in the encrypted part is the TGS-REQ nonce.
+    #[test]
+    fn checked_tgs_extractor_returns_the_session_key_for_the_matching_nonce() {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
+
+        let key = extract_checked_tgs_session_key(
+            &reply,
+            &tgt_session_key,
+            &EncryptionParams::default_for_client(),
+            &nonce(0x0102_0304),
+        )
+        .unwrap();
+
+        assert_eq!(key.as_ref(), &SESSION_KEY);
+    }
+
+    #[test]
+    fn checked_tgs_extractor_rejects_a_mismatched_nonce() {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
+
+        let error = extract_checked_tgs_session_key(
+            &reply,
+            &tgt_session_key,
+            &EncryptionParams::default_for_client(),
+            &nonce(0x0102_0305),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // The referral logic reads the service name of the enclosed ticket, which is not protected.
+    // The service name of the encrypted part is, so the two must agree (RFC 4120 §5.4.2).
+    #[rstest::rstest]
+    #[case::other_service(&["krbtgt", "OTHER.EXAMPLE"], "NEXT.EXAMPLE")]
+    #[case::other_realm(&["krbtgt", "NEXT.EXAMPLE"], "OTHER.EXAMPLE")]
+    fn checked_tgs_extractor_rejects_a_ticket_that_differs_from_the_encrypted_part(
+        #[case] ticket_sname: &[&str],
+        #[case] ticket_realm: &str,
+    ) {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], ticket_sname, ticket_realm);
+
+        let error = extract_checked_tgs_session_key(
+            &reply,
+            &tgt_session_key,
+            &EncryptionParams::default_for_client(),
+            &nonce(0x0102_0304),
+        )
+        .unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
