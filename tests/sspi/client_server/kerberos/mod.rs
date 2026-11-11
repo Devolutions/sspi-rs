@@ -501,6 +501,13 @@ fn kerberos_auth_with_tgs_rep_enc_part_in_as_rep() {
     kerberos_auth_with_kdc(KdcMock::tgs_rep_enc_part_in_as_rep);
 }
 
+/// The service decides the encryption type of the service ticket session key, which can differ from the one of the TGT.
+/// The client and the acceptor must follow it for the authenticator and the per-message tokens.
+#[test]
+fn kerberos_auth_with_aes128_service_session_key() {
+    kerberos_auth_with_kdc(KdcMock::aes128_service_session_key);
+}
+
 #[test]
 fn kerberos_auth_recovers_from_kdc_clock_skew() {
     for clock_offset in [time::Duration::seconds(15), time::Duration::seconds(-15)] {

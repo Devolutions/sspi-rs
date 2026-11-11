@@ -86,7 +86,8 @@ pub async fn change_password<'a>(
         &password_key(password.as_ref(), &salt, &client.encryption_params)?,
         &client.encryption_params,
         nonce,
-    )?;
+    )?
+    .key;
 
     let seq_num = client.next_seq_number();
 

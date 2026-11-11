@@ -2,7 +2,7 @@ use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use time::OffsetDateTime;
 
-use crate::kerberos::client::extractors::{extract_checked_session_key, password_key};
+use crate::kerberos::client::extractors::{SessionKey, extract_checked_session_key, password_key};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions, GenerateKeytabPaDataOptions,
     generate_pa_datas_for_as_req_at as generate_password_based_at,
@@ -102,7 +102,7 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
 
 impl AsRepSessionKeyExtractor<'_> {
     #[instrument(level = "trace", ret, skip(self))]
-    pub(super) fn session_key(&mut self, as_rep: &AsRep) -> Result<Secret<Vec<u8>>> {
+    pub(super) fn session_key(&mut self, as_rep: &AsRep) -> Result<SessionKey> {
         match self {
             AsRepSessionKeyExtractor::AuthIdentity {
                 salt,

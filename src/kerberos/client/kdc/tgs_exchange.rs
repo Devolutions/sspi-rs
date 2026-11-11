@@ -4,7 +4,7 @@ use picky_krb::messages::{KdcRep, TgsRep, TgsReq};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::{Rng, SeedableRng};
 
-use crate::kerberos::client::extractors::extract_checked_tgs_session_key;
+use crate::kerberos::client::extractors::{SessionKey, extract_checked_tgs_session_key};
 use crate::kerberos::client::generators::{
     GenerateAuthenticatorOptions, GenerateTgsReqOptions, generate_authenticator_at, generate_tgs_req,
 };
@@ -155,12 +155,11 @@ impl TgsExchange {
                         .request_nonce
                         .as_ref()
                         .ok_or_else(|| Error::new(ErrorKind::OutOfSequence, "TGS-REQ nonce is not set"))?;
-                    let session_key = extract_checked_tgs_session_key(
-                        &tgs_rep,
-                        &self.tgt_session_key,
-                        &client.encryption_params,
-                        request_nonce,
-                    )?;
+                    let SessionKey { key, cipher_suite } =
+                        extract_checked_tgs_session_key(&tgs_rep, &self.tgt_session_key, request_nonce)?;
+                    let session_key = key;
+                    // The next message is protected with this key: a referral TGT request, or the AP-REQ.
+                    client.encryption_params.encryption_type = Some(cipher_suite);
 
                     // A referral TGT is identified by an `sname` of the form `krbtgt/<NEXT_REALM>`.
                     let Some(next_realm) = referral_target_realm(&tgs_rep.0.ticket.0.0.sname.0) else {
@@ -200,7 +199,9 @@ impl TgsExchange {
 mod tests {
     use super::{TgsExchange, TgsExchangeOutput};
     use crate::ClientRequestFlags;
-    use crate::kerberos::client::extractors::as_rep_regressions::encrypted_tgs_rep;
+    use picky_krb::crypto::CipherSuite;
+
+    use crate::kerberos::client::extractors::as_rep_regressions::{encrypted_tgs_rep, encrypted_tgs_rep_with_key};
     use crate::kerberos::test_data::fake_client;
 
     /// Performs the first step of the exchange, and returns the exchange and the nonce of its TGS-REQ.
@@ -257,5 +258,50 @@ mod tests {
         let result = exchange.step(&mut fake_client(), "TERMSRV/host.example.com", &response);
 
         assert!(result.is_err());
+    }
+
+    // The service ticket session key has the encryption type that the service decides, not the one of the TGT.
+    // The AP-REQ authenticator is encrypted with it.
+    #[test]
+    fn the_client_follows_the_encryption_type_of_the_service_ticket_session_key() {
+        let (template, tgt_session_key) = encrypted_tgs_rep(vec![0], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
+        let mut client = fake_client();
+        client.encryption_params.encryption_type = Some(CipherSuite::Aes256CtsHmacSha196);
+        let mut exchange = TgsExchange::new(
+            "HOME.EXAMPLE".to_owned(),
+            template.0.ticket.0.clone(),
+            tgt_session_key,
+            template.0.clone(),
+            None,
+            ClientRequestFlags::empty(),
+        );
+        let TgsExchangeOutput::SendRequest((tgs_req, _realm)) =
+            exchange.step(&mut client, "TERMSRV/host.example.com", &[]).unwrap()
+        else {
+            panic!("the exchange must start with a request");
+        };
+        let (reply, _) = encrypted_tgs_rep_with_key(
+            tgs_req.0.req_body.0.nonce.0.0.clone(),
+            "HOME.EXAMPLE",
+            &["TERMSRV", "host.example.com"],
+            &["TERMSRV", "host.example.com"],
+            "HOME.EXAMPLE",
+            &CipherSuite::Aes128CtsHmacSha196,
+        );
+        let mut response = vec![0, 0, 0, 0];
+        response.extend_from_slice(&picky_asn1_der::to_vec(&reply).unwrap());
+
+        let TgsExchangeOutput::Done((_tgs_rep, session_key)) = exchange
+            .step(&mut client, "TERMSRV/host.example.com", &response)
+            .unwrap()
+        else {
+            panic!("the service ticket must complete the exchange");
+        };
+
+        assert_eq!(session_key.as_ref().len(), 16);
+        assert_eq!(
+            client.encryption_params.encryption_type,
+            Some(CipherSuite::Aes128CtsHmacSha196)
+        );
     }
 }

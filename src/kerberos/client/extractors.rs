@@ -155,6 +155,25 @@ pub fn extract_session_key_from_as_rep_with_key(
         .into())
 }
 
+/// A session key together with its encryption type.
+///
+/// The type of the session key is its own: it is not the type of the long-term key that encrypted the reply,
+/// and a service decides it for the service ticket (RFC 4120 section 5.4.2, `EncKDCRepPart.key`).
+#[derive(Debug, Clone)]
+pub(crate) struct SessionKey {
+    pub key: Secret<Vec<u8>>,
+    pub cipher_suite: CipherSuite,
+}
+
+impl SessionKey {
+    fn from_encryption_key(key: &picky_krb::data_types::EncryptionKey) -> Result<Self> {
+        Ok(Self {
+            cipher_suite: CipherSuite::try_from(key.key_type.0.0.as_slice())?,
+            key: key.key_value.0.to_vec().into(),
+        })
+    }
+}
+
 /// Extracts the session key from the [AsRep] after checking that its nonce is the AS-REQ nonce.
 ///
 /// [RFC 4120, Section 3.1.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5):
@@ -165,7 +184,7 @@ pub(crate) fn extract_checked_session_key(
     key: &[u8],
     enc_params: &EncryptionParams,
     expected_nonce: u32,
-) -> Result<Secret<Vec<u8>>> {
+) -> Result<SessionKey> {
     let enc_part = decrypt_as_rep(as_rep, key, enc_params)?;
 
     if !nonce_matches(&enc_part.nonce.0, expected_nonce) {
@@ -175,7 +194,7 @@ pub(crate) fn extract_checked_session_key(
         ));
     }
 
-    Ok(enc_part.key.0.key_value.0.to_vec().into())
+    SessionKey::from_encryption_key(&enc_part.key.0)
 }
 
 /// Extracts the session key from the [TgsRep] after checking it against the request.
@@ -187,10 +206,9 @@ pub(crate) fn extract_checked_session_key(
 pub(crate) fn extract_checked_tgs_session_key(
     tgs_rep: &TgsRep,
     session_key: &Secret<Vec<u8>>,
-    enc_params: &EncryptionParams,
     expected_nonce: &IntegerAsn1,
-) -> Result<Secret<Vec<u8>>> {
-    let enc_part = decrypt_tgs_rep(tgs_rep, session_key, enc_params)?;
+) -> Result<SessionKey> {
+    let enc_part = decrypt_tgs_rep(tgs_rep, session_key)?;
 
     if !nonce_values_match(&enc_part.nonce.0, expected_nonce) {
         return Err(Error::new(
@@ -207,7 +225,7 @@ pub(crate) fn extract_checked_tgs_session_key(
         ));
     }
 
-    Ok(enc_part.key.0.key_value.0.to_vec().into())
+    SessionKey::from_encryption_key(&enc_part.key.0)
 }
 
 /// Extracts a session from the [TgsRep].
@@ -215,27 +233,16 @@ pub(crate) fn extract_checked_tgs_session_key(
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
     session_key: &Secret<Vec<u8>>,
-    enc_params: &EncryptionParams,
+    _enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
-    Ok(decrypt_tgs_rep(tgs_rep, session_key, enc_params)?
-        .key
-        .0
-        .key_value
-        .0
-        .to_vec()
-        .into())
+    Ok(decrypt_tgs_rep(tgs_rep, session_key)?.key.0.key_value.0.to_vec().into())
 }
 
-fn decrypt_tgs_rep(
-    tgs_rep: &TgsRep,
-    session_key: &Secret<Vec<u8>>,
-    enc_params: &EncryptionParams,
-) -> Result<EncKdcRepPart> {
-    let cipher = enc_params
-        .encryption_type
-        .as_ref()
-        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-        .cipher();
+/// Decrypts the encrypted part of the TGS-REP with the session key of the TGT.
+///
+/// The cipher is the one that the KDC states for the encrypted part, which is the type of that key.
+fn decrypt_tgs_rep(tgs_rep: &TgsRep, session_key: &Secret<Vec<u8>>) -> Result<EncKdcRepPart> {
+    let cipher = CipherSuite::try_from(tgs_rep.0.enc_part.0.etype.0.0.as_slice())?.cipher();
 
     let enc_data = cipher
         .decrypt(
@@ -401,6 +408,21 @@ pub fn extract_sub_session_key_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Re
         .0
         .0
         .into())
+}
+
+/// Extracts the encryption type of the sub-session key from the [EncApRepPart].
+///
+/// The acceptor chooses its subkey, so the type can differ from the one of the session key.
+#[instrument(level = "trace", ret)]
+pub(crate) fn extract_sub_session_key_type_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Result<CipherSuite> {
+    let subkey = ap_rep_enc_part
+        .0
+        .subkey
+        .0
+        .as_ref()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sub-key in ap_req"))?;
+
+    Ok(CipherSuite::try_from(subkey.0.key_type.0.0.as_slice())?)
 }
 
 /// Extracts a sequence number from the [EncApRepPart].
@@ -584,14 +606,21 @@ pub(crate) mod as_rep_regressions {
     }
 
     fn encrypted_as_rep(tag: u8, salt: &str) -> (AsRep, Vec<u8>) {
+        encrypted_as_rep_with_session_key(tag, salt, &CipherSuite::Aes256CtsHmacSha196)
+    }
+
+    /// An AS-REP encrypted with the AES256 long-term key, whose session key has the given encryption type.
+    fn encrypted_as_rep_with_session_key(tag: u8, salt: &str, session_key_suite: &CipherSuite) -> (AsRep, Vec<u8>) {
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
         let key = cipher
             .generate_key_from_password(PASSWORD.as_bytes(), salt.as_bytes())
             .unwrap();
         let part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(SESSION_KEY.to_vec())),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_suite.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(
+                    SESSION_KEY[..session_key_suite.cipher().key_size()].to_vec(),
+                )),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(Vec::new())),
             nonce: ExplicitContextTag2::from(IntegerAsn1::from(vec![1, 2, 3, 4])),
@@ -890,6 +919,48 @@ pub(crate) mod as_rep_regressions {
         );
     }
 
+    #[test]
+    fn the_sub_session_key_type_is_the_type_of_the_acceptor_subkey() {
+        use picky_krb::data_types::EncApRepPartInner;
+
+        let ap_rep_enc_part = |subkey: Option<u8>| {
+            EncApRepPart::from(EncApRepPartInner {
+                ctime: ExplicitContextTag0::from(fixed_time(1_700_000_000)),
+                cusec: ExplicitContextTag1::from(IntegerAsn1::from(vec![0])),
+                subkey: Optional::from(subkey.map(|key_type| {
+                    ExplicitContextTag2::from(EncryptionKey {
+                        key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type])),
+                        key_value: ExplicitContextTag1::from(OctetStringAsn1::from(vec![0x77; 16])),
+                    })
+                })),
+                seq_number: Optional::from(None),
+            })
+        };
+
+        assert_eq!(
+            extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part(Some(17))).unwrap(),
+            CipherSuite::Aes128CtsHmacSha196
+        );
+        assert_eq!(
+            extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part(None))
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+    }
+
+    // The long-term key encrypts the reply, but the session key has its own type (RFC 4120 section 5.4.2).
+    #[test]
+    fn checked_extractor_reports_the_encryption_type_of_the_session_key() {
+        let (reply, key) = encrypted_as_rep_with_session_key(25, SALT, &CipherSuite::Aes128CtsHmacSha196);
+
+        let session_key =
+            extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), 0x0102_0304).unwrap();
+
+        assert_eq!(session_key.cipher_suite, CipherSuite::Aes128CtsHmacSha196);
+        assert_eq!(session_key.key.as_ref(), &SESSION_KEY[..16]);
+    }
+
     // RFC 4120 §3.1.5: the client verifies that the nonce in the encrypted part matches the AS-REQ nonce.
     // The fixture reply carries the nonce 0x01020304.
     #[test]
@@ -900,6 +971,7 @@ pub(crate) mod as_rep_regressions {
             assert_eq!(
                 extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), 0x0102_0304)
                     .unwrap()
+                    .key
                     .as_ref(),
                 &SESSION_KEY
             );
@@ -928,11 +1000,32 @@ pub(crate) mod as_rep_regressions {
         ticket_sname: &[&str],
         ticket_realm: &str,
     ) -> (TgsRep, Secret<Vec<u8>>) {
+        encrypted_tgs_rep_with_key(
+            nonce,
+            "NEXT.EXAMPLE",
+            &["krbtgt", "NEXT.EXAMPLE"],
+            ticket_sname,
+            ticket_realm,
+            &CipherSuite::Aes256CtsHmacSha196,
+        )
+    }
+
+    /// Like [encrypted_tgs_rep], for the given service of the encrypted part and the given session key type.
+    pub(crate) fn encrypted_tgs_rep_with_key(
+        nonce: Vec<u8>,
+        enc_realm: &str,
+        enc_sname: &[&str],
+        ticket_sname: &[&str],
+        ticket_realm: &str,
+        session_key_suite: &CipherSuite,
+    ) -> (TgsRep, Secret<Vec<u8>>) {
         let tgt_session_key = Secret::new(vec![0x44; 32]);
         let part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(SESSION_KEY.to_vec())),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_suite.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(
+                    SESSION_KEY[..session_key_suite.cipher().key_size()].to_vec(),
+                )),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(Vec::new())),
             nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce)),
@@ -942,8 +1035,8 @@ pub(crate) mod as_rep_regressions {
             start_time: Optional::from(None),
             end_time: ExplicitContextTag7::from(fixed_time(1_700_003_600)),
             renew_till: Optional::from(None),
-            srealm: ExplicitContextTag9::from(krb_string("NEXT.EXAMPLE")),
-            sname: ExplicitContextTag10::from(principal(&["krbtgt", "NEXT.EXAMPLE"])),
+            srealm: ExplicitContextTag9::from(krb_string(enc_realm)),
+            sname: ExplicitContextTag10::from(principal(enc_sname)),
             caddr: Optional::from(None),
             encrypted_pa_data: Optional::from(None),
         };
@@ -986,28 +1079,16 @@ pub(crate) mod as_rep_regressions {
     fn checked_tgs_extractor_returns_the_session_key_for_the_matching_nonce() {
         let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
 
-        let key = extract_checked_tgs_session_key(
-            &reply,
-            &tgt_session_key,
-            &EncryptionParams::default_for_client(),
-            &nonce(0x0102_0304),
-        )
-        .unwrap();
+        let key = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0304)).unwrap();
 
-        assert_eq!(key.as_ref(), &SESSION_KEY);
+        assert_eq!(key.key.as_ref(), &SESSION_KEY);
     }
 
     #[test]
     fn checked_tgs_extractor_rejects_a_mismatched_nonce() {
         let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
 
-        let error = extract_checked_tgs_session_key(
-            &reply,
-            &tgt_session_key,
-            &EncryptionParams::default_for_client(),
-            &nonce(0x0102_0305),
-        )
-        .unwrap_err();
+        let error = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0305)).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
@@ -1023,13 +1104,7 @@ pub(crate) mod as_rep_regressions {
     ) {
         let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], ticket_sname, ticket_realm);
 
-        let error = extract_checked_tgs_session_key(
-            &reply,
-            &tgt_session_key,
-            &EncryptionParams::default_for_client(),
-            &nonce(0x0102_0304),
-        )
-        .unwrap_err();
+        let error = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0304)).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }

@@ -147,6 +147,8 @@ pub(crate) struct KdcMock {
     tgs_rep_enc_part_in_as_rep: bool,
     /// Whether the AS-REP carries a nonce that differs from the one of the AS-REQ.
     wrong_as_rep_nonce: bool,
+    /// The encryption type of the session key in the service tickets. The service decides it, not the TGT.
+    service_session_key_type: Option<CipherSuite>,
     preauth_salt_hint: Option<SaltHint>,
     as_rep_salt_hint: Option<SaltHint>,
     as_rep_encryption_salt: Option<String>,
@@ -178,6 +180,7 @@ impl KdcMock {
             omit_as_rep_etype_info2: false,
             tgs_rep_enc_part_in_as_rep: false,
             wrong_as_rep_nonce: false,
+            service_session_key_type: None,
             preauth_salt_hint: None,
             as_rep_salt_hint: None,
             as_rep_encryption_salt: None,
@@ -203,6 +206,12 @@ impl KdcMock {
     /// Encodes the AS-REP enc-part as an EncTGSRepPart (APPLICATION 26).
     pub(crate) fn tgs_rep_enc_part_in_as_rep(mut self) -> Self {
         self.tgs_rep_enc_part_in_as_rep = true;
+        self
+    }
+
+    /// Issues service tickets with an AES128 session key, as for a service account that has no AES256 key.
+    pub(crate) fn aes128_service_session_key(mut self) -> Self {
+        self.service_session_key_type = Some(CipherSuite::Aes128CtsHmacSha196);
         self
     }
 
@@ -349,6 +358,7 @@ impl KdcMock {
 
     fn make_ticket(
         realm: KerberosStringAsn1,
+        session_key_type: u8,
         session_key: Vec<u8>,
         service_key: &[u8],
         kdc_options: KerberosFlags,
@@ -361,7 +371,7 @@ impl KdcMock {
         let ticket_enc_part = EncTicketPart::from(EncTicketPartInner {
             flags: ExplicitContextTag0::from(kdc_options.clone()),
             key: ExplicitContextTag1::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_type])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key)),
             }),
             crealm: ExplicitContextTag2::from(realm.clone()),
@@ -541,6 +551,7 @@ impl KdcMock {
             cname: ExplicitContextTag4::from(username.0.clone()),
             ticket: ExplicitContextTag5::from(Self::make_ticket(
                 realm,
+                AES256_ENC_TYPE,
                 session_key,
                 service_key,
                 kdc_options.0,
@@ -727,10 +738,16 @@ impl KdcMock {
                 .to_vec()
         };
 
+        // The reply is encrypted with the key of the TGT, the service ticket session key has its own type.
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+        let session_key_suite = self
+            .service_session_key_type
+            .clone()
+            .unwrap_or(CipherSuite::Aes256CtsHmacSha196);
+        let session_key_type = u8::from(&session_key_suite);
 
         let mut rng = StdRng::try_from_rng(&mut SysRng).unwrap();
-        let mut session_key = vec![0; cipher.key_size()];
+        let mut session_key = vec![0; session_key_suite.cipher().key_size()];
         rng.fill_bytes(&mut session_key);
         LogCapture::record_secret("service ticket session key", &session_key);
 
@@ -739,7 +756,7 @@ impl KdcMock {
 
         let tgs_rep_enc_part = EncTgsRepPart::from(EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_type])),
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key.to_vec())),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(vec![LastReqInner {
@@ -777,6 +794,7 @@ impl KdcMock {
             cname: ExplicitContextTag4::from(cname.clone()),
             ticket: ExplicitContextTag5::from(Self::make_ticket(
                 realm,
+                session_key_type,
                 session_key,
                 &ticket_enc_key,
                 kdc_options.0,

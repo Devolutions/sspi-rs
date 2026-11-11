@@ -174,7 +174,7 @@ pub(crate) async fn request_tgt(
             "Kerberos server properties are not initialized",
         )
     })?;
-    server_props.ticket_decryption_key = Some(session_key_extractor.session_key(&as_rep)?);
+    server_props.ticket_decryption_key = Some(session_key_extractor.session_key(&as_rep)?.key);
 
     Ok(as_rep.0.ticket.0)
 }

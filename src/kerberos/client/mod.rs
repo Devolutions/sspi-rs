@@ -17,8 +17,8 @@ use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng;
 
 use self::extractors::{
-    decrypt_ap_rep, extract_encryption_params_from_as_rep_with_salt, extract_seq_number_from_ap_rep,
-    extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
+    SessionKey, decrypt_ap_rep, extract_encryption_params_from_as_rep_with_salt, extract_seq_number_from_ap_rep,
+    extract_sub_session_key_from_ap_rep, extract_sub_session_key_type_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsReqOptions, GenerateAuthenticatorOptions, GssFlags,
@@ -431,7 +431,13 @@ pub async fn initialize_security_context<'a>(
                                 nonces,
                             },
                         };
-                        let session_key = session_key_extractor.session_key(&as_rep)?;
+                        let SessionKey {
+                            key: session_key,
+                            cipher_suite: session_key_type,
+                        } = session_key_extractor.session_key(&as_rep)?;
+                        // The long-term key encrypted the reply, the TGT session key has its own type.
+                        // The TGS-REQ authenticator is protected with that key.
+                        client.encryption_params.encryption_type = Some(session_key_type.clone());
 
                         if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
                             // Bind NTLM supplementation to the successful AS exchange, not the last acquisition.
@@ -443,7 +449,7 @@ pub async fn initialize_security_context<'a>(
                             remote_guard.home_tgt = Some(CapturedTgt::new(
                                 as_rep.0.crealm.0.to_string(),
                                 as_rep.0.ticket.0.clone(),
-                                encryption_type,
+                                session_key_type,
                                 session_key.clone(),
                             )?);
                         }
@@ -686,6 +692,7 @@ pub async fn initialize_security_context<'a>(
                                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
                             let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
                             let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
+                            let sub_session_key_type = extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part)?;
                             client.remote_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
 
                             let seq_number_bytes = ap_rep_enc_part
@@ -703,6 +710,13 @@ pub async fn initialize_security_context<'a>(
 
                             let ap_rep = generate_ap_rep(session_key, seq_number_bytes, &client.encryption_params)?;
                             let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
+
+                            // The per-message tokens are protected with the subkey of the acceptor.
+                            //
+                            // UNTESTED: the encryption type follows the subkey of the AP-REP when it differs from the type
+                            // of the session key. The acceptor of the tests uses the same type for both. A wrong type breaks
+                            // the Wrap and MIC tokens. Check it against an acceptor that picks another subkey type.
+                            client.encryption_params.encryption_type = Some(sub_session_key_type);
 
                             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                             output_token.buffer.write_all(&ap_rep)?;
@@ -731,6 +745,9 @@ pub async fn initialize_security_context<'a>(
                             }
 
                             client.encryption_params.sub_session_key = Some(sub_session_key);
+                            // The per-message tokens are protected with the subkey of the acceptor.
+                            client.encryption_params.encryption_type =
+                                Some(extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part)?);
                         }
 
                         client.state = KerberosState::Final;
