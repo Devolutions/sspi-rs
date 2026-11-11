@@ -611,7 +611,7 @@ pub async fn accept_security_context(
                         &session_key,
                         ctime.0,
                         cusec.0,
-                        (server.seq_number + 1).to_be_bytes().to_vec(),
+                        server.seq_number.wrapping_add(1),
                         &server.encryption_params,
                     )?;
 
@@ -691,7 +691,7 @@ pub async fn accept_security_context(
                 let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &server.encryption_params)?;
                 let seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
 
-                let expected_seq_number = server.seq_number + 1;
+                let expected_seq_number = server.seq_number.wrapping_add(1);
                 if seq_number != expected_seq_number {
                     return Err(Error::new(
                         ErrorKind::InvalidToken,
@@ -966,6 +966,7 @@ mod tests {
             ticket_vno: u8,
             authenticator_vno: u8,
             ticket_flags: u8,
+            mutual_auth: bool,
         }
 
         impl Default for Spec {
@@ -976,6 +977,7 @@ mod tests {
                     ticket_vno: KERBEROS_VERSION,
                     authenticator_vno: KERBEROS_VERSION,
                     ticket_flags: 0,
+                    mutual_auth: false,
                 }
             }
         }
@@ -1062,7 +1064,11 @@ mod tests {
                 &Secret::new(SESSION_KEY.to_vec()),
                 &authenticator,
                 &EncryptionParams::default_for_client(),
-                ApOptionsFlags::empty(),
+                if spec.mutual_auth {
+                    ApOptionsFlags::MUTUAL_REQUIRED
+                } else {
+                    ApOptionsFlags::empty()
+                },
             )
             .unwrap();
             ap_req.0.pvno = ExplicitContextTag0::from(IntegerAsn1::from(vec![spec.ap_req_pvno]));
@@ -1082,8 +1088,17 @@ mod tests {
             accept_token(&mut acceptor(), &picky_asn1_der::to_vec(&ap_req(spec)).unwrap())
         }
 
-        /// Feeds the encoded AP-REQ to the acceptor as the first token of a new context.
         fn accept_token(kerberos: &mut Kerberos, token: &[u8]) -> Result<AcceptSecurityContextResult> {
+            accept_token_with_output(kerberos, token).map(|(result, _output)| result)
+        }
+
+        /// Feeds the encoded AP-REQ to the acceptor as the first token of a new context.
+        ///
+        /// Returns the result and the output token.
+        fn accept_token_with_output(
+            kerberos: &mut Kerberos,
+            token: &[u8],
+        ) -> Result<(AcceptSecurityContextResult, Vec<u8>)> {
             kerberos.state = KerberosState::Server(KerberosServerState::Preauthentication);
 
             let mut credentials_handle: Option<CredentialsBuffers> = None;
@@ -1098,10 +1113,17 @@ mod tests {
                 .with_output(&mut output);
             let mut generator = SspiImpl::accept_security_context_impl(kerberos, builder)?;
 
-            match generator.start() {
-                GeneratorState::Completed(result) => result,
-                GeneratorState::Suspended(_) => Err(Error::new(ErrorKind::InternalError, "unexpected KDC request")),
-            }
+            let result = match generator.start() {
+                GeneratorState::Completed(result) => result?,
+                GeneratorState::Suspended(_) => {
+                    return Err(Error::new(ErrorKind::InternalError, "unexpected KDC request"));
+                }
+            };
+            drop(generator);
+
+            let [output] = output;
+
+            Ok((result, output.buffer))
         }
 
         // The control: the other cases differ from this request in exactly one field.
@@ -1122,6 +1144,42 @@ mod tests {
             let error = accept(&spec).unwrap_err();
 
             assert_eq!(error.error_type, ErrorKind::InvalidToken, "{error}");
+        }
+
+        /// Returns the raw `seq-number` INTEGER of the AP-REP that the acceptor sends for a mutual authentication.
+        fn ap_rep_seq_number(acceptor_seq_number: u32) -> Vec<u8> {
+            let mut kerberos = acceptor();
+            kerberos.seq_number = acceptor_seq_number;
+            let token = picky_asn1_der::to_vec(&ap_req(&Spec {
+                mutual_auth: true,
+                ..Spec::default()
+            }))
+            .unwrap();
+
+            let (_, ap_rep) = accept_token_with_output(&mut kerberos, &token).unwrap();
+
+            let ap_rep: ApRep = picky_asn1_der::from_bytes(&ap_rep).unwrap();
+            let enc_part = decrypt_ap_rep(
+                &ap_rep,
+                &Secret::new(SESSION_KEY.to_vec()),
+                &EncryptionParams::default_for_client(),
+            )
+            .unwrap();
+
+            enc_part.0.seq_number.0.unwrap().0.0
+        }
+
+        // RFC 4120 §5.1 requires the DER encoding: a `u32` with the high bit set is not a negative INTEGER, and the
+        // sequence number wraps around at 2^32 (RFC 4120 §5.3.2).
+        #[rstest]
+        #[case::small(1, &[0x02])]
+        #[case::high_bit_set(0x9abc_dee9, &[0x00, 0x9a, 0xbc, 0xde, 0xea])]
+        #[case::wraps_around(u32::MAX, &[0x00])]
+        fn the_ap_rep_sequence_number_is_the_next_one_in_minimal_der(
+            #[case] acceptor_seq_number: u32,
+            #[case] expected: &[u8],
+        ) {
+            assert_eq!(ap_rep_seq_number(acceptor_seq_number), expected);
         }
 
         // RFC 4120 §3.2.3: the acceptor must remember the authenticators presented within the clock skew.

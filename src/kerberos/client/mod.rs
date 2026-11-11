@@ -618,7 +618,7 @@ pub async fn initialize_security_context<'a>(
                             // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap/MIC token generated
                             // by the `encrypt_message`/`generate_mic_token` method. So, we set the next sequence number but do not increment the counter,
                             // which will be incremented on each `encrypt_message`/`generate_mic_token` method call.
-                            seq_num: Some(client.seq_number + 1),
+                            seq_num: Some(client.seq_number.wrapping_add(1)),
                             sub_key: Some(EncKey {
                                 key_type: enc_type.clone(),
                                 key_value: authenticator_sub_key.into(),

@@ -140,9 +140,7 @@ fn encode_enc_timestamp_pa_data(
 
     let timestamp = PaEncTsEnc {
         patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
-            microseconds.to_be_bytes().to_vec(),
-        )))),
+        pausec: Optional::from(Some(ExplicitContextTag1::from(u32_to_asn1(microseconds)))),
     };
     let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
 
@@ -265,6 +263,14 @@ pub(crate) fn generate_nonce(rng: &mut impl Rng) -> u32 {
 /// encode the same either way.
 pub(crate) fn nonce_to_asn1(nonce: u32) -> IntegerAsn1 {
     IntegerAsn1::from_bytes_be_signed(nonce.to_be_bytes().to_vec())
+}
+
+/// Encodes an unsigned 32-bit value (microseconds, sequence number) as a minimal DER INTEGER.
+///
+/// The value is unsigned, so a value with the high bit set gets a leading `00` octet.
+/// [RFC 4120, Section 5.1](https://www.rfc-editor.org/rfc/rfc4120#section-5.1) requires the DER encoding.
+pub(crate) fn u32_to_asn1(value: u32) -> IntegerAsn1 {
+    IntegerAsn1::from_bytes_be_unsigned(value.to_be_bytes().to_vec())
 }
 
 /// Returns `true` if the nonce received from the KDC has the value of the nonce that the client sent.
@@ -728,7 +734,7 @@ pub(crate) fn generate_authenticator_at(
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
-        cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
+        cusec: ExplicitContextTag4::from(u32_to_asn1(microseconds)),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
@@ -756,7 +762,7 @@ pub fn generate_ap_rep(
 
     let enc_ap_rep_part = EncApRepPart::from(EncApRepPartInner {
         ctime: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        cusec: ExplicitContextTag1::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
+        cusec: ExplicitContextTag1::from(u32_to_asn1(microseconds)),
         subkey: Optional::from(None),
         seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
     });
@@ -1139,7 +1145,20 @@ mod tests {
             OffsetDateTime::try_from(decoded.patimestamp.0.0).unwrap(),
             timestamp - Duration::milliseconds(123)
         );
-        assert_eq!(decoded.pausec.0.unwrap().0.0, 123_000_u32.to_be_bytes());
+        assert_eq!(decoded.pausec.0.unwrap().0.0, [0x01, 0xe0, 0x78]);
+    }
+
+    // RFC 4120 §5.1: the DER encoding of an INTEGER has no redundant leading octets.
+    #[rstest::rstest]
+    #[case::zero(0, &[0x02, 0x01, 0x00])]
+    #[case::one_octet(0x7f, &[0x02, 0x01, 0x7f])]
+    #[case::high_bit_needs_a_sign_octet(0x80, &[0x02, 0x02, 0x00, 0x80])]
+    #[case::microseconds(123_000, &[0x02, 0x03, 0x01, 0xe0, 0x78])]
+    #[case::max_microseconds(999_999, &[0x02, 0x03, 0x0f, 0x42, 0x3f])]
+    #[case::high_bit_set(0x9abc_deef, &[0x02, 0x05, 0x00, 0x9a, 0xbc, 0xde, 0xef])]
+    #[case::max(u32::MAX, &[0x02, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff])]
+    fn unsigned_values_are_minimal_der(#[case] value: u32, #[case] expected: &[u8]) {
+        assert_eq!(picky_asn1_der::to_vec(&u32_to_asn1(value)).unwrap(), expected);
     }
 
     fn krb_string(value: &str) -> KerberosStringAsn1 {
