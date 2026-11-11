@@ -36,6 +36,17 @@ pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdR
     key
 }
 
+/// `KDC_ERR_INCONSISTENT_KEY_PURPOSE` of [RFC 4556](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.1).
+const PKINIT_ERR_INCONSISTENT_KEY_PURPOSE: u32 = 77;
+/// `KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED` of RFC 4556.
+const PKINIT_ERR_DIGEST_IN_CERT_NOT_ACCEPTED: u32 = 78;
+/// `KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED` of RFC 4556.
+const PKINIT_ERR_PA_CHECKSUM_MUST_BE_INCLUDED: u32 = 79;
+/// `KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED` of RFC 4556.
+const PKINIT_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED: u32 = 80;
+/// `KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED` of RFC 4556.
+const PKINIT_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: u32 = 81;
+
 pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
 
@@ -189,7 +200,11 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
         KDC_ERROR_CLIENT_NOT_TRUSTED => (ErrorKind::InvalidParameter, "client is not trusted".into()),
         KDC_ERROR_KDC_NOT_TRUSTED => (ErrorKind::InvalidParameter, "KDC is not trusted".into()),
         KDC_ERROR_INVALID_SIG => (ErrorKind::MessageAltered, "invalid signature".into()),
-        KDC_ERR_KEY_TOO_WEAK => (ErrorKind::EncryptFailure, "key is too weak".into()),
+        // RFC 4556 names the same number `KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED`.
+        KDC_ERR_KEY_TOO_WEAK => (
+            ErrorKind::EncryptFailure,
+            "key is too weak (for PKINIT: the DH key parameters are not accepted)".into(),
+        ),
         KDC_ERR_CERTIFICATE_MISMATCH => (ErrorKind::InvalidParameter, "certificated mismatch".into()),
         KRB_AP_ERR_NO_TGT => (
             ErrorKind::NoTgtReply,
@@ -207,6 +222,28 @@ pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKin
         KDC_ERR_REVOCATION_STATUS_UNAVAILABLE => (ErrorKind::InternalError, "revoked status unavailable".into()),
         KDC_ERR_CLIENT_NAME_MISMATCH => (ErrorKind::InvalidParameter, "client name mismatch".into()),
         KDC_ERR_KDC_NAME_MISMATCH => (ErrorKind::InvalidParameter, "KDC name mismatch".into()),
+        // [RFC 4556, Section 3.1](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.1):
+        // the PKINIT errors that `picky-krb` does not define.
+        PKINIT_ERR_INCONSISTENT_KEY_PURPOSE => (
+            ErrorKind::InvalidParameter,
+            "the certificate does not have the PKINIT key purpose".into(),
+        ),
+        PKINIT_ERR_DIGEST_IN_CERT_NOT_ACCEPTED => (
+            ErrorKind::KdcInvalidRequest,
+            "the digest algorithm of the certificate is not accepted".into(),
+        ),
+        PKINIT_ERR_PA_CHECKSUM_MUST_BE_INCLUDED => (
+            ErrorKind::KdcInvalidRequest,
+            "the paChecksum must be included in the PKAuthenticator".into(),
+        ),
+        PKINIT_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED => (
+            ErrorKind::KdcInvalidRequest,
+            "the digest algorithm of the signed data is not accepted".into(),
+        ),
+        PKINIT_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED => (
+            ErrorKind::KdcInvalidRequest,
+            "public key encryption is not supported".into(),
+        ),
         KRB_AP_ERR_IAKERB_KDC_NOT_FOUND => (
             ErrorKind::NoAuthenticatingAuthority,
             "IAKERB proxy could not find a KDC".into(),
@@ -365,7 +402,29 @@ fn reduce_vartime(n: &BoxedUint, p: &BoxedMontyParams) -> BoxedMontyForm {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_target_name;
+    use rstest::rstest;
+
+    use super::{map_keb_error_code_to_sspi_error, parse_target_name};
+    use crate::ErrorKind;
+
+    // RFC 4556 §3.1 and §3.2.4: the errors of the PKINIT exchange.
+    // The number 65 is `KDC_ERR_KEY_TOO_WEAK` in Windows, and `KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED` in the RFC.
+    #[rstest]
+    #[case::dh_parameters_not_accepted(65, ErrorKind::EncryptFailure, "DH key parameters")]
+    #[case::inconsistent_key_purpose(77, ErrorKind::InvalidParameter, "key purpose")]
+    #[case::digest_in_certificate_not_accepted(78, ErrorKind::KdcInvalidRequest, "digest")]
+    #[case::pa_checksum_must_be_included(79, ErrorKind::KdcInvalidRequest, "paChecksum")]
+    #[case::digest_in_signed_data_not_accepted(80, ErrorKind::KdcInvalidRequest, "digest")]
+    #[case::public_key_encryption_not_supported(81, ErrorKind::KdcInvalidRequest, "public key encryption")]
+    fn pkinit_errors_are_named(#[case] code: u32, #[case] kind: ErrorKind, #[case] description: &str) {
+        let (actual_kind, actual_description) = map_keb_error_code_to_sspi_error(code);
+
+        assert_eq!(actual_kind, kind);
+        assert!(
+            actual_description.contains(description),
+            "`{actual_description}` must contain `{description}`"
+        );
+    }
 
     #[test]
     fn parse_valid_target_name() {
