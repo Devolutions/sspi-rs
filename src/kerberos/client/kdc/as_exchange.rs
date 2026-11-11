@@ -1,12 +1,13 @@
 #[cfg(feature = "scard")]
 use picky_krb::constants::error_codes::KDC_ERR_ETYPE_NOSUPP;
 use picky_krb::constants::error_codes::KRB_AP_ERR_SKEW;
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::KrbResult;
 use picky_krb::messages::{AsRep, AsReq, KdcReqBody, KrbError};
 use time::{Duration, OffsetDateTime};
 
 use crate::kerberos::EncryptionParams;
-use crate::kerberos::client::extractors::extract_preauth_salt;
+use crate::kerberos::client::extractors::extract_preauth_hint;
 use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateKeytabPaDataOptions, generate_as_req};
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::pa_datas::{AsReqPaDataOptions, AsRequestNonces};
@@ -37,6 +38,8 @@ pub struct AsExchange {
     state: AsExchangeState,
     kdc_req_body: KdcReqBody,
     nonces: AsRequestNonces,
+    /// The encryption type of the password key that the KDC asks for in the pre-authentication error.
+    preauth_cipher_suite: Option<CipherSuite>,
     retried_skew: bool,
     // Instead of storing the `AsReqPaDataOptions` directly, we store its individual components (fields below).
     // This design avoids introducing lifetime requirement that would require huge refactoring.
@@ -59,6 +62,7 @@ impl AsExchange {
             state: AsExchangeState::Initial,
             kdc_req_body,
             nonces,
+            preauth_cipher_suite: None,
             retried_skew: false,
             password,
             salt,
@@ -113,8 +117,8 @@ impl AsExchange {
                         debug!(
                             "KDC replied with KDC_ERR_ETYPE_NOSUPP to the smart card AS_REQ; continuing with PKINIT"
                         );
-                    } else if let Some(salt) =
-                        extract_preauth_salt(
+                    } else if let Some(hint) =
+                        extract_preauth_hint(
                             &krb_error,
                             self.kdc_req_body.realm.0.0.as_utf8(),
                             self.kdc_req_body.cname.0.as_ref().ok_or_else(|| {
@@ -123,7 +127,8 @@ impl AsExchange {
                         )?
                     {
                         debug!("salt extracted successfully from the KRB_ERROR");
-                        self.salt = salt.into_bytes();
+                        self.salt = hint.salt.into_bytes();
+                        self.preauth_cipher_suite = hint.cipher_suite;
                     }
 
                     self.state = AsExchangeState::AsRequest;
@@ -131,8 +136,12 @@ impl AsExchange {
                     continue;
                 }
                 AsExchangeState::AsRequest => {
+                    let preauth_cipher_suite = self.preauth_cipher_suite.clone();
                     let mut pa_data_options = self.build_pa_data_options(credentials, &client.encryption_params)?;
 
+                    if let Some(cipher_suite) = preauth_cipher_suite {
+                        pa_data_options.with_encryption_type(cipher_suite);
+                    }
                     pa_data_options.with_pre_auth(true);
                     let pa_datas = pa_data_options.generate(client.current_kdc_time()?)?;
 
@@ -323,5 +332,105 @@ mod tests {
 
         assert_eq!(as_rep, picky_asn1_der::from_bytes::<AsRep>(&as_rep_raw()).unwrap());
         assert_eq!(nonces.kdc_req, 1);
+    }
+
+    /// The KRB_ERROR of the KDC that requires pre-authentication, with an ETYPE-INFO2 of the given `(etype, salt)`.
+    fn preauth_required_error(etype: u8, salt: &str) -> Vec<u8> {
+        use picky_asn1::date::GeneralizedTime;
+        use picky_asn1::restricted_string::IA5String;
+        use picky_asn1::wrapper::{
+            Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag4,
+            ExplicitContextTag5, ExplicitContextTag6, ExplicitContextTag9, ExplicitContextTag10, ExplicitContextTag12,
+            IntegerAsn1, OctetStringAsn1, Optional,
+        };
+        use picky_krb::constants::error_codes::KDC_ERR_PREAUTH_REQUIRED;
+        use picky_krb::constants::types::PA_ETYPE_INFO2_TYPE;
+        use picky_krb::data_types::{
+            EtypeInfo2Entry, KerberosStringAsn1, KerberosTime, Microseconds, PaData, PrincipalName,
+        };
+        use picky_krb::messages::{KrbError, KrbErrorInner};
+        use time::OffsetDateTime;
+
+        let string = |value: &str| KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap());
+        let etype_info2 = Asn1SequenceOf::from(vec![PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
+                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![etype])),
+                    salt: Optional::from(Some(ExplicitContextTag1::from(string(salt)))),
+                    s2kparams: Optional::from(None),
+                }]))
+                .unwrap(),
+            )),
+        }]);
+        let error = KrbError::from(KrbErrorInner {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![30])),
+            ctime: Optional::from(None),
+            cusec: Optional::from(None),
+            stime: ExplicitContextTag4::from(KerberosTime::from(GeneralizedTime::from(OffsetDateTime::now_utc()))),
+            susec: ExplicitContextTag5::from(Microseconds::from(vec![0])),
+            error_code: ExplicitContextTag6::from(KDC_ERR_PREAUTH_REQUIRED),
+            crealm: Optional::from(None),
+            cname: Optional::from(None),
+            realm: ExplicitContextTag9::from(string("EXAMPLE.COM")),
+            sname: ExplicitContextTag10::from(PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![2])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![
+                    string("krbtgt"),
+                    string("EXAMPLE.COM"),
+                ])),
+            }),
+            e_text: Optional::from(None),
+            e_data: Optional::from(Some(ExplicitContextTag12::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&etype_info2).unwrap(),
+            )))),
+        });
+
+        // The first four bytes are the length of the message.
+        let mut message = vec![0, 0, 0, 0];
+        message.extend_from_slice(&picky_asn1_der::to_vec(&error).unwrap());
+
+        message
+    }
+
+    // RFC 4120 §5.2.7.5: the ETYPE-INFO2 tells which key to use for the PA-ENC-TIMESTAMP.
+    // A KDC that has only an AES128 key for the account cannot check a timestamp encrypted with AES256.
+    #[test]
+    fn the_pre_authentication_uses_the_encryption_type_from_the_kdc_hint() {
+        use picky_krb::constants::types::{PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE};
+        use picky_krb::crypto::CipherSuite;
+        use picky_krb::data_types::EncryptedData;
+
+        let mut client = fake_client();
+        let credentials = client.auth_identity.clone().unwrap();
+        let mut exchange = as_exchange();
+        exchange.step(&mut client, &credentials, &[]).unwrap();
+
+        let AsExchangeOutput::SendRequest(as_req) = exchange
+            .step(&mut client, &credentials, &preauth_required_error(17, "hint-salt"))
+            .unwrap()
+        else {
+            panic!("the exchange must send the AS-REQ with the pre-authentication");
+        };
+
+        let pa_data = as_req
+            .0
+            .padata
+            .0
+            .unwrap()
+            .0
+            .0
+            .into_iter()
+            .find(|pa_data| pa_data.padata_type.0.0 == PA_ENC_TIMESTAMP)
+            .expect("the AS-REQ carries PA-ENC-TIMESTAMP");
+        let encrypted: EncryptedData = picky_asn1_der::from_bytes(&pa_data.padata_data.0.0).unwrap();
+        assert_eq!(encrypted.etype.0.0, [17]);
+        // The key is the AES128 key of the password and the salt of the hint.
+        let cipher = CipherSuite::Aes128CtsHmacSha196.cipher();
+        let key = cipher.generate_key_from_password(b"password", b"hint-salt").unwrap();
+        cipher
+            .decrypt(&key, PA_ENC_TIMESTAMP_KEY_USAGE, &encrypted.cipher.0.0)
+            .expect("the timestamp is encrypted with the key of the hint");
     }
 }

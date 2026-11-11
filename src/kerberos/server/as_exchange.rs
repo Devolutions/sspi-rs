@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::TGT_SERVICE_NAME;
-use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_salt};
+use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_hint};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateKeytabPaDataOptions, generate_as_req,
     generate_as_req_kdc_body, generate_nonce,
@@ -221,7 +221,7 @@ pub(crate) async fn as_exchange(
             Err(krb_error) => krb_error,
         };
 
-        if let Some(correct_salt) = extract_preauth_salt(
+        if let Some(hint) = extract_preauth_hint(
             &krb_error,
             kdc_req_body.realm.0.0.as_utf8(),
             kdc_req_body
@@ -232,7 +232,13 @@ pub(crate) async fn as_exchange(
         )? {
             debug!("salt extracted successfully from the KRB_ERROR");
 
-            pa_data_options.with_salt(correct_salt.into_bytes());
+            pa_data_options.with_salt(hint.salt.into_bytes());
+            // UNTESTED: the acceptor encrypts the timestamp with the encryption type of the hint.
+            // The client exchange in `client::kdc::as_exchange` does the same and has a test;
+            // check both when changing either.
+            if let Some(cipher_suite) = hint.cipher_suite {
+                pa_data_options.with_encryption_type(cipher_suite);
+            }
         }
     }
 

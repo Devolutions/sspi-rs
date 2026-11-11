@@ -46,17 +46,39 @@ impl Salt {
 /// > It is usually used to notify a client of which key to use for the encryption of an encrypted timestamp for the purposes of sending a
 /// > PA-ENC-TIMESTAMP pre-authentication value.
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
-    Ok(match extract_salt_hint_from_krb_error(error)? {
-        Some(Salt::Explicit(salt)) => Some(salt),
-        Some(Salt::Default) | None => None,
+    Ok(match extract_etype_info_from_krb_error(error)? {
+        Some((Salt::Explicit(salt), _)) => Some(salt),
+        Some((Salt::Default, _)) | None => None,
     })
 }
 
-pub(crate) fn extract_preauth_salt(error: &KrbError, realm: &str, cname: &PrincipalName) -> Result<Option<String>> {
-    Ok(extract_salt_hint_from_krb_error(error)?.map(|salt| salt.resolve(realm, cname)))
+/// What the KDC tells in the pre-authentication error about the key of the PA-ENC-TIMESTAMP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreauthHint {
+    /// The salt of the password key.
+    pub salt: String,
+    /// The encryption type of the password key, if the KDC names one that the client supports.
+    pub cipher_suite: Option<CipherSuite>,
 }
 
-fn extract_salt_hint_from_krb_error(error: &KrbError) -> Result<Option<Salt>> {
+pub(crate) fn extract_preauth_hint(
+    error: &KrbError,
+    realm: &str,
+    cname: &PrincipalName,
+) -> Result<Option<PreauthHint>> {
+    Ok(
+        extract_etype_info_from_krb_error(error)?.map(|(salt, cipher_suite)| PreauthHint {
+            salt: salt.resolve(realm, cname),
+            cipher_suite,
+        }),
+    )
+}
+
+/// Extracts the salt and the encryption type from the first entry of the PA-ETYPE-INFO2 that the client supports.
+///
+/// The client offers AES256 and AES128 in its AS-REQ, so only those can be named.
+/// If the KDC names none of them, the salt of the first entry is returned without an encryption type.
+fn extract_etype_info_from_krb_error(error: &KrbError) -> Result<Option<(Salt, Option<CipherSuite>)>> {
     trace!(?error, "KRB_ERROR");
 
     // Check if the error code is KDC_ERR_PREAUTH_REQUIRED. If not, propagate the KDC error.
@@ -73,11 +95,29 @@ fn extract_salt_hint_from_krb_error(error: &KrbError) -> Result<Option<Salt>> {
             .find(|pa_data| pa_data.padata_type.0.0 == PA_ETYPE_INFO2_TYPE)
         {
             let etype_info_2: EtypeInfo2 = picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0.0)?;
-            if let Some(params) = etype_info_2.0.first() {
-                return Ok(Some(match &params.salt.0 {
+
+            let supported_entry =
+                etype_info_2
+                    .0
+                    .iter()
+                    .find_map(|entry| match CipherSuite::try_from(entry.etype.0.0.as_slice()) {
+                        Ok(cipher_suite @ (CipherSuite::Aes256CtsHmacSha196 | CipherSuite::Aes128CtsHmacSha196)) => {
+                            Some((entry, cipher_suite))
+                        }
+                        _ => None,
+                    });
+            let (entry, cipher_suite) = match supported_entry {
+                Some((entry, cipher_suite)) => (Some(entry), Some(cipher_suite)),
+                None => (etype_info_2.0.first(), None),
+            };
+
+            if let Some(entry) = entry {
+                let salt = match &entry.salt.0 {
                     Some(salt) => Salt::Explicit(salt.0.to_string()),
                     None => Salt::Default,
-                }));
+                };
+
+                return Ok(Some((salt, cipher_suite)));
             }
         }
     }
@@ -689,7 +729,7 @@ pub(crate) mod as_rep_regressions {
     }
 
     #[test]
-    fn extract_preauth_salt_distinguishes_absent_default_empty_and_custom() {
+    fn extract_preauth_hint_distinguishes_absent_default_empty_and_custom_salt() {
         for (data, expected) in [
             (None, None),
             (Some(hint(None)), None),
@@ -698,10 +738,57 @@ pub(crate) mod as_rep_regressions {
             (Some(hint(Some(Some("custom-preauth")))), Some("custom-preauth")),
         ] {
             assert_eq!(
-                extract_preauth_salt(&preauth_error(data), "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap(),
+                extract_preauth_hint(&preauth_error(data), "ExAmPlE.COM", &principal(&["Alice", "Admin"]))
+                    .unwrap()
+                    .map(|hint| hint.salt),
                 expected.map(str::to_owned)
             );
         }
+    }
+
+    /// An ETYPE-INFO2 with an entry for each `(etype, salt)`.
+    fn etype_info2(entries: &[(u8, Option<&str>)]) -> Asn1SequenceOf<PaData> {
+        Asn1SequenceOf::from(vec![PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&Asn1SequenceOf::from(
+                    entries
+                        .iter()
+                        .map(|(etype, salt)| EtypeInfo2Entry {
+                            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![*etype])),
+                            salt: Optional::from(salt.map(|salt| ExplicitContextTag1::from(krb_string(salt)))),
+                            s2kparams: Optional::from(None),
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+                .unwrap(),
+            )),
+        }])
+    }
+
+    // RFC 4120 §5.2.7.5: the entries tell which key to use for the PA-ENC-TIMESTAMP.
+    // The client takes the first entry with an encryption type that it supports.
+    #[rstest::rstest]
+    #[case::first_entry(&[(17, Some("salt-a")), (18, Some("salt-b"))], Some(("salt-a", Some(CipherSuite::Aes128CtsHmacSha196))))]
+    #[case::skips_unsupported_encryption_types(&[(23, Some("rc4-salt")), (18, Some("salt-b"))], Some(("salt-b", Some(CipherSuite::Aes256CtsHmacSha196))))]
+    #[case::default_salt_of_the_chosen_entry(&[(23, Some("rc4-salt")), (17, None)], Some(("ExAmPlE.COMAliceAdmin", Some(CipherSuite::Aes128CtsHmacSha196))))]
+    #[case::nothing_supported_keeps_the_salt_of_the_first_entry(&[(23, Some("rc4-salt")), (3, Some("des-salt"))], Some(("rc4-salt", None)))]
+    #[case::no_entries(&[], None)]
+    fn the_hint_names_the_key_for_the_pre_authentication(
+        #[case] entries: &[(u8, Option<&str>)],
+        #[case] expected: Option<(&str, Option<CipherSuite>)>,
+    ) {
+        let error = preauth_error(Some(etype_info2(entries)));
+
+        let hint = extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap();
+
+        assert_eq!(
+            hint,
+            expected.map(|(salt, cipher_suite)| PreauthHint {
+                salt: salt.to_owned(),
+                cipher_suite,
+            })
+        );
     }
 
     #[test]
@@ -857,7 +944,7 @@ pub(crate) mod as_rep_regressions {
         let mut malformed_hint = hint(Some(None));
         malformed_hint.0[0].padata_data = ExplicitContextTag2::from(OctetStringAsn1::from(vec![0xff]));
         for error in [wrong_error, malformed_method_data, preauth_error(Some(malformed_hint))] {
-            assert!(extract_preauth_salt(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).is_err());
+            assert!(extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).is_err());
             assert!(extract_salt_from_krb_error(&error).is_err());
         }
 
@@ -867,7 +954,9 @@ pub(crate) mod as_rep_regressions {
         ));
         let error = preauth_error(Some(empty_hint));
         assert_eq!(
-            extract_preauth_salt(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap(),
+            extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"]))
+                .unwrap()
+                .map(|hint| hint.salt),
             None
         );
         assert_eq!(extract_salt_from_krb_error(&error).unwrap(), None);

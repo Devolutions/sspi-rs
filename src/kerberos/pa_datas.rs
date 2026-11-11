@@ -1,3 +1,4 @@
+use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use time::OffsetDateTime;
@@ -49,6 +50,17 @@ impl AsReqPaDataOptions<'_> {
             #[cfg(feature = "scard")]
             AsReqPaDataOptions::SmartCard(_) => {}
             // The keytab key is pre-derived; the KDC-supplied salt is irrelevant.
+            AsReqPaDataOptions::Keytab(_) => {}
+        }
+    }
+
+    /// Sets the encryption type of the password key of the PA-ENC-TIMESTAMP.
+    pub(crate) fn with_encryption_type(&mut self, cipher_suite: CipherSuite) {
+        match self {
+            AsReqPaDataOptions::AuthIdentity(options) => options.enc_params.encryption_type = Some(cipher_suite),
+            #[cfg(feature = "scard")]
+            AsReqPaDataOptions::SmartCard(_) => {}
+            // The keytab key has its own encryption type.
             AsReqPaDataOptions::Keytab(_) => {}
         }
     }
