@@ -3,9 +3,11 @@ mod cache;
 mod extractors;
 mod generators;
 
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use cache::AuthenticatorCacheRecord;
+pub use cache::AuthenticatorsCache;
 use picky::oids;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{
@@ -22,7 +24,6 @@ use rand_core::{Rng as _, SeedableRng as _};
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use self::cache::AuthenticatorsCache;
 use self::extractors::{decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
 use self::generators::generate_ap_rep;
 use crate::builders::FilledAcceptSecurityContext;
@@ -94,7 +95,10 @@ pub struct ServerProperties {
     /// > The replay cache will store at least the server name, along with the client name, time,
     /// > and microsecond fields from the recently-seen authenticators, and if a matching tuple is found,
     /// > the error is returned.
-    pub authenticators_cache: AuthenticatorsCache,
+    ///
+    /// Share the cache between all the contexts of the same service: a replay is only detected by the cache
+    /// that has seen the original authenticator.
+    pub authenticators_cache: Arc<Mutex<AuthenticatorsCache>>,
 }
 
 impl ServerProperties {
@@ -104,6 +108,7 @@ impl ServerProperties {
         user: Option<CredentialsBuffers>,
         max_time_skew: Duration,
         ticket_decryption_key: Option<Secret<Vec<u8>>>,
+        authenticators_cache: Arc<Mutex<AuthenticatorsCache>>,
     ) -> Result<Self> {
         let service_names = sname
             .iter()
@@ -121,7 +126,7 @@ impl ServerProperties {
             additional_service_keys: Vec::new(),
             user,
             client: None,
-            authenticators_cache: AuthenticatorsCache::new(),
+            authenticators_cache,
         })
     }
 
@@ -538,25 +543,28 @@ pub async fn accept_security_context(
 
                 // An authenticator outside of the allowed clock skew is rejected by the time check above,
                 // so it does not have to be remembered. Forget it, or the cache grows with every request.
-                server_data.authenticators_cache.retain(|record| {
-                    OffsetDateTime::try_from(record.ctime.0.clone())
-                        .is_ok_and(|record_time| (now - record_time).abs() <= max_time_skew)
-                });
-
                 let cache_record = AuthenticatorCacheRecord {
                     cname: cname.0.clone(),
                     sname: ticket_service_name.clone(),
                     ctime: ctime.0.clone(),
                     microseconds: cusec.0.clone(),
                 };
-                if !server_data.authenticators_cache.contains(&cache_record) {
-                    server_data.authenticators_cache.insert(cache_record);
-                } else {
+                // The cache holds plain records, so it stays consistent even if another thread panicked while holding the lock.
+                let mut authenticators_cache = server_data
+                    .authenticators_cache
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                authenticators_cache.retain(|record| {
+                    OffsetDateTime::try_from(record.ctime.0.clone())
+                        .is_ok_and(|record_time| (now - record_time).abs() <= max_time_skew)
+                });
+                if !authenticators_cache.insert(cache_record) {
                     return Err(Error::new(
                         ErrorKind::InvalidToken,
                         "ApReq Authenticator replay detected",
                     ));
                 }
+                drop(authenticators_cache);
 
                 debug!("ApReq Ticket and Authenticator are valid!");
 
@@ -946,6 +954,7 @@ mod tests {
             KerberosTime, Ticket, TicketInner, TransitedEncoding,
         };
         use rstest::rstest;
+        use std::sync::{Arc, Mutex};
         use time::Duration as TimeDuration;
 
         use super::*;
@@ -1195,6 +1204,31 @@ mod tests {
             assert!(error.description.contains("replay"), "{error}");
         }
 
+        // The cache is managed by the caller, who shares it between the contexts that serve the same service.
+        // Otherwise a replay against a new connection is accepted.
+        #[test]
+        fn a_replay_is_detected_by_another_context_that_shares_the_cache() {
+            let cache = Arc::new(Mutex::new(AuthenticatorsCache::default()));
+            let mut first = acceptor();
+            first.server.as_mut().unwrap().authenticators_cache = Arc::clone(&cache);
+            let mut second = acceptor();
+            second.server.as_mut().unwrap().authenticators_cache = cache;
+            let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
+
+            accept_token(&mut first, &token).unwrap();
+            let error = accept_token(&mut second, &token).unwrap_err();
+
+            assert!(error.description.contains("replay"), "{error}");
+        }
+
+        #[test]
+        fn contexts_with_separate_caches_do_not_see_each_others_authenticators() {
+            let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
+
+            accept_token(&mut acceptor(), &token).unwrap();
+            accept_token(&mut acceptor(), &token).unwrap();
+        }
+
         // An authenticator older than the clock skew is rejected by the time check, so the cache never needs
         // to remember it. Keeping it makes the cache of a long-running acceptor grow without bound.
         #[test]
@@ -1203,17 +1237,31 @@ mod tests {
             let server_data = kerberos.server.as_mut().unwrap();
             let max_time_skew = server_data.max_time_skew;
             let stale_ctime = OffsetDateTime::now_utc() - max_time_skew - TimeDuration::minutes(1);
-            server_data.authenticators_cache.insert(AuthenticatorCacheRecord {
-                cname: alice(),
-                sname: server_data.service_name.clone(),
-                ctime: GeneralizedTime::from(stale_ctime).into(),
-                microseconds: IntegerAsn1::from(vec![0]),
-            });
+            server_data
+                .authenticators_cache
+                .lock()
+                .unwrap()
+                .insert(AuthenticatorCacheRecord {
+                    cname: alice(),
+                    sname: server_data.service_name.clone(),
+                    ctime: GeneralizedTime::from(stale_ctime).into(),
+                    microseconds: IntegerAsn1::from(vec![0]),
+                });
 
             let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
             accept_token(&mut kerberos, &token).unwrap();
 
-            assert_eq!(kerberos.server.as_ref().unwrap().authenticators_cache.len(), 1);
+            assert_eq!(
+                kerberos
+                    .server
+                    .as_ref()
+                    .unwrap()
+                    .authenticators_cache
+                    .lock()
+                    .unwrap()
+                    .len(),
+                1
+            );
         }
     }
 }

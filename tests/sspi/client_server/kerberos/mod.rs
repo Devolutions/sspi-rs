@@ -5,7 +5,7 @@ mod iakerb;
 pub(super) mod kdc;
 pub(super) mod network_client;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -363,7 +363,7 @@ fn kerberos_auth() {
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -450,7 +450,7 @@ fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -546,7 +546,7 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
             additional_service_keys: Vec::new(),
             user: None,
             client: None,
-            authenticators_cache: HashSet::new(),
+            authenticators_cache: Default::default(),
         };
         let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -803,7 +803,7 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
         additional_service_keys: Vec::new(),
         user: Some(server_credentials.clone()),
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -928,7 +928,7 @@ fn run_spnego(
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -1198,7 +1198,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
         additional_service_keys: Vec::new(),
         user: Some(credentials.clone()),
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -1491,7 +1491,7 @@ mod salt_regressions {
                     additional_service_keys: Vec::new(),
                     user: Some(credentials.clone()),
                     client: None,
-                    authenticators_cache: HashSet::new(),
+                    authenticators_cache: Default::default(),
                 },
             )
             .unwrap(),

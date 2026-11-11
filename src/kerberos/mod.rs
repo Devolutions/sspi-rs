@@ -27,7 +27,7 @@ use url::Url;
 pub use self::client::initialize_security_context;
 use self::config::{KdcResolution, KerberosConfig};
 pub use self::encryption_params::EncryptionParams;
-pub use self::server::{ClientPrincipal, ServerProperties, accept_security_context};
+pub use self::server::{AuthenticatorsCache, ClientPrincipal, ServerProperties, accept_security_context};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use picky_asn1::wrapper::{ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, OctetStringAsn1, Optional};
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_x509::oids;
@@ -215,7 +213,7 @@ fn iakerb_auth_with_kdc(configure_kdc: fn(KdcMock) -> KdcMock) {
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let mut kerberos_server =
         SspiContext::Kerberos(Kerberos::new_server_from_config(server_config, server_properties).unwrap());
@@ -350,7 +348,7 @@ fn spnego_iakerb() {
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
 
     // We cannot use the SPNEGO server to handle the authentication, because it does not have support for IAKERB yet.
