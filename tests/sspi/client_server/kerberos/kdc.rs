@@ -145,6 +145,8 @@ pub(crate) struct KdcMock {
     omit_as_rep_etype_info2: bool,
     /// Whether the AS-REP enc-part is an EncTGSRepPart, as the MIT KDC encodes it.
     tgs_rep_enc_part_in_as_rep: bool,
+    /// Whether the AS-REP carries a nonce that differs from the one of the AS-REQ.
+    wrong_as_rep_nonce: bool,
     preauth_salt_hint: Option<SaltHint>,
     as_rep_salt_hint: Option<SaltHint>,
     as_rep_encryption_salt: Option<String>,
@@ -175,6 +177,7 @@ impl KdcMock {
             reject_valid_preauth_with_skew: false,
             omit_as_rep_etype_info2: false,
             tgs_rep_enc_part_in_as_rep: false,
+            wrong_as_rep_nonce: false,
             preauth_salt_hint: None,
             as_rep_salt_hint: None,
             as_rep_encryption_salt: None,
@@ -200,6 +203,12 @@ impl KdcMock {
     /// Encodes the AS-REP enc-part as an EncTGSRepPart (APPLICATION 26).
     pub(crate) fn tgs_rep_enc_part_in_as_rep(mut self) -> Self {
         self.tgs_rep_enc_part_in_as_rep = true;
+        self
+    }
+
+    /// Replies to the AS-REQ with the nonce of another request.
+    pub(crate) fn wrong_as_rep_nonce(mut self) -> Self {
+        self.wrong_as_rep_nonce = true;
         self
     }
 
@@ -480,6 +489,11 @@ impl KdcMock {
         let end_time = auth_time + Duration::days(1);
         let realm = Realm::from(IA5String::from_string(self.realm.clone()).unwrap());
 
+        let mut nonce = nonce.0;
+        if self.wrong_as_rep_nonce {
+            *nonce.0.last_mut().expect("the nonce is not empty") ^= 1;
+        }
+
         let enc_kdc_rep_part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
@@ -492,7 +506,7 @@ impl KdcMock {
                 ))),
             }])),
             // RFC 4120 3.1.3: the KDC copies the nonce of the request.
-            nonce: ExplicitContextTag2::from(nonce.0),
+            nonce: ExplicitContextTag2::from(nonce),
             key_expiration: Optional::from(None),
             flags: ExplicitContextTag4::from(kdc_options.0.clone()),
             auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),

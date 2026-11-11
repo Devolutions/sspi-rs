@@ -7,8 +7,8 @@ use url::Url;
 use crate::builders::ChangePassword;
 use crate::generator::YieldPointLocal;
 use crate::kerberos::client::extractors::{
-    extract_encryption_params_from_as_rep_with_salt, extract_session_key_from_as_rep,
-    extract_status_code_from_krb_priv_response,
+    extract_checked_session_key, extract_encryption_params_from_as_rep_with_salt,
+    extract_status_code_from_krb_priv_response, password_key,
 };
 use crate::kerberos::client::generators::{
     EncKey, GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateAuthenticatorOptions, generate_as_req_kdc_body,
@@ -81,7 +81,12 @@ pub async fn change_password<'a>(
 
     client.encryption_params.encryption_type = Some(CipherSuite::try_from(usize::from(encryption_type))?);
 
-    let session_key = extract_session_key_from_as_rep(&as_rep, &salt, password.as_ref(), &client.encryption_params)?;
+    let session_key = extract_checked_session_key(
+        &as_rep,
+        &password_key(password.as_ref(), &salt, &client.encryption_params)?,
+        &client.encryption_params,
+        nonce,
+    )?;
 
     let seq_num = client.next_seq_number();
 

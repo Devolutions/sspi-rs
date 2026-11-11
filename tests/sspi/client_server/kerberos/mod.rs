@@ -1447,6 +1447,71 @@ mod salt_regressions {
         assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
     }
 
+    // RFC 4120 section 3.1.5: the client verifies the nonce of the AS-REP.
+    #[test]
+    fn kerberos_change_password_rejects_an_as_rep_with_another_nonce() {
+        let mut environment = environment_with_preauth_salt("password-change-wrong-nonce");
+        let service_name = PrincipalName {
+            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
+            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
+                ["kadmin", "changepw"]
+                    .map(|s| KerberosStringAsn1::from(IA5String::from_string(s.to_owned()).unwrap()))
+                    .to_vec(),
+            )),
+        };
+        environment.keys.insert(UserName(service_name), vec![0x69; 32]);
+        let network = NetworkClientMock {
+            kdc: KdcMock::new(
+                environment.realm,
+                environment.keys,
+                environment.users,
+                Validators::default(),
+            )
+            .wrong_as_rep_nonce(),
+        };
+        let mut client = Kerberos::new_client_from_config(KerberosConfig {
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        })
+        .unwrap();
+        // change_password uses the context's previously resolved realm. Initialize it
+        // through the public context API, stopping at the mocked transport boundary.
+        let mut handle = Some(CredentialsBuffers::try_from(environment.credentials).unwrap());
+        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut initialize = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut handle)
+            .with_context_requirements(ClientRequestFlags::empty())
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(&environment.target_name)
+            .with_input(&mut input)
+            .with_output(&mut setup_output);
+        SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
+            .unwrap()
+            .resolve_with_client(&FailedNetworkClientMock {
+                kind: ErrorKind::NoAuthenticatingAuthority,
+            })
+            .unwrap_err();
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let change = ChangePasswordBuilder::new()
+            .with_domain_name("EXAMPLE.COM")
+            .with_account_name("pw13")
+            .with_old_password("qweQWE123!@#")
+            .with_new_password(NEW_PASSWORD)
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+
+        let error = Sspi::change_password(&mut client, change)
+            .unwrap()
+            .resolve_with_client(&network)
+            .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+        assert!(error.description.contains("AS-REP nonce"), "{error}");
+    }
+
     #[test]
     fn kerberos_u2u_server_acquires_tgt_with_password_without_as_rep_hint() {
         let KrbEnvironment {
