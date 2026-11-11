@@ -201,6 +201,15 @@ workspace = true
 name = "kerberos"
 required-features = ["network_client"]
 
+# Debug builds of these crates need too much stack for callers with small thread stacks:
+# mstsc.exe reserves only 512 KiB, and building the P-256 basepoint table overflows it.
+[profile.dev.package.crypto-bigint]
+opt-level = 3
+[profile.dev.package.p256]
+opt-level = 3
+[profile.dev.package.primeorder]
+opt-level = 3
+
 [profile.ffi-production]
 inherits = "release"
 strip = false

@@ -7,7 +7,10 @@ use alloc::{format, vec};
 use crypto_bigint::BoxedUint;
 use iso7816::{Aid, Command, Instruction};
 use iso7816_tlv::ber::{Tag, Tlv, Value};
-use picky::key::PrivateKey;
+use p256::ecdsa::SigningKey;
+use p256::ecdsa::signature::hazmat::PrehashSigner as _;
+use p256::pkcs8::DecodePrivateKey as _;
+use picky::key::{KeyKind, PrivateKey};
 use rsa::traits::PublicKeyParts;
 use rsa::{Pkcs1v15Sign, RsaPrivateKey};
 use secret::{Secret, SecretPrivateKey};
@@ -16,8 +19,13 @@ use uuid::Uuid;
 
 use crate::card_capability_container::build_ccc;
 use crate::chuid::{CHUID_LENGTH, build_chuid};
-use crate::piv_cert::build_auth_cert;
+use crate::piv_cert::{build_auth_cert, build_yubikey_auth_cert};
+use crate::scard_context::{
+    DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP, MICROSOFT_SCARD_DRIVER_LOCATION,
+    YUBIKEY_CARD_NAME, YUBIKEY_SCARD_DRIVER_LOCATION,
+};
 use crate::winscard::{AttributeId, ControlCode, Protocol, ReaderAction, ShareMode, TransmitOutData, WinScard};
+use crate::yubikey::{self, YubiKey};
 use crate::{Error, ErrorKind, Response, Status, WinScardResult, tlv_tags, winscard};
 
 /// [NIST.SP.800-73-4, part 1, section 2.2](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=16).
@@ -70,6 +78,144 @@ pub const ATR: [u8; 17] = [
     0x4d,
 ];
 
+/// ATR of the YubiKey 5.
+///
+/// The Windows inbox PIV minidriver supports only RSA keys, so emulated smart cards with EC keys report this ATR
+/// to be served by the YubiKey Smart Card Minidriver. The minidriver is registered for this exact value.
+#[rustfmt::skip]
+pub const YUBIKEY_ATR: [u8; 23] = [
+    0x3b, 0xfd, 0x13, 0x00, 0x00, 0x81, 0x31, 0xfe, 0x15, 0x80, 0x73, 0xc0,
+    0x21, 0xc0, 0x57, 0x59, 0x75, 0x62, 0x69, 0x4b, 0x65, 0x79, 0x40,
+];
+
+/// How the emulated smart card presents itself to the Windows smart card stack.
+///
+/// All values depend on the card private key and must stay consistent: Windows selects the
+/// smart card minidriver by the ATR, and the card name and provider must fit this minidriver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CardIdentity {
+    /// Answer to reset.
+    pub atr: &'static [u8],
+    /// Smart card name.
+    pub name: &'static str,
+    /// Name of the provider that serves the smart card key.
+    pub provider_name: &'static str,
+    /// Null-terminated file name of the smart card minidriver.
+    pub card_module: &'static str,
+}
+
+/// Returns the identity of the emulated smart card with the provided private key.
+///
+/// Fails if the emulated smart card does not support such a key.
+pub fn card_identity(private_key: &PrivateKey) -> WinScardResult<CardIdentity> {
+    Ok(match parse_ec_key(private_key)? {
+        Some(_) => EC_CARD_IDENTITY,
+        None => RSA_CARD_IDENTITY,
+    })
+}
+
+const RSA_CARD_IDENTITY: CardIdentity = CardIdentity {
+    atr: &ATR,
+    name: DEFAULT_CARD_NAME,
+    provider_name: MICROSOFT_DEFAULT_CSP,
+    card_module: MICROSOFT_SCARD_DRIVER_LOCATION,
+};
+
+/// The legacy CSP and the inbox PIV minidriver cannot work with EC keys.
+const EC_CARD_IDENTITY: CardIdentity = CardIdentity {
+    atr: &YUBIKEY_ATR,
+    name: YUBIKEY_CARD_NAME,
+    provider_name: MICROSOFT_DEFAULT_KSP,
+    card_module: YUBIKEY_SCARD_DRIVER_LOCATION,
+};
+
+/// Checks that the emulated smart card supports the provided key and returns the parsed EC key if it is an EC one.
+fn parse_ec_key(private_key: &PrivateKey) -> WinScardResult<Option<p256::SecretKey>> {
+    match private_key.kind() {
+        KeyKind::Rsa => Ok(None),
+        KeyKind::Ec => {
+            let pkcs8 = Secret::new(private_key.to_pkcs8()?);
+
+            // The PKCS#8 decoder checks that the key is on the P-256 curve.
+            let secret_key = p256::SecretKey::from_pkcs8_der(pkcs8.as_ref()).map_err(|_| {
+                Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "only the P-256 curve is supported for EC smart card keys",
+                )
+            })?;
+
+            Ok(Some(secret_key))
+        }
+        _ => Err(Error::new(
+            ErrorKind::UnsupportedFeature,
+            "only RSA and EC smart card keys are supported",
+        )),
+    }
+}
+
+/// Private key of the emulated smart card.
+///
+/// The key type determines the PIV cryptographic algorithm identifier the smart card accepts in the GENERAL AUTHENTICATE command.
+///
+/// [NIST.SP.800-73-4, part 1, Table 5. Cryptographic Mechanism Identifiers](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=34)
+#[derive(Debug, Clone)]
+enum CardKey {
+    /// RSA key. The `0x07` (RSA 2048) algorithm.
+    Rsa,
+    /// ECC P-256 key. The `0x11` (ECC: Curve P-256) algorithm.
+    ///
+    /// Smart cards with such a key emulate the YubiKey: see [YUBIKEY_ATR].
+    EcP256 {
+        secret_key: p256::SecretKey,
+        yubikey: YubiKey,
+    },
+}
+
+impl CardKey {
+    // NIST.SP.800-73-4, part 1, Table 5
+    const RSA_ALGORITHM: u8 = 0x07;
+    // NIST.SP.800-73-4, part 1, Table 5
+    const ECC_P256_ALGORITHM: u8 = 0x11;
+
+    fn new(private_key: &PrivateKey, card_id: Uuid, auth_cert_der: &[u8]) -> WinScardResult<Self> {
+        Ok(match parse_ec_key(private_key)? {
+            Some(secret_key) => Self::EcP256 {
+                secret_key,
+                yubikey: YubiKey::new(card_id, auth_cert_der)?,
+            },
+            None => Self::Rsa,
+        })
+    }
+
+    fn identity(&self) -> CardIdentity {
+        match self {
+            Self::Rsa => RSA_CARD_IDENTITY,
+            Self::EcP256 { .. } => EC_CARD_IDENTITY,
+        }
+    }
+
+    fn algorithm(&self) -> u8 {
+        match self {
+            Self::Rsa => Self::RSA_ALGORITHM,
+            Self::EcP256 { .. } => Self::ECC_P256_ALGORITHM,
+        }
+    }
+
+    fn yubikey(&self) -> Option<&YubiKey> {
+        match self {
+            Self::Rsa => None,
+            Self::EcP256 { yubikey, .. } => Some(yubikey),
+        }
+    }
+
+    fn yubikey_mut(&mut self) -> Option<&mut YubiKey> {
+        match self {
+            Self::Rsa => None,
+            Self::EcP256 { yubikey, .. } => Some(yubikey),
+        }
+    }
+}
+
 /// Emulated smart card.
 ///
 /// Currently, we support one key container per smart card.
@@ -81,6 +227,7 @@ pub struct SmartCard<'a> {
     pin: Secret<Vec<u8>>,
     auth_cert: Vec<u8>,
     auth_pk: SecretPrivateKey,
+    key: CardKey,
     state: SCardState,
     // We don't need to track actual transactions for the emulated smart card.
     // We are using this flag to track incorrect smart card usage.
@@ -102,7 +249,11 @@ impl SmartCard<'_> {
         auth_pk: PrivateKey,
     ) -> WinScardResult<SmartCard<'_>> {
         let chuid = build_chuid(card_id)?;
-        let auth_cert = build_auth_cert(auth_cert_der)?;
+        let key = CardKey::new(&auth_pk, card_id, &auth_cert_der)?;
+        let auth_cert = match key {
+            CardKey::Rsa => build_auth_cert(auth_cert_der)?,
+            CardKey::EcP256 { .. } => build_yubikey_auth_cert(auth_cert_der),
+        };
 
         Ok(SmartCard {
             reader_name,
@@ -111,12 +262,24 @@ impl SmartCard<'_> {
             pin: SmartCard::validate_and_pad_pin(pin)?.into(),
             auth_cert,
             auth_pk: auth_pk.into(),
+            key,
             state: SCardState::Ready,
             transaction: false,
             pending_command: None,
             pending_response: None,
             attributes: BTreeMap::new(),
         })
+    }
+
+    /// Sets the name of the key container this smart card reports to the smart card minidriver.
+    ///
+    /// Fails if the name does not fit the container map record.
+    pub fn with_container_name(mut self, container_name: &str) -> WinScardResult<Self> {
+        if let Some(yubikey) = self.key.yubikey_mut() {
+            yubikey.set_container_name(container_name)?;
+        }
+
+        Ok(self)
     }
 
     fn validate_and_pad_pin(pin: Vec<u8>) -> WinScardResult<Vec<u8>> {
@@ -178,8 +341,16 @@ impl SmartCard<'_> {
         }
         if self.state == SCardState::Ready && cmd.instruction() != Instruction::Select {
             // if the application wasn't selected, only the SELECT command can be used
-            return Ok(Status::NotFound.into());
-        } else if self.state == SCardState::PivAppSelected && cmd.instruction() == Instruction::GeneralAuthenticate {
+            return Ok(if self.key.yubikey().is_some() {
+                // The YubiKey has no PIV-specific instructions until the PIV application is selected.
+                Status::InstructionNotSupported.into()
+            } else {
+                Status::NotFound.into()
+            });
+        } else if self.state == SCardState::PivAppSelected
+            && cmd.instruction() == Instruction::GeneralAuthenticate
+            && !(self.key.yubikey().is_some() && is_management_authentication(&cmd))
+        {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
             return Ok(Status::SecurityStatusNotSatisfied.into());
         }
@@ -188,10 +359,17 @@ impl SmartCard<'_> {
             Instruction::Select => self.select(cmd),
             Instruction::GetData => self.get_data(cmd),
             Instruction::Verify => self.verify(cmd),
-            Instruction::GeneralAuthenticate => self.general_authenticate(cmd),
+            Instruction::GeneralAuthenticate => match self.key.yubikey_mut() {
+                Some(yubikey) if is_management_authentication(&cmd) => Self::management_authenticate(yubikey, cmd),
+                _ => self.general_authenticate(cmd),
+            },
             Instruction::GetResponse => self.get_response(),
-            _ => {
-                error!(instruction = ?cmd.instruction(), "unimplemented instruction");
+            instruction => {
+                if let (Instruction::Unknown(instruction), Some(yubikey)) = (instruction, self.key.yubikey()) {
+                    return Ok(Self::yubikey_command(yubikey, instruction, cmd));
+                }
+
+                error!(?instruction, "unimplemented instruction");
                 Ok(Status::InstructionNotSupported.into())
             }
         }?;
@@ -217,7 +395,15 @@ impl SmartCard<'_> {
         // ISO/IEC 7816-4, Section 7.1.1, Table 40
         const FIRST_OR_ONLY_OCCURRENCE: u8 = 0x00;
 
-        if cmd.p1 != APPLICATION_IDENTIFIER || cmd.p2 != FIRST_OR_ONLY_OCCURRENCE || !PIV_AID.matches(cmd.data()) {
+        // The YubiKey accepts the shortened AID, and the YubiKey Smart Card Minidriver uses it.
+        let is_short_aid = self.key.yubikey().is_some()
+            && cmd.data().len() >= yubikey::PIV_AID_MIN_SIZE
+            && PIV_AID.starts_with(cmd.data());
+
+        if cmd.p1 != APPLICATION_IDENTIFIER
+            || cmd.p2 != FIRST_OR_ONLY_OCCURRENCE
+            || !(PIV_AID.matches(cmd.data()) || is_short_aid)
+        {
             return Ok(Status::NotFound.into());
         }
         let data = Tlv::new(
@@ -322,6 +508,29 @@ impl SmartCard<'_> {
             return Ok(Status::NotFound.into());
         }
 
+        if let (Some(yubikey), Value::Primitive(tag)) = (self.key.yubikey(), request.value()) {
+            match <[u8; 3]>::try_from(tag.as_slice()) {
+                Ok(yubikey::ADMIN_DATA_TAG) => {
+                    return Ok(Response::new(Status::OK, Some(yubikey.admin_data().to_vec())));
+                }
+                Ok(yubikey::CONTAINER_MAP_TAG) => return Ok(Response::new(Status::OK, Some(yubikey.container_map()))),
+                Ok(yubikey::PRINTED_INFORMATION_TAG) => {
+                    return Ok(if self.state == SCardState::PinVerified {
+                        Response::new(Status::OK, Some(yubikey.printed_information().as_ref().to_vec()))
+                    } else {
+                        Status::SecurityStatusNotSatisfied.into()
+                    });
+                }
+                // The minidriver lists the card keys by reading the certificate slots. The key is
+                // kept only in the PIV Authentication slot: a duplicate of the key in another slot
+                // would become one more key container.
+                Ok(CARD_AUTH_CERT_TAG | KEY_MANAGEMENT_CERT_TAG | DIGITAL_SIGNATURE_CERT_TAG) => {
+                    return Ok(Status::NotFound.into());
+                }
+                _ => {}
+            }
+        }
+
         match request.value() {
             Value::Primitive(tag) => match tag.as_slice() {
                 CHUID_TAG => Ok(Response::new(Status::OK, Some(self.chuid.to_vec()))),
@@ -370,26 +579,35 @@ impl SmartCard<'_> {
         // PIV GENERAL AUTHENTICATE command
         //      CLA  - 0x00 | 0x10 (command chaining)
         //      INS  - 0x87
-        //      P1   - 0x07 - RSA
-        //      P2   - 0x9A - PIV Authentication Key or PIV Digital Signature Key
-        //      Data - Dynamic Authentication Template with Challenge inside
+        //      P1   - 0x07 - RSA 2048 | 0x11 - ECC P-256
+        //      P2   - 0x9A - PIV Authentication Key, 0x9C - PIV Digital Signature Key or 0x9D - Key Management Key
+        //      Data - Dynamic Authentication Template with Challenge (or Exponentiation) inside
         //
-        // There are many possible P1 and P2 values in this command, but our smart card only supports the RSA algorithm
-        // and data signing using the PIV Authentication Key or PIV Digital Signature Key.
+        // There are many possible P1 and P2 values in this command, but our smart card supports only the algorithm of its key
+        // (RSA 2048 or ECC P-256) and data signing using the PIV Authentication Key or PIV Digital Signature Key.
+        // The EC key can also be used in the ECDH key agreement. The Key Management Key reference is accepted for that purpose.
 
-        // NIST.SP.800-73-4, Part 1, Table 5
-        const RSA_ALGORITHM: u8 = 0x07;
         // NIST.SP.800-73-4, Part 1, Table 4b
         const PIV_AUTHENTICATION_KEY: u8 = 0x9A;
         const PIV_DIGITAL_SIGNATURE_KEY: u8 = 0x9C;
+        const PIV_KEY_MANAGEMENT_KEY: u8 = 0x9D;
 
-        // We accept two types of key references: PIV Authentication Key and Digital Signature Key.
-        if cmd.p1 != RSA_ALGORITHM || (cmd.p2 != PIV_DIGITAL_SIGNATURE_KEY && cmd.p2 != PIV_AUTHENTICATION_KEY) {
+        // We accept the PIV Authentication Key and the Digital Signature Key references. The EC key accepts the Key Management Key too.
+        let key_reference_is_supported = match self.key {
+            CardKey::Rsa => matches!(cmd.p2, PIV_DIGITAL_SIGNATURE_KEY | PIV_AUTHENTICATION_KEY),
+            CardKey::EcP256 { .. } => matches!(
+                cmd.p2,
+                PIV_DIGITAL_SIGNATURE_KEY | PIV_AUTHENTICATION_KEY | PIV_KEY_MANAGEMENT_KEY
+            ),
+        };
+        if cmd.p1 != self.key.algorithm() || !key_reference_is_supported {
             return Err(Error::new(
                 ErrorKind::UnsupportedFeature,
                 format!(
-                    "provided algorithm or key reference isn't supported: got algorithm {:x}, expected 0x07; got key reference {:x}, expected 0x9a or 0x9c",
-                    cmd.p1, cmd.p2
+                    "provided algorithm or key reference isn't supported: got algorithm {:x}, expected {:x}; got key reference {:x}, expected 0x9a, 0x9c or 0x9d (0x9d is supported only by EC keys)",
+                    cmd.p1,
+                    self.key.algorithm(),
+                    cmd.p2
                 ),
             ));
         }
@@ -410,13 +628,21 @@ impl SmartCard<'_> {
         };
         // to avoid constructing the tag on each iteration
         let challenge_tag = Tag::try_from(tlv_tags::DAT_CHALLENGE)?;
-        let challenge = inner_tlv
-            .iter()
-            .find(|&tlv| tlv.tag() == &challenge_tag)
-            .ok_or(Error::new(
-                ErrorKind::InvalidValue,
-                "TLV structure is invalid: no challenge field is present in the request".to_string(),
-            ))?;
+        let challenge = inner_tlv.iter().find(|&tlv| tlv.tag() == &challenge_tag);
+        // The ECDH key agreement request carries the other party public key instead of the challenge.
+        let exponentiation_tag = Tag::try_from(tlv_tags::DAT_EXPONENTIATION)?;
+        let exponentiation = inner_tlv.iter().find(|&tlv| tlv.tag() == &exponentiation_tag);
+
+        let (challenge, key_agreement) = match (challenge, exponentiation, &self.key) {
+            (Some(challenge), _, _) => (challenge, false),
+            (None, Some(exponentiation), CardKey::EcP256 { .. }) => (exponentiation, true),
+            (None, _, _) => {
+                return Err(Error::new(
+                    ErrorKind::InvalidValue,
+                    "TLV structure is invalid: no challenge field is present in the request".to_string(),
+                ));
+            }
+        };
         // Signature creation is described in NIST.SP.800-73-4, Part 2, Appendix A, Sections A.1-3 and Section A.4.1
         let challenge = match challenge.value() {
             Value::Primitive(challenge) => challenge,
@@ -428,17 +654,109 @@ impl SmartCard<'_> {
                 ));
             }
         };
-        let signed_challenge = self.sign_padded(challenge)?;
+
+        let signed_challenge = match &self.key {
+            CardKey::Rsa => Secret::new(self.sign_padded(challenge)?),
+            CardKey::EcP256 { secret_key, .. } if key_agreement => {
+                // NIST.SP.800-73-4, Part 2, Section 3.2.4 and Appendix A.4.2: the response is the x-coordinate of the shared point.
+                // The other party public key must be an uncompressed point: `0x04 || X || Y`.
+                let public_key = match challenge.split_first() {
+                    Some((0x04, _)) if challenge.len() == 65 => p256::PublicKey::from_sec1_bytes(challenge).ok(),
+                    _ => None,
+                };
+                let Some(public_key) = public_key else {
+                    return Ok(Status::IncorrectDataField.into());
+                };
+
+                Secret::new(secret_key.diffie_hellman(&public_key).raw_secret_bytes().to_vec())
+            }
+            // NIST.SP.800-73-4, Part 2, Appendix A.4.2: the challenge is the hash that is signed as is.
+            CardKey::EcP256 { secret_key, .. } => match ecdsa_sign_prehash(secret_key, challenge) {
+                Ok(signature) => Secret::new(signature),
+                Err(_) => return Ok(Status::IncorrectDataField.into()),
+            },
+        };
         let response = Tlv::new(
             Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
             Value::Constructed(vec![Tlv::new(
                 Tag::try_from(tlv_tags::DAT_RESPONSE)?,
-                Value::Primitive(signed_challenge),
+                Value::Primitive(signed_challenge.as_ref().clone()),
             )?]),
         )?
         .to_vec();
         self.pending_response = Some(response.into());
         self.get_response()
+    }
+
+    /// Handles the mutual authentication with the management key.
+    ///
+    /// NIST.SP.800-73-4, Part 2, Appendix A.3:
+    /// * The caller requests a witness: an empty `0x80` tag.
+    /// * The card returns the encrypted witness in the `0x80` tag.
+    /// * The caller sends the decrypted witness in the `0x80` tag and its own challenge in the `0x81` tag.
+    /// * The card returns the encrypted challenge in the `0x82` tag.
+    #[instrument(level = "debug", skip_all, err)]
+    fn management_authenticate(yubikey: &mut YubiKey, cmd: Command<1024>) -> WinScardResult<Response> {
+        let request = Tlv::from_bytes(cmd.data())?;
+        let Value::Constructed(fields) = request.value() else {
+            return Ok(Status::IncorrectDataField.into());
+        };
+        if request.tag() != &Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)? {
+            return Ok(Status::IncorrectDataField.into());
+        }
+
+        let field_value = |tag: u8| -> WinScardResult<Option<&[u8]>> {
+            let tag = Tag::try_from(tag)?;
+
+            Ok(fields
+                .iter()
+                .find(|tlv| tlv.tag() == &tag)
+                .and_then(|tlv| match tlv.value() {
+                    Value::Primitive(value) => Some(value.as_slice()),
+                    Value::Constructed(_) => None,
+                }))
+        };
+        let witness = field_value(tlv_tags::DAT_WITNESS)?;
+        let challenge = field_value(tlv_tags::DAT_CHALLENGE)?;
+
+        let (response_tag, response_value) = match (witness, challenge) {
+            (Some([]), None) => (tlv_tags::DAT_WITNESS, yubikey.start_management_authentication()),
+            (Some(witness), Some(challenge)) if challenge.len() == yubikey::MANAGEMENT_CHALLENGE_SIZE => {
+                let Some(response) = yubikey.finish_management_authentication(witness, challenge) else {
+                    return Ok(Status::SecurityStatusNotSatisfied.into());
+                };
+
+                (tlv_tags::DAT_RESPONSE, response)
+            }
+            _ => return Ok(Status::IncorrectDataField.into()),
+        };
+
+        let response = Tlv::new(
+            Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
+            Value::Constructed(vec![Tlv::new(
+                Tag::try_from(response_tag)?,
+                Value::Primitive(response_value.to_vec()),
+            )?]),
+        )?;
+
+        Ok(Response::new(Status::OK, Some(response.to_vec())))
+    }
+
+    /// Handles the commands that exist only on the YubiKey.
+    fn yubikey_command(yubikey: &YubiKey, instruction: u8, cmd: Command<1024>) -> Response {
+        match instruction {
+            yubikey::INS_GET_VERSION => Response::new(Status::OK, Some(yubikey.version().to_vec())),
+            yubikey::INS_GET_SERIAL => Response::new(Status::OK, Some(yubikey.serial().to_vec())),
+            yubikey::INS_GET_METADATA => match yubikey.metadata(cmd.p2) {
+                Some(metadata) => Response::new(Status::OK, Some(metadata.to_vec())),
+                None => Status::KeyReferenceNotFound.into(),
+            },
+            _ => {
+                error!(instruction, "unimplemented YubiKey instruction");
+
+                Status::InstructionNotSupported.into()
+            }
+        }
     }
 
     fn sign_padded(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
@@ -467,6 +785,22 @@ impl SmartCard<'_> {
         let signature = rsa_private_key.sign(Pkcs1v15Sign::new::<Sha1>(), data.as_ref())?;
 
         Ok(signature)
+    }
+
+    /// Signs the provided hash using the EC smart card private key.
+    ///
+    /// *Warning*. The input data should be the hash (SHA-256 for the P-256 curve) of the actual data you want to sign.
+    /// The hash is signed as is. The output is the DER-encoded `ECDSA-Sig-Value`.
+    ///
+    /// [RFC 5480, ECDSA-Sig-Value](https://www.rfc-editor.org/rfc/rfc5480#section-2.2.3)
+    pub fn sign_ecdsa_hashed(&self, data: impl AsRef<[u8]>) -> WinScardResult<Vec<u8>> {
+        match &self.key {
+            CardKey::EcP256 { secret_key, .. } => ecdsa_sign_prehash(secret_key, data.as_ref()),
+            CardKey::Rsa => Err(Error::new(
+                ErrorKind::UnsupportedFeature,
+                "the smart card key is not an EC key",
+            )),
+        }
     }
 
     /// Verifies the PIN code. This method alters the scard state.
@@ -509,7 +843,7 @@ impl WinScard for SmartCard<'_> {
             state: winscard::State::Specific,
             // We are always using the T1 protocol as the original Windows TPM smart card does
             protocol: SUPPORTED_CONNECTION_PROTOCOL,
-            atr: ATR.into(),
+            atr: self.key.identity().atr.to_vec().into(),
         })
     }
 
@@ -593,6 +927,32 @@ impl WinScard for SmartCard<'_> {
     }
 }
 
+/// Returns `true` if the GENERAL AUTHENTICATE command authenticates with the YubiKey management key.
+fn is_management_authentication(cmd: &Command<1024>) -> bool {
+    cmd.p1 == yubikey::MANAGEMENT_KEY_ALGORITHM && cmd.p2 == yubikey::MANAGEMENT_KEY_SLOT
+}
+
+/// Signs the prehashed data using ECDSA and returns the DER-encoded `ECDSA-Sig-Value`.
+///
+/// The signature is deterministic ([RFC 6979](https://www.rfc-editor.org/rfc/rfc6979)), so no random number generator is needed.
+///
+/// [RFC 5480, ECDSA-Sig-Value](https://www.rfc-editor.org/rfc/rfc5480#section-2.2.3)
+fn ecdsa_sign_prehash(secret_key: &p256::SecretKey, prehash: &[u8]) -> WinScardResult<Vec<u8>> {
+    // The ECDSA implementation panics on the empty hash.
+    if prehash.is_empty() {
+        return Err(Error::new(
+            ErrorKind::InvalidValue,
+            "invalid data to sign: the hash is empty",
+        ));
+    }
+
+    let signature: p256::ecdsa::Signature = SigningKey::from(secret_key)
+        .sign_prehash(prehash)
+        .map_err(|_| Error::new(ErrorKind::InvalidValue, "invalid data to sign: unsuitable hash length"))?;
+
+    Ok(signature.to_der().as_bytes().to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -647,33 +1007,7 @@ mod tests {
     }
 
     fn new_scard() -> SmartCard<'static> {
-        let rsa_2048_private_key = "-----BEGIN RSA PRIVATE KEY-----
-MIIEowIBAAKCAQEAiJ/d1/2d1CQYlJfZ02TOH7F/5U53a6IZc8QwTQEsBQbVGfQO
-RN/+b09NzJJZmtyuLdBAXLzP8lEzKcfgn4JNl5G7DuKOxRreE5tq8uA+j2SQCw7m
-Sm6todEOvkWG5Dov3Q9QnlPbvqp871pfbRsfKwOo2RxJIjbjpM5FQnlqOd+3gu2I
-TF8dt+/PY+wl1w6kPTUZg/mzElY95WSnOE9bFlHcVL//Sl3caW85AB0lLUbd96b/
-7PMO6IWJQyvS0ssG0emcyQYllvvSCFSpVWA/e1EGzKrwbtG1Xn9je5L4mIKiSw/p
-gbjnYE9g+pibLJNobBBLkzGdo/KzyCQbMWirkQIDAQABAoIBAEbAm28mXNymkMAq
-31g1BPWuwy/p8bggqxOjjuvh5nz369XT6KvMYAQeyohdZd/n1p/ND/e2o+22FUvW
-wcF5Bluu0XNE6nCymD0JKFp8vIkfp+TCI4p6RJrfG8Z3VQLOC0lsi/BiNxNHUQnX
-AEINYJey/nboygrY6AzJ8V4aaGNtbtnz7tfyALJHUK0qRa+AmyLCzaZR5RSbDgB5
-srCX9J5OCxH2s5tVSfqg48Z0RIiBcDFPYbJDakZWLRNLD8ByW3e0jEFDA1vQPsaj
-CsyY4E6UZwYNZemC60zW0e8BYJYnOAhcmwaYnaxvL5xy0aW5pUGr+FgnO4NrNr33
-pKT2eFECgYEA2LJdjjFGdTsuW8esbTn+9hGyNnUR9gxYGdNhcINhPHMhoR8GkakC
-5sLOlpgCDpdzHDduW2GjhIAUnXt50yZNpkXQuSWdjucbYGc2G5ySc8eHaP+5tHAr
-svyZBchE+Kf4p2nNoXoQxsgxY2Qgz/ctUgCR7SnbgRW0cHDH7HIXlJ0CgYEAoWeY
-rt2q8PFW3sEWy1RK0dxD+7UnuN76x5rd0IUxi2HS5F4tyfiDy3LgVs0XJqF9IN6K
-IQ7pX/0C1g91NbUl8pAnu+k7R/CiynqGAmQumkMscIRO4VoR+v3+Hta9NV6sy/0U
-fDfQSK9AnrFXGCpHPLC+YrmgbVnKqJ526vBxboUCgYEAvx4pJ0TMWI62p1nm+HrD
-JLGc1SzRh4mBll15PeuRsef1DA66E3PVzEKaQ/WTMt1eN8+ntE7cEfuIsxB49MJ+
-j5xZp0HGwYeQ/Khq71VbUWP0SKXqWnrn/7eLGq90LT6wLq9BHh7zdu6PqJJh4iml
-vgIkseBN6X6EIvtFSIOjyn0CgYBRvEiRpSd/xHedbmLArPsGs2ip+t8Wu7R7iG1z
-vz+Lugo2I4tEkFkNmisJSerDYVwgXRHOE+MS/OmGxWUxwX5qC55ThpTCpZWKu+lJ
-JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
-4MpQkQKBgA4vlTf+n8kpOJWls2YMyZaauY48xcNzDdhpBGFCjVm+aiKX5dyIjAQK
-9LX8/iVau8ZRM+qSLpuEP+o8qGR11TbGZrLH/wITc7r9cWnaGDsozmPAnxMcu1zz
-9IRTY9zr9QWzxGiSqr834q5IZIQ/5uDBW/857MP0bpMl6cTdxzg0
------END RSA PRIVATE KEY-----";
+        let rsa_2048_private_key = crate::test_keys::RSA_2048_PRIVATE_KEY;
         let auth_pk = PrivateKey::from_pem_str(rsa_2048_private_key).unwrap();
         let certificate_stub = vec![0xff; 1024];
         let pin = vec![0x39; 6];
@@ -1043,5 +1377,537 @@ JLqE3CeRAy9+50HbvOwHae9/K2aOFqddEFaluDodIulcD2zrywVesWoQdjwuj7Dg
         let modulus = p.modulus().as_nz_ref().clone();
         let n_reduced = n.rem_vartime(&modulus).resize_unchecked(p.bits_precision());
         BoxedMontyForm::new(n_reduced, p)
+    }
+
+    mod ec {
+        use p256::ecdsa::signature::hazmat::PrehashVerifier as _;
+        use p256::ecdsa::{Signature, VerifyingKey};
+
+        use super::*;
+        use crate::test_keys::{EC_P256_PRIVATE_KEY, EC_P256_PUBLIC_POINT, EC_P384_PRIVATE_KEY, ED25519_PRIVATE_KEY};
+
+        fn new_ec_scard() -> SmartCard<'static> {
+            let auth_pk = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
+
+            let mut scard = SmartCard::new(
+                Cow::Borrowed("Reader 0"),
+                Uuid::from_u128(1),
+                vec![0x39; 6],
+                vec![0xff; 1024],
+                auth_pk,
+            )
+            .unwrap();
+            scard.state = SCardState::PinVerified;
+
+            scard
+        }
+
+        /// The GENERAL AUTHENTICATE command the Windows smart card minidriver sends: the empty response tag goes first.
+        ///
+        /// The command layout is taken from the real YubiKey (P-256) RDP smart card logon capture.
+        fn general_authenticate_apdu(p1: u8, p2: u8, tag: u8, value: &[u8]) -> Vec<u8> {
+            let mut template = vec![0x82, 0x00, tag, u8::try_from(value.len()).unwrap()];
+            template.extend_from_slice(value);
+
+            let mut apdu = vec![0x00, 0x87, p1, p2, u8::try_from(template.len() + 2).unwrap(), 0x7c];
+            apdu.push(u8::try_from(template.len()).unwrap());
+            apdu.extend_from_slice(&template);
+            apdu.push(0x00);
+
+            apdu
+        }
+
+        /// Sends the command and returns the value of the response (0x82) tag of the Dynamic Authentication Template.
+        fn response_value(scard: &mut SmartCard<'_>, apdu: &[u8]) -> Vec<u8> {
+            let response = scard.handle_command(apdu).expect("the command must be handled");
+            let data = get_all_available_data(response, scard);
+            let template = Tlv::from_bytes(&data).expect("the response must be a TLV object");
+
+            assert_eq!(
+                template.tag(),
+                &Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE).unwrap()
+            );
+            let Value::Constructed(inner) = template.value() else {
+                panic!("the Dynamic Authentication Template must be constructed");
+            };
+            assert_eq!(1, inner.len());
+            assert_eq!(inner[0].tag(), &Tag::try_from(tlv_tags::DAT_RESPONSE).unwrap());
+            let Value::Primitive(value) = inner[0].value() else {
+                panic!("the response tag must be primitive");
+            };
+
+            value.clone()
+        }
+
+        /// Parses the DER `ECDSA-Sig-Value` and checks it is encoded minimally.
+        fn parse_der_signature(der: &[u8]) -> Signature {
+            assert_eq!(0x30, der[0]);
+            assert_eq!(usize::from(der[1]), der.len() - 2);
+
+            let mut rest = &der[2..];
+            let mut integers = Vec::new();
+            for _ in 0..2 {
+                assert_eq!(0x02, rest[0]);
+                let len = usize::from(rest[1]);
+                let integer = &rest[2..2 + len];
+                // Minimal two's complement non-negative integer.
+                if integer.len() > 1 && integer[0] == 0 {
+                    assert!(integer[1] & 0x80 != 0, "redundant leading zero");
+                }
+                assert!(integer[0] & 0x80 == 0, "negative integer");
+
+                let integer = integer.strip_prefix(&[0]).unwrap_or(integer);
+                let mut padded = [0_u8; 32];
+                padded[32 - integer.len()..].copy_from_slice(integer);
+                integers.push(padded);
+                rest = &rest[2 + len..];
+            }
+            assert!(rest.is_empty());
+
+            Signature::from_scalars(integers[0], integers[1]).expect("valid signature scalars")
+        }
+
+        #[test]
+        fn ec_key_is_detected() {
+            let scard = new_ec_scard();
+
+            assert!(matches!(scard.key, CardKey::EcP256 { .. }));
+            assert_eq!(0x11, scard.key.algorithm());
+            assert_eq!(0x07, new_scard().key.algorithm());
+        }
+
+        #[test]
+        fn unsupported_keys_are_rejected() {
+            for key in [EC_P384_PRIVATE_KEY, ED25519_PRIVATE_KEY] {
+                let auth_pk = PrivateKey::from_pem_str(key).unwrap();
+
+                let error = SmartCard::new(
+                    Cow::Borrowed("Reader 0"),
+                    Uuid::from_u128(1),
+                    vec![0x39; 6],
+                    vec![0xff; 16],
+                    auth_pk,
+                )
+                .unwrap_err();
+
+                assert_eq!(ErrorKind::UnsupportedFeature, error.error_kind);
+            }
+        }
+
+        #[test]
+        fn general_authenticate_signs_the_challenge_hash() {
+            let mut scard = new_ec_scard();
+            let hash = [0x42_u8; 32];
+
+            // The same command as the Windows minidriver sends.
+            let apdu = general_authenticate_apdu(0x11, 0x9a, 0x81, &hash);
+            assert_eq!(
+                &[0x00, 0x87, 0x11, 0x9a, 0x26, 0x7c, 0x24, 0x82, 0x00, 0x81, 0x20],
+                &apdu[..11]
+            );
+
+            let signature = parse_der_signature(&response_value(&mut scard, &apdu));
+
+            VerifyingKey::from_sec1_bytes(&EC_P256_PUBLIC_POINT)
+                .unwrap()
+                .verify_prehash(&hash, &signature)
+                .expect("the signature must be valid");
+        }
+
+        #[test]
+        fn general_authenticate_signature_is_deterministic() {
+            let mut scard = new_ec_scard();
+            let apdu = general_authenticate_apdu(0x11, 0x9c, 0x81, &[0x24; 32]);
+
+            assert_eq!(response_value(&mut scard, &apdu), response_value(&mut scard, &apdu));
+        }
+
+        #[test]
+        fn der_signature_encoding_is_minimal_for_any_hash() {
+            let scard = new_ec_scard();
+            let verifying_key = VerifyingKey::from_sec1_bytes(&EC_P256_PUBLIC_POINT).unwrap();
+
+            // A lot of different hashes give `r` and `s` values with the high bit set and with leading zero bytes.
+            for seed in 0..=u8::MAX {
+                let hash = (0..32)
+                    .map(|i| seed.wrapping_mul(31).wrapping_add(i))
+                    .collect::<Vec<_>>();
+
+                let der = scard.sign_ecdsa_hashed(&hash).unwrap();
+                let signature = parse_der_signature(&der);
+
+                verifying_key.verify_prehash(&hash, &signature).unwrap();
+            }
+        }
+
+        #[test]
+        fn general_authenticate_ecdh_returns_the_shared_secret_x_coordinate() {
+            let mut scard = new_ec_scard();
+
+            // The other party (the server) ephemeral key pair.
+            let other_secret = p256::SecretKey::from_slice(&[0x55; 32]).unwrap();
+            let other_point = other_secret.public_key().to_sec1_bytes();
+            assert_eq!(65, other_point.len());
+
+            let apdu = general_authenticate_apdu(0x11, 0x9a, 0x85, &other_point);
+            assert_eq!(
+                &[0x00, 0x87, 0x11, 0x9a, 0x47, 0x7c, 0x45, 0x82, 0x00, 0x85, 0x41, 0x04],
+                &apdu[..12]
+            );
+
+            let shared_secret = response_value(&mut scard, &apdu);
+
+            let card_public_key = p256::PublicKey::from_sec1_bytes(&EC_P256_PUBLIC_POINT).unwrap();
+            let expected = other_secret.diffie_hellman(&card_public_key);
+            assert_eq!(32, shared_secret.len());
+            assert_eq!(expected.raw_secret_bytes().as_slice(), shared_secret.as_slice());
+        }
+
+        #[test]
+        fn general_authenticate_ecdh_rejects_an_invalid_point() {
+            let mut scard = new_ec_scard();
+
+            // A compressed (but otherwise valid) point of the other party.
+            let other_point = p256::SecretKey::from_slice(&[0x55; 32])
+                .unwrap()
+                .public_key()
+                .to_sec1_bytes();
+            let mut compressed_point = vec![0x02 + (other_point[64] & 1)];
+            compressed_point.extend_from_slice(&other_point[1..33]);
+
+            // Not on the curve, the unsupported point encodings and a truncated point.
+            for point in [&[0x04_u8; 65][..], &[0x07; 33], &[0x01, 0x02], &compressed_point] {
+                let apdu = general_authenticate_apdu(0x11, 0x9a, 0x85, point);
+                let response = scard.handle_command(&apdu).expect("the command must be handled");
+
+                assert_eq!(Status::IncorrectDataField, response.status, "point: {point:02x?}");
+            }
+        }
+
+        #[test]
+        fn general_authenticate_requires_the_key_algorithm() {
+            let mut ec_scard = new_ec_scard();
+            // RSA algorithm identifier on the EC card.
+            let apdu = general_authenticate_apdu(0x07, 0x9a, 0x81, &[0; 32]);
+            ec_scard.handle_command(&apdu).unwrap_err();
+            // ECC algorithm identifier on the RSA card.
+            let mut rsa_scard = new_scard();
+            rsa_scard.state = SCardState::PinVerified;
+            let apdu = general_authenticate_apdu(0x11, 0x9a, 0x81, &[0; 32]);
+            rsa_scard.handle_command(&apdu).unwrap_err();
+        }
+
+        #[test]
+        fn general_authenticate_key_references() {
+            let mut ec_scard = new_ec_scard();
+            for key_reference in [0x9a, 0x9c, 0x9d] {
+                let apdu = general_authenticate_apdu(0x11, key_reference, 0x81, &[0; 32]);
+                ec_scard
+                    .handle_command(&apdu)
+                    .expect("the EC key reference must be supported");
+            }
+            let apdu = general_authenticate_apdu(0x11, 0x9e, 0x81, &[0; 32]);
+            ec_scard.handle_command(&apdu).unwrap_err();
+
+            // The key management key is not supported for RSA (the old behavior).
+            let mut rsa_scard = new_scard();
+            rsa_scard.state = SCardState::PinVerified;
+            let apdu = general_authenticate_apdu(0x07, 0x9d, 0x81, &[0; 32]);
+            rsa_scard.handle_command(&apdu).unwrap_err();
+        }
+
+        #[test]
+        fn general_authenticate_challenge_with_a_wrong_length_is_rejected() {
+            let mut scard = new_ec_scard();
+            let apdu = general_authenticate_apdu(0x11, 0x9a, 0x81, &[]);
+
+            let response = scard.handle_command(&apdu).expect("the command must be handled");
+            assert_eq!(Status::IncorrectDataField, response.status);
+        }
+
+        #[test]
+        fn ecdh_request_is_not_accepted_by_rsa_card() {
+            let mut scard = new_scard();
+            scard.state = SCardState::PinVerified;
+            let apdu = general_authenticate_apdu(0x07, 0x9a, 0x85, &[0x04; 65]);
+
+            scard.handle_command(&apdu).unwrap_err();
+        }
+
+        #[test]
+        fn rsa_card_cannot_sign_with_ecdsa() {
+            new_scard().sign_ecdsa_hashed([0; 32]).unwrap_err();
+        }
+
+        #[test]
+        fn ec_card_cannot_sign_with_rsa() {
+            new_ec_scard().sign_hashed([0; 20]).unwrap_err();
+        }
+
+        // The expected values below are taken from the APDU traffic of a real YubiKey 5.
+        mod yubikey_extensions {
+            use des::TdesEde3;
+            use des::cipher::{Array, BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
+            use sha2::{Digest, Sha256};
+
+            use super::*;
+
+            const AUTHENTICATION_REQUEST: [u8; 10] = [0x00, 0x87, 0x03, 0x9B, 0x04, 0x7C, 0x02, 0x80, 0x00, 0x00];
+            const SHORT_AID_SELECT: [u8; 11] = [0x00, 0xA4, 0x04, 0x00, 0x05, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00];
+            const PRINTED_INFORMATION_TAG: [u8; 3] = [0x5F, 0xC1, 0x09];
+
+            fn get_data(scard: &mut SmartCard<'_>, tag: [u8; 3]) -> Response {
+                scard
+                    .handle_command(&[0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, tag[0], tag[1], tag[2], 0x00])
+                    .unwrap()
+            }
+
+            fn management_key(scard: &mut SmartCard<'_>) -> TdesEde3 {
+                let object = get_data(scard, PRINTED_INFORMATION_TAG).data.unwrap();
+                assert_eq!([0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18], object[..6]);
+
+                TdesEde3::new_from_slice(&object[6..]).unwrap()
+            }
+
+            fn authentication_response(witness: &[u8], challenge: &[u8]) -> Vec<u8> {
+                let mut command = vec![0x00, 0x87, 0x03, 0x9B, 0x16, 0x7C, 0x14, 0x80, 0x08];
+                command.extend_from_slice(witness);
+                command.extend_from_slice(&[0x81, 0x08]);
+                command.extend_from_slice(challenge);
+                command.push(0x00);
+
+                command
+            }
+
+            #[test]
+            fn ec_card_reports_the_yubikey_atr() {
+                assert_eq!(YUBIKEY_ATR, new_ec_scard().status().unwrap().atr.as_ref());
+            }
+
+            #[test]
+            fn rsa_card_keeps_the_piv_atr() {
+                assert_eq!(ATR, new_scard().status().unwrap().atr.as_ref());
+            }
+
+            #[test]
+            fn ec_card_returns_firmware_version_and_serial() {
+                let mut scard = new_ec_scard();
+
+                let version = scard.handle_command(&[0x00, 0xFD, 0x00, 0x00, 0x00]).unwrap();
+                assert_eq!(Status::OK, version.status);
+                assert_eq!(vec![5, 4, 3], version.data.unwrap());
+
+                let serial = scard.handle_command(&[0x00, 0xF8, 0x00, 0x00, 0x00]).unwrap();
+                assert_eq!(Status::OK, serial.status);
+                assert_eq!(4, serial.data.unwrap().len());
+            }
+
+            #[test]
+            fn rsa_card_has_no_yubikey_instructions() {
+                let mut scard = new_scard();
+                scard.state = SCardState::PivAppSelected;
+
+                let response = scard.handle_command(&[0x00, 0xFD, 0x00, 0x00, 0x00]).unwrap();
+
+                assert_eq!(Status::InstructionNotSupported, response.status);
+            }
+
+            #[test]
+            fn ec_card_metadata_describes_only_the_management_key() {
+                let mut scard = new_ec_scard();
+
+                let metadata = scard.handle_command(&[0x00, 0xF7, 0x00, 0x9B, 0x00]).unwrap();
+                assert_eq!(Status::OK, metadata.status);
+                assert_eq!(
+                    vec![0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01, 0x00],
+                    metadata.data.unwrap()
+                );
+
+                let bio = scard.handle_command(&[0x00, 0xF7, 0x00, 0x96, 0x00]).unwrap();
+                assert_eq!(Status::KeyReferenceNotFound, bio.status);
+            }
+
+            #[test]
+            fn ec_card_admin_data_matches_the_real_card() {
+                let response = get_data(&mut new_ec_scard(), [0x5F, 0xFF, 0x00]);
+
+                assert_eq!(vec![0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03], response.data.unwrap());
+            }
+
+            #[test]
+            fn ec_card_container_map_matches_the_real_card_layout() {
+                let mut scard = new_ec_scard().with_container_name("test-container").unwrap();
+
+                let object = get_data(&mut scard, [0x5F, 0xFF, 0x10]).data.unwrap();
+
+                assert_eq!(111, object.len());
+                assert_eq!([0x53, 0x6D, 0x81, 0x6B], object[..4]);
+
+                let record = &object[4..];
+                let name = "test-container"
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<_>>();
+                assert_eq!(name, record[..name.len()]);
+                assert!(record[name.len()..80].iter().all(|byte| *byte == 0));
+                // Slot, key spec, key size, flags, PIN id, and no associated ECDH container.
+                assert_eq!([0x9A, 0x06, 0x00, 0x01, 0x03, 0x01, 0xFF], record[80..87]);
+                // The fingerprint is the beginning of the SHA-256 hash of the certificate.
+                assert_eq!(Sha256::digest([0xff; 1024])[..20], record[87..]);
+            }
+
+            #[test]
+            fn too_long_container_name_is_rejected() {
+                let error = new_ec_scard().with_container_name(&"a".repeat(40)).unwrap_err();
+
+                assert_eq!(ErrorKind::InvalidParameter, error.error_kind);
+            }
+
+            #[test]
+            fn card_identity_follows_the_key() {
+                let ec_key = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
+                let identity = card_identity(&ec_key).unwrap();
+                assert_eq!(YUBIKEY_ATR, identity.atr);
+                assert_eq!("YubiKey Smart Card", identity.name);
+                assert_eq!("Microsoft Smart Card Key Storage Provider", identity.provider_name);
+                assert_eq!("ykmd.dll\0", identity.card_module);
+
+                let rsa_key = PrivateKey::from_pem_str(crate::test_keys::RSA_2048_PRIVATE_KEY).unwrap();
+                let identity = card_identity(&rsa_key).unwrap();
+                assert_eq!(ATR, identity.atr);
+                assert_eq!("Sspi-rs emulated smart card", identity.name);
+                assert_eq!("Microsoft Base Smart Card Crypto Provider", identity.provider_name);
+                assert_eq!("msclmd.dll\0", identity.card_module);
+            }
+
+            #[test]
+            fn unsupported_curve_has_no_card_identity() {
+                let key = PrivateKey::from_pem_str(EC_P384_PRIVATE_KEY).unwrap();
+
+                let error = card_identity(&key).unwrap_err();
+
+                assert_eq!(ErrorKind::UnsupportedFeature, error.error_kind);
+            }
+
+            #[test]
+            fn ec_card_certificate_uses_ber_tlv_lengths() {
+                let mut scard = new_ec_scard();
+
+                let object = get_all_available_data(get_data(&mut scard, PIV_CERT_TAG), &mut scard);
+
+                // `new_ec_scard` uses a 1024-byte certificate. The real card returns the same structure:
+                // `53 82 LL LL 70 82 LL LL <certificate> 71 01 00 FE 00`.
+                assert_eq!([0x53, 0x82, 0x04, 0x09, 0x70, 0x82, 0x04, 0x00], object[..8]);
+                assert_eq!([0xff; 1024], object[8..1032]);
+                assert_eq!([0x71, 0x01, 0x00, 0xFE, 0x00], object[1032..]);
+            }
+
+            #[test]
+            fn rsa_card_certificate_keeps_the_simple_tlv_length() {
+                let mut scard = new_scard();
+                scard.state = SCardState::PivAppSelected;
+
+                let object = get_all_available_data(get_data(&mut scard, PIV_CERT_TAG), &mut scard);
+
+                // The Windows inbox PIV minidriver works with this encoding.
+                assert_eq!([0x70, 0xFF, 0x04, 0x00], object[4..8]);
+            }
+
+            #[test]
+            fn ec_card_keeps_the_key_only_in_the_authentication_slot() {
+                let mut scard = new_ec_scard();
+
+                assert_eq!(Status::MoreAvailable(0), get_data(&mut scard, PIV_CERT_TAG).status);
+                for tag in [DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, CARD_AUTH_CERT_TAG] {
+                    assert_eq!(Status::NotFound, get_data(&mut scard, tag).status);
+                }
+            }
+
+            #[test]
+            fn ec_card_hides_the_management_key_until_the_pin_is_verified() {
+                let mut scard = new_ec_scard();
+                scard.state = SCardState::PivAppSelected;
+
+                let response = get_data(&mut scard, PRINTED_INFORMATION_TAG);
+
+                assert_eq!(Status::SecurityStatusNotSatisfied, response.status);
+                assert!(response.data.is_none());
+            }
+
+            #[test]
+            fn ec_card_requires_the_piv_application_selection() {
+                let mut scard = new_ec_scard();
+                scard.state = SCardState::Ready;
+
+                let response = scard.handle_command(&[0x00, 0x20, 0x00, 0x80, 0x00]).unwrap();
+                assert_eq!(Status::InstructionNotSupported, response.status);
+
+                // The minidriver selects the application using the shortened AID.
+                let response = scard.handle_command(&SHORT_AID_SELECT).unwrap();
+                assert_eq!(Status::OK, response.status);
+                assert_eq!(SCardState::PivAppSelected, scard.state);
+            }
+
+            #[test]
+            fn rsa_card_does_not_accept_the_shortened_aid() {
+                let response = new_scard().handle_command(&SHORT_AID_SELECT).unwrap();
+
+                assert_eq!(Status::NotFound, response.status);
+            }
+
+            #[test]
+            fn management_key_mutual_authentication() {
+                let mut scard = new_ec_scard();
+                let cipher = management_key(&mut scard);
+
+                // Step 1: the card returns the encrypted witness.
+                let response = scard.handle_command(&AUTHENTICATION_REQUEST).unwrap();
+                assert_eq!(Status::OK, response.status);
+                let witness = response.data.unwrap();
+                assert_eq!([0x7C, 0x0A, 0x80, 0x08], witness[..4]);
+
+                let mut decrypted = Array::try_from(&witness[4..]).unwrap();
+                cipher.decrypt_block(&mut decrypted);
+
+                // Step 2: the caller proves it knows the key and challenges the card.
+                let challenge = [1, 2, 3, 4, 5, 6, 7, 8];
+                let response = scard
+                    .handle_command(&authentication_response(&decrypted, &challenge))
+                    .unwrap();
+                assert_eq!(Status::OK, response.status);
+                let card_response = response.data.unwrap();
+                assert_eq!([0x7C, 0x0A, 0x82, 0x08], card_response[..4]);
+
+                let mut expected = Array::from(challenge);
+                cipher.encrypt_block(&mut expected);
+                assert_eq!(expected.as_slice(), &card_response[4..]);
+            }
+
+            #[test]
+            fn management_key_authentication_rejects_wrong_witness() {
+                let mut scard = new_ec_scard();
+
+                scard.handle_command(&AUTHENTICATION_REQUEST).unwrap();
+                let response = scard
+                    .handle_command(&authentication_response(&[0; 8], &[0; 8]))
+                    .unwrap();
+
+                assert_eq!(Status::SecurityStatusNotSatisfied, response.status);
+            }
+
+            #[test]
+            fn ec_card_signs_the_way_the_minidriver_requests() {
+                let mut command = vec![0x00, 0x87, 0x11, 0x9A, 0x26, 0x7C, 0x24, 0x82, 0x00, 0x81, 0x20];
+                command.extend_from_slice(&[0xA5; 32]);
+                command.push(0x00);
+
+                let response = new_ec_scard().handle_command(&command).unwrap();
+
+                assert_eq!(Status::OK, response.status);
+                let data = response.data.unwrap();
+                assert_eq!(0x7C, data[0]);
+                assert_eq!(0x82, data[2]);
+            }
+        }
     }
 }

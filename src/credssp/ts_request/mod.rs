@@ -253,17 +253,37 @@ impl TsRequest {
     }
 }
 
+/// Returns the key specification the target machine must use to open the smart card key.
+///
+/// EC keys have no legacy key specification. The CNG key storage provider detects the real key type
+/// only if the requested specification is zero. Any other value is taken as is: `AT_KEYEXCHANGE`
+/// opens an EC key as a legacy key exchange key, and the logon that uses the credentials sent via
+/// CredSSP fails.
+#[cfg(feature = "scard")]
+fn smart_card_key_spec(certificate: &picky_asn1_x509::Certificate) -> u8 {
+    use picky_asn1_x509::PublicKey;
+    use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
+
+    const AT_NONE: u8 = 0;
+
+    match certificate.tbs_certificate.subject_public_key_info.subject_public_key {
+        PublicKey::Ec(_) => AT_NONE,
+        _ => AT_KEYEXCHANGE,
+    }
+}
+
 #[instrument(ret, level = "debug")]
 #[cfg(feature = "scard")]
 fn write_smart_card_credentials(credentials: &crate::SmartCardIdentityBuffers) -> Result<Secret<Vec<u8>>> {
     use picky_asn1::wrapper::{ExplicitContextTag2, ExplicitContextTag3, ExplicitContextTag4, Optional};
-    use picky_krb::constants::cred_ssp::AT_KEYEXCHANGE;
     use picky_krb::credssp::{TsCspDataDetail, TsSmartCardCreds};
+
+    let key_spec = smart_card_key_spec(&(&credentials.certificate).into());
 
     let smart_card_creds = TsSmartCardCreds {
         pin: ExplicitContextTag0::from(OctetStringAsn1::from(credentials.pin.as_ref().0.to_bytes_le())),
         csp_data: ExplicitContextTag1::from(TsCspDataDetail {
-            key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![AT_KEYEXCHANGE])),
+            key_spec: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_spec])),
             card_name: Optional::from(
                 credentials
                     .card_name

@@ -10,12 +10,13 @@ use cryptoki::context::{CInitializeArgs, Pkcs11};
 #[cfg(not(target_arch = "wasm32"))]
 use cryptoki::mechanism::Mechanism;
 #[cfg(not(target_arch = "wasm32"))]
-use cryptoki::object::{Attribute, KeyType, ObjectClass};
+use cryptoki::object::{Attribute, AttributeType, KeyType, ObjectClass, ObjectHandle};
 #[cfg(not(target_arch = "wasm32"))]
-use cryptoki::session::UserType;
+use cryptoki::session::{Session, UserType};
 #[cfg(not(target_arch = "wasm32"))]
 use cryptoki::types::AuthPin;
 use picky::key::PrivateKey;
+use picky_asn1_x509::Certificate;
 use uuid::Uuid;
 use winscard::SmartCard as PivSmartCard;
 
@@ -39,6 +40,10 @@ pub(crate) enum SmartCardApi {
         ///
         /// Reader name is needed to determine which PKCS11 slot to use.
         reader_name: String,
+        /// Smart card certificate.
+        ///
+        /// It is needed to determine which private key to use: a token can contain several of them.
+        certificate: Box<Certificate>,
     },
     /// Represents Windows native smart card API.
     ///
@@ -107,23 +112,36 @@ impl SmartCard {
                     scard_pin.as_ref().to_vec(),
                     user_pin,
                     private_key,
-                    picky_asn1_der::to_vec(certificate)?,
+                    certificate,
                     signing_scheme,
                 )
             }
             #[cfg(not(target_arch = "wasm32"))]
-            SmartCardType::SystemProvided { pkcs11_module_path } => {
-                Self::new_system_provided(pkcs11_module_path, user_pin, reader_name.clone(), signing_scheme)
-            }
-            #[cfg(target_os = "windows")]
-            SmartCardType::WindowsNative => Self::new_windows_native(
+            SmartCardType::SystemProvided { pkcs11_module_path } => Self::new_system_provided(
+                pkcs11_module_path,
                 user_pin,
-                _container_name
-                    .as_ref()
-                    .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?
-                    .to_owned(),
+                reader_name.clone(),
+                certificate.clone(),
                 signing_scheme,
             ),
+            #[cfg(target_os = "windows")]
+            SmartCardType::WindowsNative => {
+                if signing_scheme != SigningScheme::RsaSha1 {
+                    return Err(Error::new(
+                        ErrorKind::OperationNotSupported,
+                        "EC keys are not supported by the Windows native smart card API yet",
+                    ));
+                }
+
+                Self::new_windows_native(
+                    user_pin,
+                    _container_name
+                        .as_ref()
+                        .ok_or_else(|| Error::new(ErrorKind::NoCredentials, "container name is not provided"))?
+                        .to_owned(),
+                    signing_scheme,
+                )
+            }
         }
     }
 
@@ -133,9 +151,12 @@ impl SmartCard {
         scard_pin: Vec<u8>,
         user_pin: Secret<Vec<u8>>,
         private_key: PrivateKey,
-        auth_cert_der: Vec<u8>,
+        certificate: &Certificate,
         signing_scheme: SigningScheme,
     ) -> Result<Self> {
+        // The emulated smart card keeps the certificate in the form it returns it to the caller.
+        let auth_cert_der = picky_asn1_der::to_vec(certificate)?;
+
         // This smart card is not backed by any resource manager context, so it has no externally
         // assigned identity: generate a fresh one for it.
         let scard = PivSmartCard::new(reader_name, Uuid::new_v4(), scard_pin, auth_cert_der, private_key)?;
@@ -167,6 +188,7 @@ impl SmartCard {
         pkcs11_module_path: &Path,
         user_pin: Secret<Vec<u8>>,
         reader_name: String,
+        certificate: Certificate,
         signing_scheme: SigningScheme,
     ) -> Result<Self> {
         use cryptoki::context::CInitializeFlags;
@@ -178,6 +200,7 @@ impl SmartCard {
             smart_card_type: SmartCardApi::Pkcs11 {
                 pkcs11_module: pkcs11,
                 reader_name,
+                certificate: Box::new(certificate),
             },
             pin: user_pin,
             signing_scheme,
@@ -192,20 +215,18 @@ impl SmartCard {
 
         match &mut self.smart_card_type {
             SmartCardApi::PivEmulated(scard) => {
-                if self.signing_scheme != SigningScheme::RsaSha1 {
-                    return Err(Error::new(
-                        ErrorKind::OperationNotSupported,
-                        "emulated smart cards support only RSA keys",
-                    ));
-                }
-
                 scard.verify_pin(self.pin.as_ref())?;
-                Ok(scard.sign_hashed(digest)?)
+
+                Ok(match self.signing_scheme {
+                    SigningScheme::RsaSha1 => scard.sign_hashed(digest)?,
+                    SigningScheme::EcdsaP256Sha256 => scard.sign_ecdsa_hashed(digest)?,
+                })
             }
             #[cfg(not(target_arch = "wasm32"))]
             SmartCardApi::Pkcs11 {
                 pkcs11_module,
                 reader_name,
+                certificate,
             } => {
                 let slot = 's: {
                     for slot in pkcs11_module.get_slots_with_token()? {
@@ -235,10 +256,7 @@ impl SmartCard {
                     SigningScheme::EcdsaP256Sha256 => (KeyType::EC, Mechanism::Ecdsa, digest),
                 };
 
-                let objects = session
-                    .find_objects(&[Attribute::Class(ObjectClass::PRIVATE_KEY), Attribute::KeyType(key_type)])?;
-
-                for private_key in objects {
+                for private_key in find_private_keys(&session, key_type, certificate)? {
                     if let Ok(signature) = session.sign(&mechanism, private_key, &data_to_sign) {
                         return match self.signing_scheme {
                             SigningScheme::RsaSha1 => Ok(signature),
@@ -255,18 +273,48 @@ impl SmartCard {
                 ))
             }
             #[cfg(target_os = "windows")]
-            SmartCardApi::Windows { container_name } => {
-                if self.signing_scheme != SigningScheme::RsaSha1 {
-                    return Err(Error::new(
-                        ErrorKind::OperationNotSupported,
-                        "EC keys are not supported by the Windows native smart card API yet",
-                    ));
-                }
+            SmartCardApi::Windows { container_name } => sign_data_win_api(container_name, self.pin.as_ref(), &digest),
+        }
+    }
+}
 
-                sign_data_win_api(container_name, self.pin.as_ref(), &digest)
+/// Finds the private keys to sign with using the smart card certificate.
+///
+/// A token can contain several keys of the same type, and any of them produces a valid signature, which the
+/// KDC rejects afterwards. So, only the key with the same `CKA_ID` as the certificate has must be used.
+/// All keys of the required type are returned only if the token does not link the certificate to a key.
+#[cfg(not(target_arch = "wasm32"))]
+fn find_private_keys(session: &Session, key_type: KeyType, certificate: &Certificate) -> Result<Vec<ObjectHandle>> {
+    let certificates = session.find_objects(&[
+        Attribute::Class(ObjectClass::CERTIFICATE),
+        Attribute::Value(picky_asn1_der::to_vec(certificate)?),
+    ])?;
+
+    for certificate in certificates {
+        for attribute in session.get_attributes(certificate, &[AttributeType::Id])? {
+            let Attribute::Id(id) = attribute else {
+                continue;
+            };
+
+            if id.is_empty() {
+                continue;
+            }
+
+            let keys = session.find_objects(&[
+                Attribute::Class(ObjectClass::PRIVATE_KEY),
+                Attribute::KeyType(key_type),
+                Attribute::Id(id),
+            ])?;
+
+            if !keys.is_empty() {
+                return Ok(keys);
             }
         }
     }
+
+    warn!("The smart card token does not link the certificate to a private key: trying all suitable keys");
+
+    Ok(session.find_objects(&[Attribute::Class(ObjectClass::PRIVATE_KEY), Attribute::KeyType(key_type)])?)
 }
 
 /// Converts the raw ECDSA signature returned by PKCS#11 into the DER-encoded `ECDSA-Sig-Value`.
@@ -440,7 +488,68 @@ fn sign_data_win_api(container_name: &str, pin: &[u8], data_to_sign: &[u8]) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::ecdsa_signature_to_der;
+    use picky::hash::HashAlgorithm;
+    use picky::key::PrivateKey;
+    use picky::signature::SignatureAlgorithm;
+    use picky::x509::Cert;
+    use picky_asn1_x509::Certificate;
+
+    use super::{SmartCard, ecdsa_signature_to_der};
+    use crate::Secret;
+    use crate::pk_init::SigningScheme;
+
+    const EC_P256_PRIVATE_KEY: &str = include_str!("../test_assets/ec_p256.key");
+
+    #[test]
+    fn emulated_ec_smart_card_signs_data() {
+        let private_key = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
+        // The smart card does not check that the certificate matches the key, but the signing scheme is chosen by the certificate.
+        let certificate: Certificate = Cert::from_pem_str(include_str!("../test_assets/ec_p256.cer"))
+            .unwrap()
+            .into();
+        assert_eq!(
+            SigningScheme::EcdsaP256Sha256,
+            SigningScheme::from_certificate(&certificate).unwrap()
+        );
+
+        let mut smart_card = SmartCard::new_emulated(
+            "Reader 0".into(),
+            b"123456".to_vec(),
+            Secret::new(b"123456".to_vec()),
+            private_key.clone(),
+            &certificate,
+            SigningScheme::EcdsaP256Sha256,
+        )
+        .unwrap();
+
+        let data = b"signed attributes";
+        let signature = smart_card.sign(data).unwrap();
+
+        // `picky` is an independent implementation: it must accept the DER encoded signature.
+        SignatureAlgorithm::Ecdsa(HashAlgorithm::SHA2_256)
+            .verify(&private_key.to_public_key().unwrap(), data, &signature)
+            .expect("the signature must be valid");
+    }
+
+    #[test]
+    fn emulated_ec_smart_card_rejects_wrong_pin() {
+        let private_key = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
+        let certificate: Certificate = Cert::from_pem_str(include_str!("../test_assets/ec_p256.cer"))
+            .unwrap()
+            .into();
+
+        let mut smart_card = SmartCard::new_emulated(
+            "Reader 0".into(),
+            b"123456".to_vec(),
+            Secret::new(b"654321".to_vec()),
+            private_key,
+            &certificate,
+            SigningScheme::EcdsaP256Sha256,
+        )
+        .unwrap();
+
+        smart_card.sign(b"data").unwrap_err();
+    }
 
     #[test]
     fn ecdsa_signature_conversion() {

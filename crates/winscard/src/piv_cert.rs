@@ -11,6 +11,27 @@ pub(crate) fn build_auth_cert(auth_cert: Vec<u8>) -> WinScardResult<Vec<u8>> {
     // SIMPLE-TLV encoding
     // We do use Tlv::new() here to avoid calculating SIMPLE-TLV length ourselves (as a certificate is most certainly > 254 bytes in length)
     let certificate = Tlv::new(Tag::try_from(tlv_tags::CERTIFICATE)?, auth_cert)?.to_vec();
+
+    Ok(wrap_certificate(certificate))
+}
+
+/// Builds the certificate object the way the YubiKey stores it.
+///
+/// Unlike [build_auth_cert], the certificate length uses the BER-TLV encoding. The YubiKey Smart Card
+/// Minidriver does not understand the SIMPLE-TLV length: it treats such a slot as an empty one.
+pub(crate) fn build_yubikey_auth_cert(auth_cert: Vec<u8>) -> Vec<u8> {
+    let encoded_cert_len = ber_tlv_length_encoding(auth_cert.len());
+
+    let mut certificate = Vec::with_capacity(1 + encoded_cert_len.len() + auth_cert.len());
+    certificate.push(tlv_tags::CERTIFICATE);
+    certificate.extend_from_slice(&encoded_cert_len);
+    certificate.extend_from_slice(&auth_cert);
+
+    wrap_certificate(certificate)
+}
+
+/// Adds the certificate info and error detection code, and wraps everything into the data object.
+fn wrap_certificate(certificate: Vec<u8>) -> Vec<u8> {
     let cert_info_length = 0x01;
     // 0x00 indicates that the certificate is uncompressed
     // NIST.SP.800-73-4, Part 1, Appendix A, table 39
@@ -28,5 +49,5 @@ pub(crate) fn build_auth_cert(auth_cert: Vec<u8>) -> WinScardResult<Vec<u8>> {
     result.extend_from_slice(&certificate);
     result.extend_from_slice(cert_info);
     result.extend_from_slice(edc);
-    Ok(result)
+    result
 }

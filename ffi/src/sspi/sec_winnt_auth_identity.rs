@@ -473,26 +473,30 @@ fn collect_smart_card_creds(
 
     match scard_type.as_str() {
         SCARD_EMULATED => {
-            use winscard::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, SmartCardInfo};
+            use winscard::{SmartCardInfo, card_identity};
 
             let SmartCardInfo {
                 container_name,
                 pin: scard_pin,
                 auth_cert_der,
                 auth_pk_pem,
-                auth_pk: _,
+                auth_pk,
                 reader,
             } = SmartCardInfo::try_from_env()?;
+
+            // `card_identity` fails for the keys the emulated smart card cannot work with, so such credentials are
+            // rejected here instead of during the logon.
+            let identity = card_identity(auth_pk.as_ref())?;
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
             Ok(SmartCardIdentityBuffers {
                 username: Utf16String::from_bytes_le(username)?,
                 certificate: auth_cert_der.clone().try_into()?,
-                card_name: NonEmpty::new(DEFAULT_CARD_NAME.into()),
+                card_name: NonEmpty::new(identity.name.into()),
                 reader_name: reader.name.as_ref().into(),
                 container_name: NonEmpty::new(container_name.as_ref().into()),
-                csp_name: MICROSOFT_DEFAULT_CSP.into(),
+                csp_name: identity.provider_name.into(),
                 pin: ZeroizedUtf16String::from_bytes_le(pin)?.into(),
                 private_key_pem: NonEmpty::new(ZeroizedUtf16String(auth_pk_pem.as_ref().as_str().into()))
                     .map(Secret::new),
