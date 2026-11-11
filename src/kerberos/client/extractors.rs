@@ -13,6 +13,7 @@ use picky_krb::messages::{
 };
 use zeroize::Zeroizing;
 
+use crate::kerberos::client::generators::nonce_matches;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{Error, ErrorKind, Result, Secret};
 
@@ -122,15 +123,19 @@ pub fn extract_session_key_from_as_rep(
     password: &str,
     enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
-    let cipher = enc_params
+    let key = password_key(password, salt, enc_params)?;
+
+    extract_session_key_from_as_rep_with_key(as_rep, &key, enc_params)
+}
+
+/// Derives the long-term key from the password with the negotiated encryption type.
+pub(crate) fn password_key(password: &str, salt: &str, enc_params: &EncryptionParams) -> Result<Vec<u8>> {
+    Ok(enc_params
         .encryption_type
         .as_ref()
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-        .cipher();
-
-    let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
-
-    extract_session_key_from_as_rep_with_key(as_rep, &key, enc_params)
+        .cipher()
+        .generate_key_from_password(password.as_bytes(), salt.as_bytes())?)
 }
 
 /// Extracts a session key from the [AsRep] using a pre-derived long-term key
@@ -148,6 +153,29 @@ pub fn extract_session_key_from_as_rep_with_key(
         .0
         .to_vec()
         .into())
+}
+
+/// Extracts the session key from the [AsRep] after checking that its nonce is the AS-REQ nonce.
+///
+/// [RFC 4120, Section 3.1.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5):
+/// the client must verify that the nonce in the encrypted part is the one it sent.
+/// Otherwise, a reply to an earlier request is accepted.
+pub(crate) fn extract_checked_session_key(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+    expected_nonce: u32,
+) -> Result<Secret<Vec<u8>>> {
+    let enc_part = decrypt_as_rep(as_rep, key, enc_params)?;
+
+    if !nonce_matches(&enc_part.nonce.0, expected_nonce) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "AS-REP nonce does not match the AS-REQ nonce",
+        ));
+    }
+
+    Ok(enc_part.key.0.key_value.0.to_vec().into())
 }
 
 /// Extracts a session from the [TgsRep].
@@ -814,5 +842,35 @@ mod as_rep_regressions {
                 .error_type,
             ErrorKind::InvalidParameter
         );
+    }
+
+    // RFC 4120 §3.1.5: the client verifies that the nonce in the encrypted part matches the AS-REQ nonce.
+    // The fixture reply carries the nonce 0x01020304.
+    #[test]
+    fn checked_extractor_returns_the_session_key_for_the_matching_nonce() {
+        for tag in [25, 26] {
+            let (reply, key) = encrypted_as_rep(tag, SALT);
+
+            assert_eq!(
+                extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), 0x0102_0304)
+                    .unwrap()
+                    .as_ref(),
+                &SESSION_KEY
+            );
+        }
+    }
+
+    // A reply to an earlier request has a different nonce, but is otherwise authentic.
+    #[rstest::rstest]
+    #[case::last_octet_differs(0x0102_0305)]
+    #[case::zero(0)]
+    #[case::high_bit_set(0x8102_0304)]
+    fn checked_extractor_rejects_a_mismatched_nonce(#[case] expected_nonce: u32) {
+        let (reply, key) = encrypted_as_rep(25, SALT);
+
+        let error = extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), expected_nonce)
+            .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }

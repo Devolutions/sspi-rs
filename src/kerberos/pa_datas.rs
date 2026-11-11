@@ -2,7 +2,7 @@ use picky_krb::data_types::PaData;
 use picky_krb::messages::AsRep;
 use time::OffsetDateTime;
 
-use crate::kerberos::client::extractors::{extract_session_key_from_as_rep, extract_session_key_from_as_rep_with_key};
+use crate::kerberos::client::extractors::{extract_checked_session_key, password_key};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions as AuthIdentityPaDataOptions, GenerateKeytabPaDataOptions,
     generate_pa_datas_for_as_req_at as generate_password_based_at,
@@ -63,6 +63,20 @@ impl AsReqPaDataOptions<'_> {
     }
 }
 
+/// The nonces the client sent in the AS-REQ, which the AS-REP must echo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AsRequestNonces {
+    /// The `KDC-REQ-BODY` nonce, echoed in the encrypted part of the AS-REP.
+    ///
+    /// [RFC 4120, Section 3.1.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5)
+    pub kdc_req: u32,
+    /// The `PKAuthenticator` nonce, echoed in the `KDCDHKeyInfo`.
+    ///
+    /// [RFC 4556, Section 3.2.3](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3)
+    #[cfg(feature = "scard")]
+    pub pk_authenticator: u32,
+}
+
 // ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.
 // This enum provides a unified way to extract session key from the AsRep.
 #[derive(Debug)]
@@ -71,15 +85,18 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
         salt: &'a str,
         password: &'a Secret<String>,
         enc_params: &'a EncryptionParams,
+        nonces: AsRequestNonces,
     },
     Keytab {
         key: &'a Secret<Vec<u8>>,
         enc_params: &'a EncryptionParams,
+        nonces: AsRequestNonces,
     },
     #[cfg(feature = "scard")]
     SmartCard {
         key_agreement: &'a mut crate::pk_init::KeyAgreement,
         enc_params: &'a mut EncryptionParams,
+        nonces: AsRequestNonces,
     },
 }
 
@@ -91,14 +108,22 @@ impl AsRepSessionKeyExtractor<'_> {
                 salt,
                 password,
                 enc_params,
-            } => extract_session_key_from_as_rep(as_rep, salt, password.as_ref(), enc_params),
-            AsRepSessionKeyExtractor::Keytab { key, enc_params } => {
-                extract_session_key_from_as_rep_with_key(as_rep, key.as_ref(), enc_params)
+                nonces,
+            } => {
+                let key = password_key(password.as_ref(), salt, enc_params)?;
+
+                extract_checked_session_key(as_rep, &key, enc_params, nonces.kdc_req)
             }
+            AsRepSessionKeyExtractor::Keytab {
+                key,
+                enc_params,
+                nonces,
+            } => extract_checked_session_key(as_rep, key.as_ref(), enc_params, nonces.kdc_req),
             #[cfg(feature = "scard")]
             AsRepSessionKeyExtractor::SmartCard {
                 key_agreement,
                 enc_params,
+                nonces,
             } => {
                 use picky_asn1_x509::signed_data::SignedData;
                 use picky_krb::crypto::CipherSuite;
@@ -106,12 +131,13 @@ impl AsRepSessionKeyExtractor<'_> {
                 use picky_krb::pkinit::PaPkAsRep;
 
                 use crate::pk_init::{
-                    KeyAgreement, Wrapper, extract_server_dh_public_key, extract_server_ecdh_public_key,
+                    KeyAgreement, Wrapper, check_kdc_dh_key_info_nonce, extract_server_dh_public_key,
+                    extract_server_ecdh_public_key,
                 };
                 use crate::pku2u::{
                     extract_pa_pk_as_rep, extract_server_nonce, validate_server_p2p_certificate, validate_signed_data,
                 };
-                use crate::{Error, ErrorKind, check_if_empty, pku2u};
+                use crate::{Error, ErrorKind, check_if_empty};
 
                 let dh_rep_info = match extract_pa_pk_as_rep(as_rep)? {
                     PaPkAsRep::DhInfo(dh) => dh.0,
@@ -131,6 +157,7 @@ impl AsRepSessionKeyExtractor<'_> {
 
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
+                check_kdc_dh_key_info_nonce(&signed_data, nonces.pk_authenticator)?;
 
                 enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
                 let cipher =
@@ -175,9 +202,7 @@ impl AsRepSessionKeyExtractor<'_> {
                     }
                 };
 
-                let session_key = pku2u::extract_session_key_from_as_rep(as_rep, &key, enc_params)?;
-
-                Ok(session_key)
+                extract_checked_session_key(as_rep, &key, enc_params, nonces.kdc_req)
             }
         }
     }

@@ -29,7 +29,7 @@ use picky_krb::messages::{
     KrbErrorInner, TgsRep, TgsReq,
 };
 use rand::rngs::{StdRng, SysRng};
-use rand_core::{Rng as _, SeedableRng as _, TryRng as _};
+use rand_core::{Rng as _, SeedableRng as _};
 use sspi::kerberos::KERBEROS_VERSION;
 use sspi::log_capture::LogCapture;
 use time::{Duration, OffsetDateTime};
@@ -411,7 +411,7 @@ impl KdcMock {
             from: _,
             till: _,
             rtime: _,
-            nonce: _,
+            nonce,
             etype: _,
             addresses: _,
             enc_authorization_data: _,
@@ -480,8 +480,6 @@ impl KdcMock {
         let end_time = auth_time + Duration::days(1);
         let realm = Realm::from(IA5String::from_string(self.realm.clone()).unwrap());
 
-        let nonce = rng.try_next_u32().unwrap();
-
         let enc_kdc_rep_part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
                 key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
@@ -493,7 +491,8 @@ impl KdcMock {
                     auth_time - Duration::hours(1),
                 ))),
             }])),
-            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce.to_be_bytes().to_vec())),
+            // RFC 4120 3.1.3: the KDC copies the nonce of the request.
+            nonce: ExplicitContextTag2::from(nonce.0),
             key_expiration: Optional::from(None),
             flags: ExplicitContextTag4::from(kdc_options.0.clone()),
             auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),

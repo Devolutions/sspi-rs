@@ -267,6 +267,19 @@ pub(crate) fn nonce_to_asn1(nonce: u32) -> IntegerAsn1 {
     IntegerAsn1::from_bytes_be_signed(nonce.to_be_bytes().to_vec())
 }
 
+/// Returns `true` if the nonce received from the KDC has the value of the nonce that the client sent.
+///
+/// The comparison is by value, so a reply is accepted whether the KDC echoes the INTEGER with
+/// or without a leading `00` octet.
+pub(crate) fn nonce_matches(received: &IntegerAsn1, expected: u32) -> bool {
+    fn without_leading_zeros(bytes: &[u8]) -> &[u8] {
+        let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
+        &bytes[start..]
+    }
+
+    without_leading_zeros(received.as_unsigned_bytes_be()) == without_leading_zeros(&expected.to_be_bytes())
+}
+
 /// Parameters for generating [AsReq].
 #[derive(Debug)]
 pub struct GenerateAsReqOptions<'a> {

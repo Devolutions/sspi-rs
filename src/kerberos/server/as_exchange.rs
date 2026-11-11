@@ -17,7 +17,7 @@ use crate::kerberos::client::kdc::as_exchange::clock_offset_from_error;
 use crate::kerberos::client::principal::{
     ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
 };
-use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
+use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions, AsRequestNonces};
 use crate::kerberos::utils::serialize_message;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
@@ -103,6 +103,12 @@ pub(crate) async fn request_tgt(
         context_requirements: ClientRequestFlags::empty(),
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
+    let nonces = AsRequestNonces {
+        kdc_req: nonce,
+        // The acceptor does not support smart card credentials, so it sends no PKAuthenticator.
+        #[cfg(feature = "scard")]
+        pk_authenticator: 0,
+    };
 
     let pa_data_options = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
@@ -146,10 +152,12 @@ pub(crate) async fn request_tgt(
             salt: &salt,
             password: &password,
             enc_params: &server.encryption_params,
+            nonces,
         },
         CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
             key: &keytab.key,
             enc_params: &server.encryption_params,
+            nonces,
         },
         #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(_) => {

@@ -9,14 +9,14 @@ use crate::kerberos::EncryptionParams;
 use crate::kerberos::client::extractors::extract_preauth_salt;
 use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateKeytabPaDataOptions, generate_as_req};
 use crate::kerberos::client::kdc::decode_kdc_reply;
-use crate::kerberos::pa_datas::AsReqPaDataOptions;
+use crate::kerberos::pa_datas::{AsReqPaDataOptions, AsRequestNonces};
 #[cfg(feature = "scard")]
 use crate::pk_init::KeyAgreement;
 use crate::{CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
 pub(crate) enum AsExchangeOutput {
     SendRequest(AsReq),
-    Done(AsRep, String),
+    Done(AsRep, String, AsRequestNonces),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +36,7 @@ enum AsExchangeState {
 pub struct AsExchange {
     state: AsExchangeState,
     kdc_req_body: KdcReqBody,
+    nonces: AsRequestNonces,
     retried_skew: bool,
     // Instead of storing the `AsReqPaDataOptions` directly, we store its individual components (fields below).
     // This design avoids introducing lifetime requirement that would require huge refactoring.
@@ -44,28 +45,25 @@ pub struct AsExchange {
     salt: Vec<u8>,
     #[cfg(feature = "scard")]
     key_agreement: KeyAgreement,
-    #[cfg(feature = "scard")]
-    authenticator_nonce: u32,
 }
 
 impl AsExchange {
     pub(crate) fn new(
         kdc_req_body: KdcReqBody,
+        nonces: AsRequestNonces,
         password: Secret<String>,
         salt: Vec<u8>,
         #[cfg(feature = "scard")] key_agreement: KeyAgreement,
-        #[cfg(feature = "scard")] authenticator_nonce: u32,
     ) -> Self {
         Self {
             state: AsExchangeState::Initial,
             kdc_req_body,
+            nonces,
             retried_skew: false,
             password,
             salt,
             #[cfg(feature = "scard")]
             key_agreement,
-            #[cfg(feature = "scard")]
-            authenticator_nonce,
         }
     }
 
@@ -156,6 +154,7 @@ impl AsExchange {
                             return Ok(AsExchangeOutput::Done(
                                 as_rep,
                                 String::from_utf8_lossy(&self.salt).into_owned(),
+                                self.nonces,
                             ));
                         }
                         Err(err) if !self.retried_skew && err.0.error_code.0 == KRB_AP_ERR_SKEW => {
@@ -209,7 +208,7 @@ impl AsExchange {
                     key_agreement: self.key_agreement.clone(),
                     sign_data: Box::new(move |data_to_sign| smart_card.sign(data_to_sign)),
                     with_pre_auth: false,
-                    authenticator_nonce: self.authenticator_nonce,
+                    authenticator_nonce: self.nonces.pk_authenticator,
                 }))
             }
         })
