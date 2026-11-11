@@ -46,7 +46,7 @@ pub struct KerberosServer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{DomainUser, KerberosServer};
 
     #[test]
     fn debug_output_does_not_contain_secrets() {

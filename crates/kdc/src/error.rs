@@ -7,10 +7,10 @@ use picky_asn1::wrapper::{
 };
 use picky_asn1_der::Asn1DerError;
 use picky_krb::constants::error_codes::{
-    KDC_ERR_C_PRINCIPAL_UNKNOWN, KDC_ERR_CANNOT_POSTDATE, KDC_ERR_ETYPE_NOSUPP, KDC_ERR_NEVER_VALID,
-    KDC_ERR_PREAUTH_FAILED, KDC_ERR_PREAUTH_REQUIRED, KDC_ERR_S_PRINCIPAL_UNKNOWN, KDC_ERR_WRONG_REALM,
-    KRB_AP_ERR_BADVERSION, KRB_AP_ERR_MODIFIED, KRB_AP_ERR_MSG_TYPE, KRB_AP_ERR_SKEW, KRB_AP_ERR_TKT_EXPIRED,
-    KRB_ERR_GENERIC,
+    KDC_ERR_BAD_PVNO, KDC_ERR_BADOPTION, KDC_ERR_C_PRINCIPAL_UNKNOWN, KDC_ERR_CANNOT_POSTDATE, KDC_ERR_ETYPE_NOSUPP,
+    KDC_ERR_NEVER_VALID, KDC_ERR_PREAUTH_FAILED, KDC_ERR_PREAUTH_REQUIRED, KDC_ERR_S_PRINCIPAL_UNKNOWN,
+    KDC_ERR_SERVER_NOMATCH, KDC_ERR_WRONG_REALM, KRB_AP_ERR_BADMATCH, KRB_AP_ERR_BADVERSION, KRB_AP_ERR_MODIFIED,
+    KRB_AP_ERR_MSG_TYPE, KRB_AP_ERR_SKEW, KRB_AP_ERR_TKT_EXPIRED, KRB_AP_ERR_TKT_NYV, KRB_ERR_GENERIC,
 };
 use picky_krb::constants::types::{KRB_ERROR_MSG_TYPE, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ETYPE_INFO2_TYPE};
 use picky_krb::crypto::CipherSuite;
@@ -26,7 +26,7 @@ use crate::{KERBEROS_VERSION, TGT_SERVICE_NAME, find_user_credentials};
 
 #[derive(Error, Debug)]
 pub(super) enum KdcError {
-    #[error("KRB_AP_ERR_BADVERSION: got invalid Kerberos version ({version:?}): expected [{expected}]")]
+    #[error("KDC_ERR_BAD_PVNO: got invalid Kerberos version ({version:?}): expected [{expected}]")]
     BadKrbVersion { version: Vec<u8>, expected: u8 },
 
     #[error("KRB_AP_ERR_MSG_TYPE: got invalid Kerberos message type ({msg_type:?}): expected [{expected}]")]
@@ -55,6 +55,24 @@ pub(super) enum KdcError {
 
     #[error("KDC_ERR_ETYPE_NOSUPP: only AES256_CTS_HMAC_SHA1_96 and AES128_CTS_HMAC_SHA1_96 etypes are supported")]
     NoSuitableEtype,
+
+    #[error("KDC_ERR_ETYPE_NOSUPP: the etype of the pre-authentication data is not in the requested etype list")]
+    PreAuthEtypeNotRequested,
+
+    #[error("KRB_AP_ERR_BADVERSION: unsupported ticket version number")]
+    BadTicketVersion,
+
+    #[error("KRB_AP_ERR_TKT_NYV: {0}")]
+    TicketNotYetValid(&'static str),
+
+    #[error("KRB_AP_ERR_BADMATCH: {0}")]
+    BadMatch(&'static str),
+
+    #[error("KDC_ERR_BADOPTION: {0}")]
+    BadOption(&'static str),
+
+    #[error("KDC_ERR_SERVER_NOMATCH: {0}")]
+    ServerNoMatch(&'static str),
 
     #[error("KDC_ERR_PREAUTH_FAILED: {0}")]
     PreAuthFailed(&'static str),
@@ -157,7 +175,9 @@ impl KdcError {
             KdcError::InvalidCnameType(_) => KDC_ERR_C_PRINCIPAL_UNKNOWN,
             KdcError::InvalidSnameType(_) => KDC_ERR_S_PRINCIPAL_UNKNOWN,
             KdcError::InvalidSname(_) => KDC_ERR_S_PRINCIPAL_UNKNOWN,
-            KdcError::NoSuitableEtype => KDC_ERR_ETYPE_NOSUPP,
+            KdcError::NoSuitableEtype | KdcError::PreAuthEtypeNotRequested => KDC_ERR_ETYPE_NOSUPP,
+            KdcError::BadOption(_) => KDC_ERR_BADOPTION,
+            KdcError::ServerNoMatch(_) => KDC_ERR_SERVER_NOMATCH,
             KdcError::PreAuthFailed(_) => KDC_ERR_PREAUTH_FAILED,
             KdcError::PreAuthRequired(_) => KDC_ERR_PREAUTH_REQUIRED,
             KdcError::InternalError(_) => KRB_ERR_GENERIC,
@@ -165,7 +185,10 @@ impl KdcError {
             KdcError::Modified(_) => KRB_AP_ERR_MODIFIED,
             KdcError::Asn1Encode(_) => KRB_ERR_GENERIC,
             KdcError::EncryptionFailed(_) => KRB_ERR_GENERIC,
-            KdcError::BadKrbVersion { .. } => KRB_AP_ERR_BADVERSION,
+            KdcError::BadKrbVersion { .. } => KDC_ERR_BAD_PVNO,
+            KdcError::BadMatch(_) => KRB_AP_ERR_BADMATCH,
+            KdcError::BadTicketVersion => KRB_AP_ERR_BADVERSION,
+            KdcError::TicketNotYetValid(_) => KRB_AP_ERR_TKT_NYV,
             KdcError::BadMsgType { .. } => KRB_AP_ERR_MSG_TYPE,
             KdcError::WrongRealm(_) => KDC_ERR_WRONG_REALM,
             KdcError::CannotPostdate(_) => KDC_ERR_CANNOT_POSTDATE,

@@ -1,6 +1,8 @@
 mod as_exchange;
 pub mod config;
 mod error;
+#[cfg(test)]
+mod tests;
 mod tgs_exchange;
 mod ticket;
 
@@ -9,7 +11,8 @@ use std::time::Duration;
 use picky_asn1::wrapper::{ExplicitContextTag0, GeneralizedTimeAsn1, OctetStringAsn1};
 use picky_asn1_der::Asn1DerError;
 use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST};
-use picky_krb::data_types::PrincipalName;
+use picky_krb::crypto::CipherSuite;
+use picky_krb::data_types::{KerberosFlags, PrincipalName};
 use picky_krb::messages::{AsReq, KdcProxyMessage, TgsReq};
 use time::OffsetDateTime;
 
@@ -33,11 +36,8 @@ const KERBEROS_VERSION: u8 = 0x05;
 /// > with the first part "krbtgt" and the second part the name of the realm that will accept the TGT.
 const TGT_SERVICE_NAME: &str = "krbtgt";
 
-fn find_user_credentials<'a>(
-    cname: &PrincipalName,
-    realm: &str,
-    kdc_config: &'a KerberosServer,
-) -> Result<&'a DomainUser, KdcError> {
+/// Returns the username of the client principal in the `user@domain` form used by [`DomainUser`].
+fn client_username(cname: &PrincipalName, realm: &str) -> Result<String, KdcError> {
     let username = if cname.name_type.0.0 == [NT_PRINCIPAL] {
         let cname = &cname
             .name_string
@@ -61,6 +61,16 @@ fn find_user_credentials<'a>(
     } else {
         return Err(KdcError::InvalidCnameType(cname.name_type.0.0.clone()));
     };
+
+    Ok(username)
+}
+
+fn find_user_credentials<'a>(
+    cname: &PrincipalName,
+    realm: &str,
+    kdc_config: &'a KerberosServer,
+) -> Result<&'a DomainUser, KdcError> {
+    let username = client_username(cname, realm)?;
 
     kdc_config
         .users
@@ -123,6 +133,70 @@ fn validate_request_from_and_till(
     Ok((auth_time, end_time))
 }
 
+/// `KDCOptions` bit numbers for operations on an existing ticket, which this KDC does not implement:
+/// [`forwarded(2)`, `proxy(4)`, `postdated(6)`, `renew(30)`, `validate(31)`](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1).
+const UNSUPPORTED_KDC_OPTIONS: [usize; 5] = [2, 4, 6, 30, 31];
+/// `enc-tkt-in-skey` bit number of `KDCOptions`.
+pub(crate) const KDC_OPTION_ENC_TKT_IN_SKEY: usize = 28;
+
+/// Returns whether the KDC issues keys of the `etype`: only AES256 and AES128 (CTS-HMAC-SHA1-96).
+///
+/// [RFC 4120 §3.1.3](https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3) forbids weak session key etypes.
+fn is_supported_etype(etype: &CipherSuite) -> bool {
+    matches!(
+        etype,
+        CipherSuite::Aes256CtsHmacSha196 | CipherSuite::Aes128CtsHmacSha196
+    )
+}
+
+/// Returns the cipher suite for the etype number from the network if the KDC supports it.
+///
+/// Check the etype before decrypting untrusted data: unsupported ciphers (for example DES3 in `picky-krb`) panic on malformed input.
+fn supported_cipher_suite(etype: &[u8]) -> Result<CipherSuite, KdcError> {
+    CipherSuite::try_from(etype)
+        .ok()
+        .filter(is_supported_etype)
+        .ok_or(KdcError::NoSuitableEtype)
+}
+
+/// Bit access for [`KerberosFlags`], which `KDCOptions` and `TicketFlags` are encoded as.
+pub(crate) trait KerberosFlagsExt {
+    /// Returns whether bit number `bit` (counted from the most significant bit) is set.
+    ///
+    /// Unlike `BitString::is_set`, it does not panic on a malformed BIT STRING from the network.
+    fn is_bit_set(&self, bit: usize) -> bool;
+}
+
+impl KerberosFlagsExt for KerberosFlags {
+    fn is_bit_set(&self, bit: usize) -> bool {
+        self.0
+            .as_bytes()
+            // The first byte is the number of unused bits.
+            .get(1..)
+            .and_then(|payload| payload.get(bit / 8))
+            .is_some_and(|byte| byte & (0x80 >> (bit % 8)) != 0)
+    }
+}
+
+/// Rejects `KDCOptions` that the KDC cannot honor.
+///
+/// `enc-tkt-in-skey` is meaningful only for the TGS exchange (user-to-user authentication).
+/// The other options are accepted and ignored. In particular, `renewable` is accepted because `sspi` always sends it,
+/// but the issued tickets are never renewable.
+///
+/// RFC: [KDC_ERR_BADOPTION](https://www.rfc-editor.org/rfc/rfc4120#section-5.9.1).
+fn validate_kdc_options(options: &KerberosFlags, allow_enc_tkt_in_skey: bool) -> Result<(), KdcError> {
+    if UNSUPPORTED_KDC_OPTIONS.iter().any(|bit| options.is_bit_set(*bit)) {
+        return Err(KdcError::BadOption("the requested KDC option is not supported"));
+    }
+
+    if !allow_enc_tkt_in_skey && options.is_bit_set(KDC_OPTION_ENC_TKT_IN_SKEY) {
+        return Err(KdcError::BadOption("enc-tkt-in-skey is valid only in TGS_REQ"));
+    }
+
+    Ok(())
+}
+
 /// Validates the service name of the incoming [KdcReqBody].
 fn validate_request_sname(sname: &PrincipalName, expected_snames: &[&str]) -> Result<(), KdcError> {
     if sname.name_type.0.0 != [NT_SRV_INST] {
@@ -154,9 +228,15 @@ fn validate_request_sname(sname: &PrincipalName, expected_snames: &[&str]) -> Re
 
 /// Handles [KdcProxyMessage] by mimicking the KDC.
 ///
-/// The incoming [KdcProxyMessage] must contain either [AsReq] or [TgsReq] Kerberos message inside.
-/// This function is _almost_ infailible. Even when an error happens, it converts the error to [KrbError], then encodes it,
-/// and sends it back to the client. The only way this function can fail is when it fails to encode AS_REP/TGS_REP/KRB_ERROR.
+/// The incoming [KdcProxyMessage] must contain either [AsReq] or [TgsReq] Kerberos message inside,
+/// preceded by its 4-byte big-endian length.
+///
+/// # Errors
+///
+/// Returns an error when the 4-byte length prefix is missing or does not match the length of the message,
+/// or when encoding the reply fails.
+/// Kerberos-level errors, including a message that is neither an AS-REQ nor a TGS-REQ,
+/// are returned to the client as an encoded KRB-ERROR inside the resulting [KdcProxyMessage].
 pub fn handle_kdc_proxy_message(
     msg: KdcProxyMessage,
     kdc_config: &KerberosServer,
@@ -167,12 +247,20 @@ pub fn handle_kdc_proxy_message(
         target_domain,
         dclocator_hint,
     } = msg;
-    let raw_krb_message = &kerb_message
+    // The Kerberos message is preceded by its 4-byte big-endian length.
+    // RFC: [TCP transport](https://www.rfc-editor.org/rfc/rfc4120#section-7.2.2).
+    let (length_prefix, raw_krb_message) = kerb_message
         .0
         .0
-        .as_slice()
-        .get(4..)
-        .ok_or_else(|| Asn1DerError::TruncatedData)?;
+        .split_first_chunk::<4>()
+        .ok_or(Asn1DerError::TruncatedData)?;
+    let declared_len = usize::try_from(u32::from_be_bytes(*length_prefix)).map_err(|_| Asn1DerError::InvalidData)?;
+    if declared_len > raw_krb_message.len() {
+        return Err(Asn1DerError::TruncatedData);
+    }
+    if declared_len < raw_krb_message.len() {
+        return Err(Asn1DerError::InvalidData);
+    }
 
     let reply_message = if let Ok(as_req) = picky_asn1_der::from_bytes::<AsReq>(raw_krb_message) {
         match handle_as_req(&as_req, kdc_config) {

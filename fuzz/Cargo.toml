@@ -10,6 +10,8 @@ cargo-fuzz = true
 
 [dependencies]
 dpapi-fuzzing.path = "../crates/dpapi-fuzzing"
+kdc = { path = "../crates/kdc" }
+picky-krb = "0.13"
 libfuzzer-sys = "0.4"
 sspi = { path = "..", features = ["__test-data"] }
 
@@ -38,6 +40,13 @@ bench = false
 [[bin]]
 name = "pku2u_tokens"
 path = "fuzz_targets/pku2u_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "kdc_proxy_message"
+path = "fuzz_targets/kdc_proxy_message.rs"
 test = false
 doc = false
 bench = false
