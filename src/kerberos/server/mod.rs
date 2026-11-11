@@ -162,6 +162,28 @@ impl ServerProperties {
     }
 }
 
+/// Message version of the tickets, authenticators and AP-REQ messages (`pvno`, `tkt-vno`, `authenticator-vno`).
+const KERBEROS_V5: u8 = 5;
+/// `msg-type` of the `KRB_AP_REQ` message.
+const KRB_AP_REQ_MSG_TYPE: u8 = 14;
+/// The `INVALID` bit of the ticket flags. Bit 7 is the last bit of the first flags octet.
+const TICKET_FLAG_INVALID: u8 = 0b0000_0001;
+
+/// Returns an error if the INTEGER does not have the expected value.
+fn expect_integer(value: &IntegerAsn1, expected: u8, description: &str) -> Result<()> {
+    let bytes = value.as_unsigned_bytes_be();
+    let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
+
+    if bytes[start..] != [expected] {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            format!("unsupported {description}: expected {expected}"),
+        ));
+    }
+
+    Ok(())
+}
+
 /// The client principal authenticated by a Kerberos acceptor, as named by the ticket.
 ///
 /// The [`Username`] from [`Sspi::query_context_names`](crate::Sspi::query_context_names) can lose part of the
@@ -346,6 +368,13 @@ pub async fn accept_security_context(
                     decode_krb_message::<ApReq>(&input_token.buffer, AP_REQ_TOKEN_ID)?
                 };
 
+                // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
+                // If the message type is not KRB_AP_REQ, the server returns the KRB_AP_ERR_MSG_TYPE error.
+                // If the version numbers of the message or of the ticket are not 5, it returns KRB_AP_ERR_BADVERSION.
+                expect_integer(&ap_req.0.msg_type.0, KRB_AP_REQ_MSG_TYPE, "AP-REQ message type")?;
+                expect_integer(&ap_req.0.pvno.0, KERBEROS_V5, "AP-REQ version")?;
+                expect_integer(&ap_req.0.ticket.0.0.tkt_vno.0, KERBEROS_V5, "ticket version")?;
+
                 let server_data = server.server.as_ref().ok_or_else(|| {
                     Error::new(
                         ErrorKind::InvalidHandle,
@@ -380,8 +409,26 @@ pub async fn accept_security_context(
                 let ticket_enc_part = decrypt_ap_req_ticket(ticket_decryption_key, &ap_req)?;
                 let session_key = Secret::new(ticket_enc_part.0.key.0.key_value.0.0.clone());
 
+                // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
+                // If the INVALID flag is set in the ticket, the problem is reported as the KRB_AP_ERR_TKT_NYV error.
+                // The ticket has to be validated by the KDC first.
+                if ticket_enc_part
+                    .0
+                    .flags
+                    .0
+                    .0
+                    .as_bytes()
+                    .get(1)
+                    .is_some_and(|flags| flags & TICKET_FLAG_INVALID != 0)
+                {
+                    return Err(Error::new(
+                        ErrorKind::InvalidToken,
+                        "the ticket is not valid yet: the INVALID flag is set",
+                    ));
+                }
+
                 let AuthenticatorInner {
-                    authenticator_vno: _,
+                    authenticator_vno,
                     crealm,
                     cname,
                     cksum: _,
@@ -391,6 +438,8 @@ pub async fn accept_security_context(
                     seq_number,
                     authorization_data: _,
                 } = decrypt_ap_req_authenticator(&session_key, &ap_req)?.0;
+
+                expect_integer(&authenticator_vno.0, KERBEROS_V5, "authenticator version")?;
 
                 // RFC 4121 §4.2: if the initiator places a subkey in its
                 // Authenticator and the acceptor returns no subkey of its own
@@ -878,5 +927,187 @@ mod tests {
         let error = accept_first_token(password_user(), &token, ServerRequestFlags::USE_SESSION_KEY).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    mod ap_req_validation {
+        use picky_asn1::bit_string::BitString;
+        use picky_asn1::date::GeneralizedTime;
+        use picky_asn1::wrapper::{ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag7, OctetStringAsn1};
+        use picky_krb::constants::key_usages::TICKET_REP;
+        use picky_krb::data_types::{
+            Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, EncryptionKey, KerberosFlags,
+            KerberosTime, Ticket, TicketInner, TransitedEncoding,
+        };
+        use rstest::rstest;
+        use time::Duration as TimeDuration;
+
+        use super::*;
+        use crate::kerberos::client::generators::generate_ap_req;
+        use crate::kerberos::flags::ApOptions as ApOptionsFlags;
+        use crate::kerberos::{EncryptionParams, KERBEROS_VERSION};
+
+        const SERVICE_KEY: [u8; 32] = [0x11; 32];
+        const SESSION_KEY: [u8; 32] = [0x22; 32];
+        const AP_REQ_MSG_TYPE: u8 = 14;
+        /// The `INVALID` ticket flag is bit 7 of `TicketFlags`: the last bit of the first octet.
+        const TICKET_FLAG_INVALID: u8 = 0b0000_0001;
+
+        /// The parts of an AP-REQ that the acceptor must validate. [Default] is a valid request.
+        struct Spec {
+            ap_req_pvno: u8,
+            ap_req_msg_type: u8,
+            ticket_vno: u8,
+            authenticator_vno: u8,
+            ticket_flags: u8,
+        }
+
+        impl Default for Spec {
+            fn default() -> Self {
+                Self {
+                    ap_req_pvno: KERBEROS_VERSION,
+                    ap_req_msg_type: AP_REQ_MSG_TYPE,
+                    ticket_vno: KERBEROS_VERSION,
+                    authenticator_vno: KERBEROS_VERSION,
+                    ticket_flags: 0,
+                }
+            }
+        }
+
+        fn string(value: &str) -> KerberosStringAsn1 {
+            KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap())
+        }
+
+        fn alice() -> PrincipalName {
+            PrincipalName {
+                name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_PRINCIPAL])),
+                name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(vec![string("alice")])),
+            }
+        }
+
+        fn time(value: OffsetDateTime) -> KerberosTime {
+            KerberosTime::from(GeneralizedTime::from(value))
+        }
+
+        /// Encrypts the encoded `EncTicketPart` with the service key.
+        fn encrypted_ticket_part(data: &[u8]) -> EncryptedData {
+            let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+            EncryptedData {
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                kvno: Optional::from(None),
+                cipher: ExplicitContextTag2::from(OctetStringAsn1::from(
+                    cipher.encrypt(&SERVICE_KEY, TICKET_REP, data).unwrap(),
+                )),
+            }
+        }
+
+        fn ap_req(spec: &Spec) -> ApReq {
+            let now = OffsetDateTime::now_utc();
+            let service_name = fake_server().server.unwrap().service_name;
+
+            let enc_ticket_part = EncTicketPart::from(EncTicketPartInner {
+                flags: ExplicitContextTag0::from(KerberosFlags::from(BitString::with_bytes(vec![
+                    spec.ticket_flags,
+                    0,
+                    0,
+                    0,
+                ]))),
+                key: ExplicitContextTag1::from(EncryptionKey {
+                    key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+                    key_value: ExplicitContextTag1::from(OctetStringAsn1::from(SESSION_KEY.to_vec())),
+                }),
+                crealm: ExplicitContextTag2::from(string("EXAMPLE.COM")),
+                cname: ExplicitContextTag3::from(alice()),
+                transited: ExplicitContextTag4::from(TransitedEncoding {
+                    tr_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![0])),
+                    contents: ExplicitContextTag1::from(OctetStringAsn1::from(Vec::new())),
+                }),
+                auth_time: ExplicitContextTag5::from(time(now - TimeDuration::minutes(1))),
+                starttime: Optional::from(None),
+                endtime: ExplicitContextTag7::from(time(now + TimeDuration::hours(1))),
+                renew_till: Optional::from(None),
+                caddr: Optional::from(None),
+                authorization_data: Optional::from(None),
+            });
+            let ticket = Ticket::from(TicketInner {
+                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![spec.ticket_vno])),
+                realm: ExplicitContextTag1::from(string("EXAMPLE.COM")),
+                sname: ExplicitContextTag2::from(service_name),
+                enc_part: ExplicitContextTag3::from(encrypted_ticket_part(
+                    &picky_asn1_der::to_vec(&enc_ticket_part).unwrap(),
+                )),
+            });
+
+            let authenticator = Authenticator::from(AuthenticatorInner {
+                authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![spec.authenticator_vno])),
+                crealm: ExplicitContextTag1::from(string("EXAMPLE.COM")),
+                cname: ExplicitContextTag2::from(alice()),
+                cksum: Optional::from(None),
+                cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0])),
+                ctime: ExplicitContextTag5::from(time(now)),
+                subkey: Optional::from(None),
+                seq_number: Optional::from(None),
+                authorization_data: Optional::from(None),
+            });
+
+            let mut ap_req = generate_ap_req(
+                ticket,
+                &Secret::new(SESSION_KEY.to_vec()),
+                &authenticator,
+                &EncryptionParams::default_for_client(),
+                ApOptionsFlags::empty(),
+            )
+            .unwrap();
+            ap_req.0.pvno = ExplicitContextTag0::from(IntegerAsn1::from(vec![spec.ap_req_pvno]));
+            ap_req.0.msg_type = ExplicitContextTag1::from(IntegerAsn1::from(vec![spec.ap_req_msg_type]));
+
+            ap_req
+        }
+
+        fn accept(spec: &Spec) -> Result<AcceptSecurityContextResult> {
+            let mut kerberos = fake_server();
+            kerberos.state = KerberosState::Server(KerberosServerState::Preauthentication);
+            kerberos.server.as_mut().unwrap().ticket_decryption_key = Some(Secret::new(SERVICE_KEY.to_vec()));
+
+            let mut credentials_handle: Option<CredentialsBuffers> = None;
+            let mut input = [SecurityBuffer::new(
+                picky_asn1_der::to_vec(&ap_req(spec)).unwrap(),
+                BufferType::Token,
+            )];
+            let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+            let builder = kerberos
+                .accept_security_context()
+                .with_credentials_handle(&mut credentials_handle)
+                .with_context_requirements(ServerRequestFlags::USE_DCE_STYLE)
+                .with_target_data_representation(DataRepresentation::Native)
+                .with_input(&mut input)
+                .with_output(&mut output);
+            let mut generator = SspiImpl::accept_security_context_impl(&mut kerberos, builder)?;
+
+            match generator.start() {
+                GeneratorState::Completed(result) => result,
+                GeneratorState::Suspended(_) => Err(Error::new(ErrorKind::InternalError, "unexpected KDC request")),
+            }
+        }
+
+        // The control: the other cases differ from this request in exactly one field.
+        #[test]
+        fn a_valid_ap_req_is_accepted() {
+            accept(&Spec::default()).unwrap();
+        }
+
+        // RFC 4120 §3.2.3: KRB_AP_ERR_BADVERSION for an unsupported version, KRB_AP_ERR_MSG_TYPE for a wrong type.
+        #[rstest]
+        #[case::ap_req_version(Spec { ap_req_pvno: 4, ..Spec::default() })]
+        #[case::ap_req_message_type(Spec { ap_req_msg_type: 13, ..Spec::default() })]
+        #[case::ticket_version(Spec { ticket_vno: 4, ..Spec::default() })]
+        #[case::authenticator_version(Spec { authenticator_vno: 4, ..Spec::default() })]
+        // RFC 4120 §3.2.3: a ticket with the INVALID flag set is not usable until validated (KRB_AP_ERR_TKT_NYV).
+        #[case::invalid_ticket(Spec { ticket_flags: TICKET_FLAG_INVALID, ..Spec::default() })]
+        fn a_malformed_ap_req_is_rejected(#[case] spec: Spec) {
+            let error = accept(&spec).unwrap_err();
+
+            assert_eq!(error.error_type, ErrorKind::InvalidToken, "{error}");
+        }
     }
 }
