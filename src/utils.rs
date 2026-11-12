@@ -36,17 +36,6 @@ pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdR
     key
 }
 
-/// `KDC_ERR_INCONSISTENT_KEY_PURPOSE` of [RFC 4556](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.1).
-const PKINIT_ERR_INCONSISTENT_KEY_PURPOSE: u32 = 77;
-/// `KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED` of RFC 4556.
-const PKINIT_ERR_DIGEST_IN_CERT_NOT_ACCEPTED: u32 = 78;
-/// `KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED` of RFC 4556.
-const PKINIT_ERR_PA_CHECKSUM_MUST_BE_INCLUDED: u32 = 79;
-/// `KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED` of RFC 4556.
-const PKINIT_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED: u32 = 80;
-/// `KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED` of RFC 4556.
-const PKINIT_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: u32 = 81;
-
 pub(crate) fn map_keb_error_code_to_sspi_error(krb_error_code: u32) -> (ErrorKind, String) {
     use picky_krb::constants::error_codes::*;
 
