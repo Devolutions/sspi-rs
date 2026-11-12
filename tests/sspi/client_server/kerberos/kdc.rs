@@ -10,7 +10,7 @@ use picky_asn1::wrapper::{
     ExplicitContextTag10, ExplicitContextTag12, IntegerAsn1, OctetStringAsn1, Optional,
 };
 use picky_krb::constants::error_codes::{KDC_ERR_PREAUTH_FAILED, KDC_ERR_PREAUTH_REQUIRED, KRB_AP_ERR_SKEW};
-use picky_krb::constants::etypes::AES256_CTS_HMAC_SHA1_96;
+use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use picky_krb::constants::key_usages::{
     AS_REP_ENC, TGS_REP_ENC_SESSION_KEY, TGS_REP_ENC_SUB_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TICKET_REP,
 };
@@ -47,6 +47,13 @@ pub(crate) const SERVER_COMPUTER_NAME: &str = "WIN-956CQOSSJTF.example.com";
 )]
 const AES256_ENC_TYPE: u8 = AES256_CTS_HMAC_SHA1_96 as u8;
 
+/// `AES128_CTS_HMAC_SHA1_96` cast to `u8` for use in ASN.1 encoding.
+#[expect(
+    clippy::as_conversions,
+    reason = "AES128_CTS_HMAC_SHA1_96 constant fits in u8 by definition"
+)]
+const AES128_ENC_TYPE: u8 = AES128_CTS_HMAC_SHA1_96 as u8;
+
 /// Represents user credentials in the internal KDC database.
 pub(crate) struct PasswordCreds {
     /// User's password.
@@ -61,22 +68,28 @@ pub(crate) enum SaltHint {
     Absent,
     MissingField,
     Explicit(String),
+    /// Advertises the salt for an `aes128-cts-hmac-sha1-96` key, as a KDC does for an account that has no AES256 key.
+    Aes128Explicit(String),
 }
 
 impl SaltHint {
     fn padata(&self) -> Vec<PaData> {
-        let salt = match self {
-            Self::Absent => return Vec::new(),
-            Self::MissingField => None,
-            Self::Explicit(salt) => Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
+        let salt_field = |salt: &String| {
+            Some(ExplicitContextTag1::from(KerberosStringAsn1::from(
                 IA5String::from_string(salt.clone()).unwrap(),
-            ))),
+            )))
+        };
+        let (etype, salt) = match self {
+            Self::Absent => return Vec::new(),
+            Self::MissingField => (AES256_ENC_TYPE, None),
+            Self::Explicit(salt) => (AES256_ENC_TYPE, salt_field(salt)),
+            Self::Aes128Explicit(salt) => (AES128_ENC_TYPE, salt_field(salt)),
         };
         vec![PaData {
             padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
             padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
                 picky_asn1_der::to_vec(&Asn1SequenceOf::from(vec![EtypeInfo2Entry {
-                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
+                    etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![etype])),
                     salt: Optional::from(salt),
                     s2kparams: Optional::from(None),
                 }]))
@@ -147,6 +160,11 @@ pub(crate) struct KdcMock {
     tgs_rep_enc_part_in_as_rep: bool,
     /// Whether the AS-REP carries a nonce that differs from the one of the AS-REQ.
     wrong_as_rep_nonce: bool,
+    /// Whether the KDC answers an AS-REQ without pre-authentication with the AS-REP, as for an account that
+    /// does not require Kerberos pre-authentication.
+    no_preauth_required: bool,
+    /// Whether the user has only an `aes128-cts-hmac-sha1-96` key: the hints and the AS-REP use it.
+    aes128_user_key: bool,
     /// The encryption type of the session key in the service tickets. The service decides it, not the TGT.
     service_session_key_type: Option<CipherSuite>,
     preauth_salt_hint: Option<SaltHint>,
@@ -180,6 +198,8 @@ impl KdcMock {
             omit_as_rep_etype_info2: false,
             tgs_rep_enc_part_in_as_rep: false,
             wrong_as_rep_nonce: false,
+            no_preauth_required: false,
+            aes128_user_key: false,
             service_session_key_type: None,
             preauth_salt_hint: None,
             as_rep_salt_hint: None,
@@ -212,6 +232,18 @@ impl KdcMock {
     /// Issues service tickets with an AES128 session key, as for a service account that has no AES256 key.
     pub(crate) fn aes128_service_session_key(mut self) -> Self {
         self.service_session_key_type = Some(CipherSuite::Aes128CtsHmacSha196);
+        self
+    }
+
+    /// Replies to an AS-REQ without pre-authentication with the AS-REP.
+    pub(crate) fn no_preauth_required(mut self) -> Self {
+        self.no_preauth_required = true;
+        self
+    }
+
+    /// Gives the user an AES128 key only: the pre-authentication error and the AS-REP use `aes128-cts-hmac-sha1-96`.
+    pub(crate) fn aes128_user_key(mut self) -> Self {
+        self.aes128_user_key = true;
         self
     }
 
@@ -448,29 +480,39 @@ impl KdcMock {
             .users
             .get(&username)
             .expect("user's credentials is not found in KDC database");
-        let preauth_salt_hint = self
-            .preauth_salt_hint
-            .clone()
-            .unwrap_or_else(|| SaltHint::Explicit(creds.salt.clone()));
+        let default_hint = if self.aes128_user_key {
+            SaltHint::Aes128Explicit(creds.salt.clone())
+        } else {
+            SaltHint::Explicit(creds.salt.clone())
+        };
+        let preauth_salt_hint = self.preauth_salt_hint.clone().unwrap_or_else(|| default_hint.clone());
 
-        Self::validate_timestamp(
-            creds,
-            sname.clone(),
-            realm.clone(),
-            &padata
+        let has_timestamp = padata.0.as_ref().is_some_and(|pa_datas| {
+            pa_datas
                 .0
-                .ok_or_else(|| {
-                    Self::make_err_with_salt_hint::<{ KDC_ERR_PREAUTH_REQUIRED }>(
-                        sname.clone(),
-                        realm.clone(),
-                        &preauth_salt_hint,
-                        self.clock_offset,
-                    )
-                })?
-                .0,
-            self.clock_offset,
-            &preauth_salt_hint,
-        )?;
+                .iter()
+                .any(|pa_data| pa_data.padata_type.0.0 == PA_ENC_TIMESTAMP)
+        });
+        if !(self.no_preauth_required && !has_timestamp) {
+            Self::validate_timestamp(
+                creds,
+                sname.clone(),
+                realm.clone(),
+                &padata
+                    .0
+                    .ok_or_else(|| {
+                        Self::make_err_with_salt_hint::<{ KDC_ERR_PREAUTH_REQUIRED }>(
+                            sname.clone(),
+                            realm.clone(),
+                            &preauth_salt_hint,
+                            self.clock_offset,
+                        )
+                    })?
+                    .0,
+                self.clock_offset,
+                &preauth_salt_hint,
+            )?;
+        }
 
         if self.reject_valid_preauth_with_skew {
             return Err(Self::make_err::<{ KRB_AP_ERR_SKEW }>(
@@ -488,7 +530,12 @@ impl KdcMock {
         rng.fill_bytes(&mut session_key);
         LogCapture::record_secret("TGT session key", &session_key);
 
-        let initial_key = cipher
+        let (user_cipher, user_etype) = if self.aes128_user_key {
+            (CipherSuite::Aes128CtsHmacSha196.cipher(), AES128_ENC_TYPE)
+        } else {
+            (CipherSuite::Aes256CtsHmacSha196.cipher(), AES256_ENC_TYPE)
+        };
+        let initial_key = user_cipher
             .generate_key_from_password(
                 &creds.password,
                 self.as_rep_encryption_salt.as_deref().unwrap_or(&creds.salt).as_bytes(),
@@ -534,12 +581,9 @@ impl KdcMock {
             picky_asn1_der::to_vec(&EncAsRepPart::from(enc_kdc_rep_part))
         }
         .unwrap();
-        let as_rep_enc_data = cipher.encrypt(&initial_key, AS_REP_ENC, &as_rep_enc_part).unwrap();
+        let as_rep_enc_data = user_cipher.encrypt(&initial_key, AS_REP_ENC, &as_rep_enc_part).unwrap();
 
-        let reply_hint = self
-            .as_rep_salt_hint
-            .clone()
-            .unwrap_or_else(|| SaltHint::Explicit(creds.salt.clone()));
+        let reply_hint = self.as_rep_salt_hint.clone().unwrap_or(default_hint);
         let etype_info2 = (!self.omit_as_rep_etype_info2 && !matches!(reply_hint, SaltHint::Absent))
             .then(|| ExplicitContextTag2::from(Asn1SequenceOf::from(reply_hint.padata())));
 
@@ -559,7 +603,7 @@ impl KdcMock {
                 username.0,
             )),
             enc_part: ExplicitContextTag6::from(EncryptedData {
-                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![AES256_ENC_TYPE])),
+                etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![user_etype])),
                 kvno: Optional::from(None),
                 cipher: ExplicitContextTag2::from(OctetStringAsn1::from(as_rep_enc_data)),
             }),

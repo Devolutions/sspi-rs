@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+mod acceptor_as_exchange;
 mod context_validator;
 mod iakerb;
 pub(super) mod kdc;

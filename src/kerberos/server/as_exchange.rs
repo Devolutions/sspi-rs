@@ -212,10 +212,6 @@ pub(crate) async fn as_exchange(
             Ok(as_rep) => {
                 // [3.1.3.  Receipt of KRB_AS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3)
                 // If pre-authentication is not required, the KDC replies with the AS-REP right away.
-                //
-                // UNTESTED: the acceptor completes the exchange with the AS-REP to the request without pre-authentication.
-                // The client exchange in `client::kdc::as_exchange` has the same handling and a test;
-                // check both when changing either.
                 return Ok((as_rep, String::from_utf8_lossy(pa_data_options.salt()).into_owned()));
             }
             Err(krb_error) => krb_error,
@@ -233,9 +229,7 @@ pub(crate) async fn as_exchange(
             debug!("salt extracted successfully from the KRB_ERROR");
 
             pa_data_options.with_salt(hint.salt.into_bytes());
-            // UNTESTED: the acceptor encrypts the timestamp with the encryption type of the hint.
-            // The client exchange in `client::kdc::as_exchange` does the same and has a test;
-            // check both when changing either.
+            // The KDC accepts the timestamp only in the key type of the account.
             if let Some(cipher_suite) = hint.cipher_suite {
                 pa_data_options.with_encryption_type(cipher_suite);
             }
