@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod ap_rep_subkey_type;
 mod change_password;
 pub mod extractors;
 pub mod generators;
@@ -712,10 +714,7 @@ pub async fn initialize_security_context<'a>(
                             let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
                             // The per-message tokens are protected with the subkey of the acceptor.
-                            //
-                            // UNTESTED: the encryption type follows the subkey of the AP-REP when it differs from the type
-                            // of the session key. The acceptor of the tests uses the same type for both. A wrong type breaks
-                            // the Wrap and MIC tokens. Check it against an acceptor that picks another subkey type.
+                            // This must come after `generate_ap_rep`, because the reply is encrypted with the session key.
                             client.encryption_params.encryption_type = Some(sub_session_key_type);
 
                             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
