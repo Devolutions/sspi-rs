@@ -637,6 +637,7 @@ fn smart_card_credentials() -> CredentialsBuffers {
     CredentialsBuffers::SmartCard(crate::SmartCardIdentityBuffers {
         username: "synthetic@EXAMPLE.COM".into(),
         certificate: certificate.to_der().unwrap().try_into().unwrap(),
+        ca_cert: None,
         card_name: crate::NonEmpty::new("synthetic card".into()),
         reader_name: "synthetic reader".into(),
         container_name: crate::NonEmpty::new("synthetic container".into()),
