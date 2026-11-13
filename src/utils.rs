@@ -28,6 +28,12 @@ pub(crate) fn is_azure_ad_domain(domain: &str) -> bool {
     domain == crate::pku2u::AZURE_AD_DOMAIN
 }
 
+/// Strips the leading zero octets of a big-endian unsigned integer.
+pub(crate) fn trim_leading_zeros(bytes: &[u8]) -> &[u8] {
+    let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
+    &bytes[start..]
+}
+
 pub(crate) fn generate_random_symmetric_key(cipher: &CipherSuite, rnd: &mut StdRng) -> Vec<u8> {
     let key_size = cipher.cipher().key_size();
     let mut key = vec![0; key_size];

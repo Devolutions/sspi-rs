@@ -165,7 +165,8 @@ pub(crate) struct KdcMock {
     no_preauth_required: bool,
     /// Whether the user has only an `aes128-cts-hmac-sha1-96` key: the hints and the AS-REP use it.
     aes128_user_key: bool,
-    /// The encryption type of the session key in the service tickets. The service decides it, not the TGT.
+    /// The encryption type of the session key in the service tickets.
+    /// The service decides it, not the TGT.
     service_session_key_type: Option<CipherSuite>,
     preauth_salt_hint: Option<SaltHint>,
     as_rep_salt_hint: Option<SaltHint>,

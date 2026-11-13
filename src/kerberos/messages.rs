@@ -167,7 +167,8 @@ mod tests {
         assert_eq!(decode_ap_rep_message(&token).unwrap(), ap_rep);
     }
 
-    // RFC 4121 §4.1: the acceptor can answer with a KRB-ERROR token. Its error code must reach the caller.
+    // RFC 4121 §4.1: the acceptor can answer with a KRB-ERROR token.
+    // Its error code must reach the caller.
     #[test]
     fn a_gss_token_with_a_krb_error_is_reported_as_the_error() {
         let token = generate_krb_message(

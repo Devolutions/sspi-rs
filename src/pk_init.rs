@@ -480,18 +480,15 @@ pub(crate) fn check_kdc_dh_key_info_nonce(signed_data: &SignedData, expected_non
 pub(crate) fn validate_dh_public_key(public_key: &[u8], modulus: &[u8]) -> Result<()> {
     use std::cmp::Ordering;
 
-    fn without_leading_zeros(bytes: &[u8]) -> &[u8] {
-        let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
-        &bytes[start..]
-    }
+    use crate::utils::trim_leading_zeros;
 
     // Big-endian integers without leading zeros: the longer one is greater.
     fn compare(left: &[u8], right: &[u8]) -> Ordering {
         left.len().cmp(&right.len()).then_with(|| left.cmp(right))
     }
 
-    let public_key = without_leading_zeros(public_key);
-    let modulus = without_leading_zeros(modulus);
+    let public_key = trim_leading_zeros(public_key);
+    let modulus = trim_leading_zeros(modulus);
 
     // A DH modulus is odd, so `p - 1` only differs from `p` in the last octet and never borrows.
     let mut modulus_minus_one = modulus.to_vec();
@@ -852,9 +849,10 @@ mod kdc_dh_key_info_nonce_tests {
         check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
     }
 
-    // A nonce that is not minimal DER may still carry the right value.
+    // The nonce 0x81020304 has the high bit set, so its minimal DER INTEGER starts with a `00` sign octet.
+    // The sign octet is not part of the value.
     #[test]
-    fn nonce_with_a_leading_zero_octet_is_accepted() {
+    fn nonce_with_a_sign_octet_is_accepted() {
         let signed_data = signed_data(vec![0x00, 0x81, 0x02, 0x03, 0x04], false);
 
         check_kdc_dh_key_info_nonce(&signed_data, 0x8102_0304).unwrap();
@@ -892,7 +890,8 @@ mod dh_public_key_range_tests {
     use super::validate_dh_public_key;
     use crate::ErrorKind;
 
-    // RFC 2631 §2.1.5: 1 < y < p - 1. The modulus 23 is a toy safe prime, 0x0101 is 257.
+    // RFC 2631 §2.1.5: 1 < y < p - 1.
+    // The modulus 23 is a toy safe prime, 0x0101 is 257.
     #[rstest]
     #[case::two(&[0x02], &[0x17])]
     #[case::p_minus_two(&[0x15], &[0x17])]

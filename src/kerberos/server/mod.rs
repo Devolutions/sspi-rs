@@ -15,7 +15,7 @@ use picky_asn1::wrapper::{
     Optional,
 };
 use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, TGT_REP_TOKEN_ID, TGT_REQ_TOKEN_ID};
-use picky_krb::constants::types::NT_SRV_INST;
+use picky_krb::constants::types::{AP_REQ_MSG_TYPE, NT_SRV_INST};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{AuthenticatorInner, KerberosStringAsn1, PrincipalName};
 use picky_krb::gss_api::MechTypeList;
@@ -29,13 +29,14 @@ use self::extractors::{decrypt_ap_req_authenticator, decrypt_ap_req_ticket};
 use self::generators::generate_ap_rep;
 use crate::builders::FilledAcceptSecurityContext;
 use crate::generator::YieldPointLocal;
-use crate::kerberos::DEFAULT_ENCRYPTION_TYPE;
+use crate::kerberos::KERBEROS_VERSION;
 use crate::kerberos::client::extractors::{decrypt_ap_rep, extract_seq_number_from_ap_rep};
 use crate::kerberos::flags::ApOptions;
 use crate::kerberos::messages::{decode_krb_message, generate_krb_message};
 use crate::kerberos::server::as_exchange::request_tgt;
 use crate::kerberos::server::extractors::client_upn;
 use crate::kerberos::server::generators::generate_tgt_rep;
+use crate::utils::trim_leading_zeros;
 use crate::{
     AcceptSecurityContextResult, BufferType, CredentialsBuffers, Error, ErrorKind, Kerberos, KerberosState, Result,
     Secret, SecurityBuffer, SecurityStatus, ServerRequestFlags, ServerResponseFlags, SspiImpl, Username,
@@ -169,18 +170,13 @@ impl ServerProperties {
 }
 
 /// Message version of the tickets, authenticators and AP-REQ messages (`pvno`, `tkt-vno`, `authenticator-vno`).
-const KERBEROS_V5: u8 = 5;
-/// `msg-type` of the `KRB_AP_REQ` message.
-const KRB_AP_REQ_MSG_TYPE: u8 = 14;
-/// The `INVALID` bit of the ticket flags. Bit 7 is the last bit of the first flags octet.
+/// The `INVALID` bit of the ticket flags.
+/// Bit 7 is the last bit of the first flags octet.
 const TICKET_FLAG_INVALID: u8 = 0b0000_0001;
 
 /// Returns an error if the INTEGER does not have the expected value.
 fn expect_integer(value: &IntegerAsn1, expected: u8, description: &str) -> Result<()> {
-    let bytes = value.as_unsigned_bytes_be();
-    let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
-
-    if bytes[start..] != [expected] {
+    if trim_leading_zeros(value.as_unsigned_bytes_be()) != [expected] {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             format!("unsupported {description}: expected {expected}"),
@@ -376,9 +372,9 @@ pub async fn accept_security_context(
             // [3.2.3.  Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
             // If the message type is not KRB_AP_REQ, the server returns the KRB_AP_ERR_MSG_TYPE error.
             // If the version numbers of the message or of the ticket are not 5, it returns KRB_AP_ERR_BADVERSION.
-            expect_integer(&ap_req.0.msg_type.0, KRB_AP_REQ_MSG_TYPE, "AP-REQ message type")?;
-            expect_integer(&ap_req.0.pvno.0, KERBEROS_V5, "AP-REQ version")?;
-            expect_integer(&ap_req.0.ticket.0.0.tkt_vno.0, KERBEROS_V5, "ticket version")?;
+            expect_integer(&ap_req.0.msg_type.0, AP_REQ_MSG_TYPE, "AP-REQ message type")?;
+            expect_integer(&ap_req.0.pvno.0, KERBEROS_VERSION, "AP-REQ version")?;
+            expect_integer(&ap_req.0.ticket.0.0.tkt_vno.0, KERBEROS_VERSION, "ticket version")?;
 
             let server_data = server.server.as_ref().ok_or_else(|| {
                 Error::new(
@@ -445,16 +441,16 @@ pub async fn accept_security_context(
                 authorization_data: _,
             } = decrypt_ap_req_authenticator(&session_key, &ap_req)?.0;
 
-            expect_integer(&authenticator_vno.0, KERBEROS_V5, "authenticator version")?;
+            expect_integer(&authenticator_vno.0, KERBEROS_VERSION, "authenticator version")?;
 
             // RFC 4121 §4.2: if the initiator places a subkey in its
             // Authenticator and the acceptor returns no subkey of its own
             // (i.e. no mutual-auth AP-REP), that initiator subkey — not the
             // ticket session key — becomes the key for per-message (wrap/MIC)
-            // tokens. Stock Java/Kafka GSSAPI clients always send an
-            // Authenticator subkey, so dropping it makes the security-layer
-            // wrap fail the client's checksum. Capture it here; the non-mutual
-            // branch below installs it as the sub-session key.
+            // tokens.
+            // Stock Java/Kafka GSSAPI clients always send an Authenticator subkey,
+            // so dropping it makes the security-layer wrap fail the client's checksum.
+            // Capture it here; the non-mutual branch below installs it as the sub-session key.
             let authenticator_subkey: Option<Secret<Vec<u8>>> =
                 subkey.0.as_ref().map(|key| Secret::new(key.0.key_value.0.0.clone()));
 
@@ -468,8 +464,8 @@ pub async fn accept_security_context(
                 .map(|key| CipherSuite::try_from(key.0.key_type.0.0.as_slice()))
                 .transpose()?;
 
-            // The initiator's Authenticator sequence number. Without a mutual-
-            // auth AP-REP to carry an acceptor sequence number, GSS initiators
+            // The initiator's Authenticator sequence number.
+            // Without a mutual-auth AP-REP to carry an acceptor sequence number, GSS initiators
             // (e.g. Java) initialise the *expected* acceptor sequence to their
             // own initiator value, so the acceptor's per-message tokens must be
             // numbered from it or the initiator rejects them as "gap" tokens.
@@ -558,7 +554,8 @@ pub async fn accept_security_context(
             })?;
 
             // An authenticator outside of the allowed clock skew is rejected by the time check above,
-            // so it does not have to be remembered. Forget it, or the cache grows with every request.
+            // so it does not have to be remembered.
+            // Forget it, or the cache grows with every request.
             let cache_record = AuthenticatorCacheRecord {
                 cname: cname.0.clone(),
                 sname: ticket_service_name.clone(),
@@ -584,10 +581,9 @@ pub async fn accept_security_context(
 
             debug!("ApReq Ticket and Authenticator are valid!");
 
-            // The ticket was issued by the KDC. The authenticator was written by the client,
-            // and only its name components are known to match the ticket.
+            // The ticket was issued by the KDC.
+            // Only the name components of the authenticator are known to match it, so the client name comes from the ticket.
             server_data.client = Some(client_upn(&ticket_enc_part.0.cname.0, &ticket_enc_part.0.crealm.0)?);
-            // The ticket was issued by the KDC. The authenticator was written by the client.
             server.client_principal = Some(ClientPrincipal::from_ticket(
                 &ticket_enc_part.0.cname.0,
                 &ticket_enc_part.0.crealm.0,
@@ -595,8 +591,8 @@ pub async fn accept_security_context(
 
             let ap_options_bytes = ap_req.0.ap_options.0.0.as_bytes();
             // [5.5.1.  KRB_AP_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.5.1)
-            // The `ap-options` field has 32 bits or 4 bytes long. But it is encoded as BitStringAsn1, so the first byte
-            // indicates the number of bits used. Thus, the overall number of expected bytes is 1 + 4 = 5.
+            // The `ap-options` field has 32 bits (4 bytes).
+            // It is encoded as a BitStringAsn1, whose first byte is the unused-bits count, so 1 + 4 = 5 bytes are expected.
             if ap_options_bytes.len() != 1 + 4 {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
@@ -613,26 +609,20 @@ pub async fn accept_security_context(
             let ap_options = ApOptions::from_bits(ap_options)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "invalid ApReq ap-options"))?;
 
-            // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
+            // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.4)
             // ...the server need not explicitly reply to the KRB_AP_REQ. However, if mutual authentication is being performed,
             // the KRB_AP_REQ message will have MUTUAL-REQUIRED set in its ap-options field, and a KRB_AP_REP message
             // is required in response.
             let status = if ap_options.contains(ApOptions::MUTUAL_REQUIRED) {
+                let key_size = session_key_type.cipher().key_size();
                 server.encryption_params.encryption_type = Some(session_key_type);
-                let key_size = server
-                    .encryption_params
-                    .encryption_type
-                    .as_ref()
-                    .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-                    .cipher()
-                    .key_size();
                 let mut sub_session_key = vec![0; key_size];
 
                 let mut rand = StdRng::try_from_rng(&mut SysRng)?;
                 rand.fill_bytes(&mut sub_session_key);
                 server.encryption_params.sub_session_key = Some(sub_session_key.into());
 
-                // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3)
+                // [3.2.4.  Generation of a KRB_AP_REP Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.4)
                 // A subkey MAY be included if the server desires to negotiate a different subkey.
                 // The KRB_AP_REP message is encrypted in the session key extracted from the ticket.
                 let ap_rep = generate_ap_rep(
@@ -683,13 +673,8 @@ pub async fn accept_security_context(
                     server.encryption_params.sub_session_key = Some(subkey);
                 }
 
-                // Number our outgoing per-message tokens from the initiator's
-                // Authenticator sequence number. With no AP-REP to carry an
-                // acceptor sequence, GSS initiators set their *expected*
-                // acceptor sequence equal to their own initiator value, so the
-                // first acceptor wrap token must use that number or the
-                // initiator rejects it as a "gap" token. `next_seq_number()`
-                // pre-increments, so seed one below.
+                // Number the outgoing per-message tokens from the initiator's sequence number, as captured above.
+                // `next_seq_number()` pre-increments, so seed one below.
                 if let Some(seq) = authenticator_seq_number {
                     server.seq_number = seq.wrapping_sub(1);
                 }
@@ -988,9 +973,6 @@ mod tests {
         const SERVICE_KEY: [u8; 32] = [0x11; 32];
         const SESSION_KEY: [u8; 32] = [0x22; 32];
         const SUBKEY: [u8; 32] = [0x33; 32];
-        const AP_REQ_MSG_TYPE: u8 = 14;
-        /// The `INVALID` ticket flag is bit 7 of `TicketFlags`: the last bit of the first octet.
-        const TICKET_FLAG_INVALID: u8 = 0b0000_0001;
 
         /// The parts of an AP-REQ that the acceptor must validate. [Default] is a valid request.
         struct Spec {
@@ -1004,7 +986,8 @@ mod tests {
             cipher_suite: CipherSuite,
             /// The encryption type of the subkey in the authenticator, if the initiator sends one.
             authenticator_subkey: Option<CipherSuite>,
-            /// The client name in the authenticator. The ticket names `alice` as an `NT-PRINCIPAL`.
+            /// The client name in the authenticator.
+            /// The ticket names `alice` as an `NT-PRINCIPAL`.
             authenticator_cname: PrincipalName,
         }
 
@@ -1264,7 +1247,8 @@ mod tests {
             let token = picky_asn1_der::to_vec(&ap_req(spec)).unwrap();
             accept_token(&mut kerberos, &token).unwrap();
 
-            // Sent by the initiator, not sealed. The checksum covers `plaintext | header`, with EC and RRC zero.
+            // Sent by the initiator, not sealed.
+            // The checksum covers `plaintext | header`, with EC and RRC zero.
             let plaintext = b"integrity-only payload";
             let mut wrap_token = WrapToken::with_seq_number(0);
             wrap_token.flags = 0;
@@ -1333,8 +1317,8 @@ mod tests {
             enc_part.0.seq_number.0.unwrap().0.0
         }
 
-        // RFC 4120 §5.1 requires the DER encoding: a `u32` with the high bit set is not a negative INTEGER, and the
-        // sequence number wraps around at 2^32 (RFC 4120 §5.3.2).
+        // RFC 4120 §5.1 requires the DER encoding.
+        // A `u32` with the high bit set is not a negative INTEGER, and the sequence number is a UInt32 (RFC 4120 §5.2.4).
         #[rstest]
         #[case::small(1, &[0x02])]
         #[case::high_bit_set(0x9abc_dee9, &[0x00, 0x9a, 0xbc, 0xde, 0xea])]
@@ -1368,8 +1352,9 @@ mod tests {
             accept(&spec).unwrap();
         }
 
-        // The client chooses the authenticator, the KDC the ticket. The name of the client that the acceptor reports
-        // comes from the ticket, so the name-type of the authenticator cannot drop the realm from it.
+        // The client chooses the authenticator, the KDC the ticket.
+        // The name of the client that the acceptor reports comes from the ticket,
+        // so the name-type of the authenticator cannot drop the realm from it.
         #[test]
         fn the_reported_client_name_comes_from_the_ticket() {
             let spec = Spec {
@@ -1438,7 +1423,8 @@ mod tests {
         }
 
         // An authenticator older than the clock skew is rejected by the time check, so the cache never needs
-        // to remember it. Keeping it makes the cache of a long-running acceptor grow without bound.
+        // to remember it.
+        // Keeping it makes the cache of a long-running acceptor grow without bound.
         #[test]
         fn authenticators_outside_the_clock_skew_are_dropped_from_the_replay_cache() {
             let mut kerberos = acceptor();

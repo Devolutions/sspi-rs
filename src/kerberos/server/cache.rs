@@ -79,7 +79,8 @@ impl AuthenticatorsCache {
         self.0.retain(predicate);
     }
 
-    /// Remembers the authenticator. Returns `false` if it has already been seen.
+    /// Remembers the authenticator.
+    /// Returns `false` if it has already been seen.
     pub(super) fn insert(&mut self, record: AuthenticatorCacheRecord) -> bool {
         self.0.insert(record)
     }

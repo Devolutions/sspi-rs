@@ -1383,9 +1383,8 @@ mod salt_regressions {
         }
     }
 
-    #[test]
-    fn kerberos_change_password_uses_negotiated_salt_without_as_rep_hint() {
-        let mut environment = environment_with_preauth_salt("password-change-negotiated-salt");
+    /// Registers the password service, `kadmin/changepw`, in the KDC database.
+    fn add_changepw_service(environment: &mut KrbEnvironment, key: Vec<u8>) {
         let service_name = PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
@@ -1394,8 +1393,44 @@ mod salt_regressions {
                     .to_vec(),
             )),
         };
+        environment.keys.insert(UserName(service_name), key);
+    }
+
+    /// Creates a client that has resolved its realm, and returns the error of the mocked transport it stopped at.
+    ///
+    /// `change_password` uses the realm that the context resolved earlier.
+    /// The client resolves it through the public context API.
+    fn client_before_change_password(credentials: Credentials, target_name: &str) -> (Kerberos, sspi::Error) {
+        let mut client = Kerberos::new_client_from_config(KerberosConfig {
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        })
+        .unwrap();
+        let mut handle = Some(CredentialsBuffers::try_from(credentials).unwrap());
+        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut initialize = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut handle)
+            .with_context_requirements(ClientRequestFlags::empty())
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(target_name)
+            .with_input(&mut input)
+            .with_output(&mut setup_output);
+        let setup_error = SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
+            .unwrap()
+            .resolve_with_client(&FailedNetworkClientMock {
+                kind: ErrorKind::NoAuthenticatingAuthority,
+            })
+            .unwrap_err();
+        (client, setup_error)
+    }
+
+    #[test]
+    fn kerberos_change_password_uses_negotiated_salt_without_as_rep_hint() {
+        let mut environment = environment_with_preauth_salt("password-change-negotiated-salt");
         let service_key = vec![0x69; 32];
-        environment.keys.insert(UserName(service_name), service_key.clone());
+        add_changepw_service(&mut environment, service_key.clone());
         let network = PasswordChangeRequestInspector {
             network: NetworkClientMock {
                 kdc: KdcMock::new(
@@ -1410,30 +1445,8 @@ mod salt_regressions {
             as_requests: AtomicUsize::new(0),
             inspected_password_requests: AtomicUsize::new(0),
         };
-        let mut client = Kerberos::new_client_from_config(KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        })
-        .unwrap();
-        // change_password uses the context's previously resolved realm. Initialize it
-        // through the public context API, stopping at the mocked transport boundary.
-        let mut handle = Some(CredentialsBuffers::try_from(environment.credentials).unwrap());
-        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut initialize = client
-            .initialize_security_context()
-            .with_credentials_handle(&mut handle)
-            .with_context_requirements(ClientRequestFlags::empty())
-            .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(&environment.target_name)
-            .with_input(&mut input)
-            .with_output(&mut setup_output);
-        let setup_error = SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
-            .unwrap()
-            .resolve_with_client(&FailedNetworkClientMock {
-                kind: ErrorKind::NoAuthenticatingAuthority,
-            })
-            .unwrap_err();
+        let (mut client, setup_error) =
+            client_before_change_password(environment.credentials, &environment.target_name);
         assert_eq!(setup_error.description, "error from mock network client");
         assert_eq!(network.as_requests.load(Ordering::SeqCst), 0);
         let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
@@ -1459,15 +1472,7 @@ mod salt_regressions {
     #[test]
     fn kerberos_change_password_rejects_an_as_rep_with_another_nonce() {
         let mut environment = environment_with_preauth_salt("password-change-wrong-nonce");
-        let service_name = PrincipalName {
-            name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
-            name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
-                ["kadmin", "changepw"]
-                    .map(|s| KerberosStringAsn1::from(IA5String::from_string(s.to_owned()).unwrap()))
-                    .to_vec(),
-            )),
-        };
-        environment.keys.insert(UserName(service_name), vec![0x69; 32]);
+        add_changepw_service(&mut environment, vec![0x69; 32]);
         let network = NetworkClientMock {
             kdc: KdcMock::new(
                 environment.realm,
@@ -1477,30 +1482,7 @@ mod salt_regressions {
             )
             .wrong_as_rep_nonce(),
         };
-        let mut client = Kerberos::new_client_from_config(KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        })
-        .unwrap();
-        // change_password uses the context's previously resolved realm. Initialize it
-        // through the public context API, stopping at the mocked transport boundary.
-        let mut handle = Some(CredentialsBuffers::try_from(environment.credentials).unwrap());
-        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut initialize = client
-            .initialize_security_context()
-            .with_credentials_handle(&mut handle)
-            .with_context_requirements(ClientRequestFlags::empty())
-            .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(&environment.target_name)
-            .with_input(&mut input)
-            .with_output(&mut setup_output);
-        SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
-            .unwrap()
-            .resolve_with_client(&FailedNetworkClientMock {
-                kind: ErrorKind::NoAuthenticatingAuthority,
-            })
-            .unwrap_err();
+        let (mut client, _) = client_before_change_password(environment.credentials, &environment.target_name);
         let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
         let change = ChangePasswordBuilder::new()
             .with_domain_name("EXAMPLE.COM")

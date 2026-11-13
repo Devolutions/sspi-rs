@@ -40,7 +40,7 @@ use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, KERBEROS_VERSION};
-use crate::utils::parse_target_name;
+use crate::utils::{parse_target_name, trim_leading_zeros};
 use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
 
 /// Moved to [`super::principal::get_client_principal_name_type`].
@@ -275,18 +275,14 @@ pub(crate) fn u32_to_asn1(value: u32) -> IntegerAsn1 {
 
 /// Returns `true` if the nonce received from the KDC has the value of the nonce that the client sent.
 ///
-/// The comparison is by value, so a reply is accepted whether the KDC echoes the INTEGER with
-/// or without a leading `00` octet.
+/// The comparison is by value, so a KDC that echoes the INTEGER with redundant leading `00` octets is still accepted.
 pub(crate) fn nonce_values_match(received: &IntegerAsn1, expected: &IntegerAsn1) -> bool {
-    fn without_leading_zeros(bytes: &[u8]) -> &[u8] {
-        let start = bytes.iter().position(|byte| *byte != 0).unwrap_or(bytes.len());
-        &bytes[start..]
-    }
-
-    without_leading_zeros(received.as_unsigned_bytes_be()) == without_leading_zeros(expected.as_unsigned_bytes_be())
+    trim_leading_zeros(received.as_unsigned_bytes_be()) == trim_leading_zeros(expected.as_unsigned_bytes_be())
 }
 
-/// Returns `true` if the nonce received from the KDC is the `expected` one. See [nonce_values_match].
+/// Returns `true` if the nonce received from the KDC is the `expected` one.
+///
+/// See [nonce_values_match].
 pub(crate) fn nonce_matches(received: &IntegerAsn1, expected: u32) -> bool {
     nonce_values_match(received, &u32_to_asn1(expected))
 }
