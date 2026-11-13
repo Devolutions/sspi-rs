@@ -11,7 +11,7 @@ bitflags! {
     pub struct KdcOptions: u32 {
         const FORWARDABLE = 0x40000000;
         const FORWARDED = 0x20000000;
-        const PROXIABLE = 0b10000000;
+        const PROXIABLE = 0x10000000;
         const PROXY = 0x08000000;
         const ALLOW_POSTDATE = 0x04000000;
         const POSTDATED = 0x02000000;
@@ -50,5 +50,45 @@ impl From<ClientRequestFlags> for ApOptions {
         }
 
         ap_options
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{ApOptions, KdcOptions};
+
+    /// The value of the flag whose bit number counts from the most significant bit.
+    ///
+    /// RFC 4120 §5.4.1 and §5.5.1 number the bits of a `KerberosFlags` BIT STRING this way.
+    const fn bit(number: u32) -> u32 {
+        1 << (31 - number)
+    }
+
+    #[rstest]
+    #[case::forwardable(KdcOptions::FORWARDABLE, 1)]
+    #[case::forwarded(KdcOptions::FORWARDED, 2)]
+    #[case::proxiable(KdcOptions::PROXIABLE, 3)]
+    #[case::proxy(KdcOptions::PROXY, 4)]
+    #[case::allow_postdate(KdcOptions::ALLOW_POSTDATE, 5)]
+    #[case::postdated(KdcOptions::POSTDATED, 6)]
+    #[case::renewable(KdcOptions::RENEWABLE, 8)]
+    #[case::opt_hardware_auth(KdcOptions::OPT_HARDWARE_AUTH, 11)]
+    #[case::canonicalize(KdcOptions::CANONICALIZE, 15)]
+    #[case::disable_transited_check(KdcOptions::DISABLE_TRANSITED_CHECK, 26)]
+    #[case::renewable_ok(KdcOptions::RENEWABLE_OK, 27)]
+    #[case::enc_tkt_in_skey(KdcOptions::ENC_TKT_IN_SKEY, 28)]
+    #[case::renew(KdcOptions::RENEW, 30)]
+    #[case::validate(KdcOptions::VALIDATE, 31)]
+    fn kdc_option_has_the_bit_of_rfc_4120(#[case] option: KdcOptions, #[case] bit_number: u32) {
+        assert_eq!(option.bits(), bit(bit_number));
+    }
+
+    #[rstest]
+    #[case::use_session_key(ApOptions::USE_SESSION_KEY, 1)]
+    #[case::mutual_required(ApOptions::MUTUAL_REQUIRED, 2)]
+    fn ap_option_has_the_bit_of_rfc_4120(#[case] option: ApOptions, #[case] bit_number: u32) {
+        assert_eq!(option.bits(), bit(bit_number));
     }
 }

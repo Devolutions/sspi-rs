@@ -40,7 +40,7 @@ use crate::channel_bindings::ChannelBindings;
 use crate::crypto::compute_md5_channel_bindings_hash;
 use crate::kerberos::flags::{ApOptions as ApOptionsFlags, KdcOptions};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, KERBEROS_VERSION};
-use crate::utils::parse_target_name;
+use crate::utils::{parse_target_name, trim_leading_zeros};
 use crate::{ClientRequestFlags, Error, ErrorKind, Result, Secret};
 
 /// Moved to [`super::principal::get_client_principal_name_type`].
@@ -140,9 +140,7 @@ fn encode_enc_timestamp_pa_data(
 
     let timestamp = PaEncTsEnc {
         patimestamp: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        pausec: Optional::from(Some(ExplicitContextTag1::from(IntegerAsn1::from(
-            microseconds.to_be_bytes().to_vec(),
-        )))),
+        pausec: Optional::from(Some(ExplicitContextTag1::from(u32_to_asn1(microseconds)))),
     };
     let timestamp_bytes = picky_asn1_der::to_vec(&timestamp)?;
 
@@ -265,6 +263,28 @@ pub(crate) fn generate_nonce(rng: &mut impl Rng) -> u32 {
 /// encode the same either way.
 pub(crate) fn nonce_to_asn1(nonce: u32) -> IntegerAsn1 {
     IntegerAsn1::from_bytes_be_signed(nonce.to_be_bytes().to_vec())
+}
+
+/// Encodes an unsigned 32-bit value (microseconds, sequence number) as a minimal DER INTEGER.
+///
+/// The value is unsigned, so a value with the high bit set gets a leading `00` octet.
+/// [RFC 4120, Section 5.1](https://www.rfc-editor.org/rfc/rfc4120#section-5.1) requires the DER encoding.
+pub(crate) fn u32_to_asn1(value: u32) -> IntegerAsn1 {
+    IntegerAsn1::from_bytes_be_unsigned(value.to_be_bytes().to_vec())
+}
+
+/// Returns `true` if the nonce received from the KDC has the value of the nonce that the client sent.
+///
+/// The comparison is by value, so a KDC that echoes the INTEGER with redundant leading `00` octets is still accepted.
+pub(crate) fn nonce_values_match(received: &IntegerAsn1, expected: &IntegerAsn1) -> bool {
+    trim_leading_zeros(received.as_unsigned_bytes_be()) == trim_leading_zeros(expected.as_unsigned_bytes_be())
+}
+
+/// Returns `true` if the nonce received from the KDC is the `expected` one.
+///
+/// See [nonce_values_match].
+pub(crate) fn nonce_matches(received: &IntegerAsn1, expected: u32) -> bool {
+    nonce_values_match(received, &u32_to_asn1(expected))
 }
 
 /// Parameters for generating [AsReq].
@@ -715,7 +735,7 @@ pub(crate) fn generate_authenticator_at(
         crealm: ExplicitContextTag1::from(kdc_rep.crealm.0.clone()),
         cname: ExplicitContextTag2::from(kdc_rep.cname.0.clone()),
         cksum,
-        cusec: ExplicitContextTag4::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
+        cusec: ExplicitContextTag4::from(u32_to_asn1(microseconds)),
         ctime: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(current_date))),
         subkey: Optional::from(sub_key.map(|EncKey { key_type, key_value }| {
             ExplicitContextTag6::from(EncryptionKey {
@@ -743,7 +763,7 @@ pub fn generate_ap_rep(
 
     let enc_ap_rep_part = EncApRepPart::from(EncApRepPartInner {
         ctime: ExplicitContextTag0::from(KerberosTime::from(GeneralizedTime::from(current_date))),
-        cusec: ExplicitContextTag1::from(IntegerAsn1::from(microseconds.to_be_bytes().to_vec())),
+        cusec: ExplicitContextTag1::from(u32_to_asn1(microseconds)),
         subkey: Optional::from(None),
         seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
     });
@@ -1126,7 +1146,7 @@ mod tests {
             OffsetDateTime::try_from(decoded.patimestamp.0.0).unwrap(),
             timestamp - Duration::milliseconds(123)
         );
-        assert_eq!(decoded.pausec.0.unwrap().0.0, 123_000_u32.to_be_bytes());
+        assert_eq!(decoded.pausec.0.unwrap().0.0, [0x01, 0xe0, 0x78]);
     }
 
     fn krb_string(value: &str) -> KerberosStringAsn1 {

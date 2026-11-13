@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod ap_rep_subkey_type;
 mod change_password;
 pub mod extractors;
 pub mod generators;
@@ -9,16 +11,16 @@ use std::io::Write;
 pub use change_password::change_password;
 use oid::ObjectIdentifier;
 use picky_asn1_x509::oids;
-use picky_krb::constants::gss_api::{AP_REP_TOKEN_ID, AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
+use picky_krb::constants::gss_api::{AP_REQ_TOKEN_ID, AUTHENTICATOR_CHECKSUM_TYPE, TGT_REQ_TOKEN_ID};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{PrincipalName, Ticket};
-use picky_krb::messages::{ApRep, AsRep, TgsRep};
+use picky_krb::messages::{AsRep, TgsRep};
 use rand::rngs::{StdRng, SysRng};
 use rand_core::SeedableRng;
 
 use self::extractors::{
-    decrypt_ap_rep, extract_encryption_params_from_as_rep_with_salt, extract_seq_number_from_ap_rep,
-    extract_sub_session_key_from_ap_rep, extract_tgt_ticket_with_oid,
+    SessionKey, decrypt_ap_rep, extract_encryption_params_from_as_rep_with_salt, extract_seq_number_from_ap_rep,
+    extract_sub_session_key_from_ap_rep, extract_sub_session_key_type_from_ap_rep, extract_tgt_ticket_with_oid,
 };
 use self::generators::{
     ChecksumOptions, ChecksumValues, EncKey, GenerateAsReqOptions, GenerateAuthenticatorOptions, GssFlags,
@@ -33,8 +35,10 @@ use crate::generator::YieldPointLocal;
 use crate::kerberos::client::kdc::as_exchange::{AsExchange, AsExchangeOutput};
 use crate::kerberos::client::kdc::tgs_exchange::{TgsExchange, TgsExchangeOutput};
 use crate::kerberos::config::KdcResolution;
-use crate::kerberos::messages::{decode_krb_message, generate_iakerb_proxy_message, generate_krb_message};
-use crate::kerberos::pa_datas::AsRepSessionKeyExtractor;
+use crate::kerberos::messages::{
+    decode_ap_rep_message, decode_dce_ap_rep_message, generate_iakerb_proxy_message, generate_krb_message,
+};
+use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsRequestNonces};
 use crate::kerberos::utils::serialize_message;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EC, TGT_SERVICE_NAME};
 use crate::pku2u::generate_authenticator_extension;
@@ -62,6 +66,7 @@ pub enum KerberosClientState {
     BeforeTgsExchange {
         as_rep: AsRep,
         preauth_salt: String,
+        nonces: AsRequestNonces,
         mech_id: ObjectIdentifier,
         tgt_ticket: Option<Ticket>,
     },
@@ -246,12 +251,13 @@ pub async fn initialize_security_context<'a>(
                         } else {
                             builder.context_requirements
                         };
+                        let kdc_req_nonce = generate_nonce(&mut rand);
                         let options = GenerateAsReqOptions {
                             realm: &realm,
                             username: &username,
                             cname_type,
                             snames: &[TGT_SERVICE_NAME, &realm],
-                            nonce: generate_nonce(&mut rand),
+                            nonce: kdc_req_nonce,
                             hostname: &client.config.client_computer_name,
                             context_requirements: as_req_requirements,
                         };
@@ -284,6 +290,11 @@ pub async fn initialize_security_context<'a>(
 
                         let as_exchange = AsExchange::new(
                             kdc_req_body,
+                            AsRequestNonces {
+                                kdc_req: kdc_req_nonce,
+                                #[cfg(feature = "scard")]
+                                pk_authenticator: generate_nonce(&mut rand),
+                            },
                             credentials.extract_password(),
                             salt,
                             #[cfg(feature = "scard")]
@@ -291,8 +302,6 @@ pub async fn initialize_security_context<'a>(
                                 .key_agreement
                                 .clone()
                                 .expect("key agreement parameters are set above"),
-                            #[cfg(feature = "scard")]
-                            generate_nonce(&mut rand),
                         );
 
                         client.state = KerberosState::Client(Box::new(KerberosClientState::AsExchange {
@@ -340,11 +349,12 @@ pub async fn initialize_security_context<'a>(
 
                                         Some(SecurityStatus::ContinueNeeded)
                                     }
-                                    AsExchangeOutput::Done(as_rep, preauth_salt) => {
+                                    AsExchangeOutput::Done(as_rep, preauth_salt, nonces) => {
                                         client.state =
                                             KerberosState::Client(Box::new(KerberosClientState::BeforeTgsExchange {
                                                 as_rep,
                                                 preauth_salt,
+                                                nonces,
                                                 mech_id,
                                                 tgt_ticket,
                                             }));
@@ -356,15 +366,15 @@ pub async fn initialize_security_context<'a>(
                             KdcResolution::KdcUrl(_) => {
                                 let mut as_response = Vec::new();
 
-                                let (as_rep, preauth_salt) = loop {
+                                let (as_rep, preauth_salt, nonces) = loop {
                                     let output = as_exchange.step(client, credentials, &as_response)?;
                                     match output {
                                         AsExchangeOutput::SendRequest(as_req) => {
                                             as_response =
                                                 client.send(yield_point, &serialize_message(&as_req)?).await?;
                                         }
-                                        AsExchangeOutput::Done(as_rep, preauth_salt) => {
-                                            break (as_rep, preauth_salt);
+                                        AsExchangeOutput::Done(as_rep, preauth_salt, nonces) => {
+                                            break (as_rep, preauth_salt, nonces);
                                         }
                                     }
                                 };
@@ -373,6 +383,7 @@ pub async fn initialize_security_context<'a>(
                                     KerberosState::Client(Box::new(KerberosClientState::BeforeTgsExchange {
                                         as_rep,
                                         preauth_salt,
+                                        nonces,
                                         mech_id,
                                         tgt_ticket,
                                     }));
@@ -384,6 +395,7 @@ pub async fn initialize_security_context<'a>(
                     KerberosClientState::BeforeTgsExchange {
                         as_rep,
                         preauth_salt,
+                        nonces,
                         mech_id,
                         tgt_ticket,
                     } => {
@@ -409,18 +421,27 @@ pub async fn initialize_security_context<'a>(
                                 salt: &salt,
                                 password: &password,
                                 enc_params: &mut client.encryption_params,
+                                nonces,
                             },
                             CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
                                 key: &keytab.key,
                                 enc_params: &client.encryption_params,
+                                nonces,
                             },
                             #[cfg(feature = "scard")]
                             CredentialsBuffers::SmartCard(_) => AsRepSessionKeyExtractor::SmartCard {
                                 key_agreement: client.key_agreement.as_mut().unwrap(),
                                 enc_params: &mut client.encryption_params,
+                                nonces,
                             },
                         };
-                        let session_key = session_key_extractor.session_key(&as_rep)?;
+                        let SessionKey {
+                            key: session_key,
+                            cipher_suite: session_key_type,
+                        } = session_key_extractor.session_key(&as_rep)?;
+                        // The long-term key encrypted the reply, the TGT session key has its own type.
+                        // The TGS-REQ authenticator is protected with that key.
+                        client.encryption_params.encryption_type = Some(session_key_type.clone());
 
                         if let Some(remote_guard) = client.remote_guard.as_deref_mut() {
                             // Bind NTLM supplementation to the successful AS exchange, not the last acquisition.
@@ -432,7 +453,7 @@ pub async fn initialize_security_context<'a>(
                             remote_guard.home_tgt = Some(CapturedTgt::new(
                                 as_rep.0.crealm.0.to_string(),
                                 as_rep.0.ticket.0.clone(),
-                                encryption_type,
+                                session_key_type,
                                 session_key.clone(),
                             )?);
                         }
@@ -607,7 +628,7 @@ pub async fn initialize_security_context<'a>(
                             // The AP_REQ Authenticator sequence number should be the same as `seq_num` in the first Kerberos Wrap/MIC token generated
                             // by the `encrypt_message`/`generate_mic_token` method. So, we set the next sequence number but do not increment the counter,
                             // which will be incremented on each `encrypt_message`/`generate_mic_token` method call.
-                            seq_num: Some(client.seq_number + 1),
+                            seq_num: Some(client.seq_number.wrapping_add(1)),
                             sub_key: Some(EncKey {
                                 key_type: enc_type.clone(),
                                 key_value: authenticator_sub_key.into(),
@@ -664,9 +685,7 @@ pub async fn initialize_security_context<'a>(
                             // it is equal to 0, but during RPC auth it is equal to EC.
                             client.encryption_params.ec = EC;
 
-                            use picky_krb::messages::ApRep;
-
-                            let ap_rep: ApRep = picky_asn1_der::from_bytes(&input_token.buffer)?;
+                            let ap_rep = decode_dce_ap_rep_message(&input_token.buffer)?;
 
                             let session_key = client
                                 .encryption_params
@@ -675,6 +694,7 @@ pub async fn initialize_security_context<'a>(
                                 .ok_or_else(|| Error::new(ErrorKind::InternalError, "session key is not set"))?;
                             let ap_rep_enc_part = decrypt_ap_rep(&ap_rep, session_key, &client.encryption_params)?;
                             let sub_session_key = extract_sub_session_key_from_ap_rep(&ap_rep_enc_part)?;
+                            let sub_session_key_type = extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part)?;
                             client.remote_seq_number = extract_seq_number_from_ap_rep(&ap_rep_enc_part)?;
 
                             let seq_number_bytes = ap_rep_enc_part
@@ -693,10 +713,14 @@ pub async fn initialize_security_context<'a>(
                             let ap_rep = generate_ap_rep(session_key, seq_number_bytes, &client.encryption_params)?;
                             let ap_rep = picky_asn1_der::to_vec(&ap_rep)?;
 
+                            // The per-message tokens are protected with the subkey of the acceptor.
+                            // This must come after `generate_ap_rep`, because the reply is encrypted with the session key.
+                            client.encryption_params.encryption_type = Some(sub_session_key_type);
+
                             let output_token = SecurityBuffer::find_buffer_mut(builder.output, BufferType::Token)?;
                             output_token.buffer.write_all(&ap_rep)?;
                         } else {
-                            let ap_rep = decode_krb_message::<ApRep>(&input_token.buffer, AP_REP_TOKEN_ID)?;
+                            let ap_rep = decode_ap_rep_message(&input_token.buffer)?;
 
                             let session_key = client
                                 .encryption_params
@@ -720,6 +744,9 @@ pub async fn initialize_security_context<'a>(
                             }
 
                             client.encryption_params.sub_session_key = Some(sub_session_key);
+                            // The per-message tokens are protected with the subkey of the acceptor.
+                            client.encryption_params.encryption_type =
+                                Some(extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part)?);
                         }
 
                         client.state = KerberosState::Final;

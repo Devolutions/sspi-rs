@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::mem;
 use std::sync::{Arc, Mutex};
 
@@ -161,7 +160,7 @@ fn credssp_kerberos() {
         additional_service_keys: Vec::new(),
         user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -251,7 +250,7 @@ fn remote_guard_server(credentials: &Credentials, target_service_name: Principal
             additional_service_keys: Vec::new(),
             user: Some(CredentialsBuffers::try_from(credentials.clone()).unwrap()),
             client: None,
-            authenticators_cache: HashSet::new(),
+            authenticators_cache: Default::default(),
         },
     }
 }

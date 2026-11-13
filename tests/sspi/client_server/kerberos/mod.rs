@@ -1,11 +1,12 @@
 #![allow(clippy::result_large_err)]
 
+mod acceptor_as_exchange;
 mod context_validator;
 mod iakerb;
 pub(super) mod kdc;
 pub(super) mod network_client;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -363,7 +364,7 @@ fn kerberos_auth() {
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -450,7 +451,7 @@ fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -501,6 +502,13 @@ fn kerberos_auth_with_tgs_rep_enc_part_in_as_rep() {
     kerberos_auth_with_kdc(KdcMock::tgs_rep_enc_part_in_as_rep);
 }
 
+/// The service decides the encryption type of the service ticket session key, which can differ from the one of the TGT.
+/// The client and the acceptor must follow it for the authenticator and the per-message tokens.
+#[test]
+fn kerberos_auth_with_aes128_service_session_key() {
+    kerberos_auth_with_kdc(KdcMock::aes128_service_session_key);
+}
+
 #[test]
 fn kerberos_auth_recovers_from_kdc_clock_skew() {
     for clock_offset in [time::Duration::seconds(15), time::Duration::seconds(-15)] {
@@ -546,7 +554,7 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
             additional_service_keys: Vec::new(),
             user: None,
             client: None,
-            authenticators_cache: HashSet::new(),
+            authenticators_cache: Default::default(),
         };
         let kerberos_server = Kerberos::new_server_from_config(server_config, server_properties).unwrap();
 
@@ -803,7 +811,7 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
         additional_service_keys: Vec::new(),
         user: Some(server_credentials.clone()),
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -928,7 +936,7 @@ fn run_spnego(
         additional_service_keys: Vec::new(),
         user: None,
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -1198,7 +1206,7 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
         additional_service_keys: Vec::new(),
         user: Some(credentials.clone()),
         client: None,
-        authenticators_cache: HashSet::new(),
+        authenticators_cache: Default::default(),
     };
     let kerberos_server_config = KerberosServerConfig {
         kerberos_config: server_config,
@@ -1327,10 +1335,16 @@ mod salt_regressions {
                 return self.network.send(request);
             }
             assert_eq!(self.as_requests.load(Ordering::SeqCst), 2);
+            // RFC 3244 section 2: the password service listens on port 464, not on the port of the KDC.
+            assert_eq!(request.url.port(), Some(464));
             let message = KrbPrivMessage::deserialize(data).expect("actual outgoing password-change request");
             let ApMessage::ApReq(ap_req) = message.ap_message else {
                 panic!("password change must carry an AP-REQ");
             };
+            // The KDC issues AES256 session keys.
+            let aes256 = [u8::try_from(picky_krb::constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap()];
+            assert_eq!(ap_req.0.authenticator.0.etype.0.0, aes256);
+            assert_eq!(message.krb_priv.0.enc_part.0.etype.0.0, aes256);
             let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
             let ticket: EncTicketPart = picky_asn1_der::from_bytes(
                 &cipher
@@ -1373,9 +1387,8 @@ mod salt_regressions {
         }
     }
 
-    #[test]
-    fn kerberos_change_password_uses_negotiated_salt_without_as_rep_hint() {
-        let mut environment = environment_with_preauth_salt("password-change-negotiated-salt");
+    /// Registers the password service, `kadmin/changepw`, in the KDC database.
+    fn add_changepw_service(environment: &mut KrbEnvironment, key: Vec<u8>) {
         let service_name = PrincipalName {
             name_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![NT_SRV_INST])),
             name_string: ExplicitContextTag1::from(Asn1SequenceOf::from(
@@ -1384,8 +1397,44 @@ mod salt_regressions {
                     .to_vec(),
             )),
         };
+        environment.keys.insert(UserName(service_name), key);
+    }
+
+    /// Creates a client that has resolved its realm, and returns the error of the mocked transport it stopped at.
+    ///
+    /// `change_password` uses the realm that the context resolved earlier.
+    /// The client resolves it through the public context API.
+    fn client_before_change_password(credentials: Credentials, target_name: &str) -> (Kerberos, sspi::Error) {
+        let mut client = Kerberos::new_client_from_config(KerberosConfig {
+            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            client_computer_name: CLIENT_COMPUTER_NAME.into(),
+        })
+        .unwrap();
+        let mut handle = Some(CredentialsBuffers::try_from(credentials).unwrap());
+        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let mut initialize = client
+            .initialize_security_context()
+            .with_credentials_handle(&mut handle)
+            .with_context_requirements(ClientRequestFlags::empty())
+            .with_target_data_representation(DataRepresentation::Native)
+            .with_target_name(target_name)
+            .with_input(&mut input)
+            .with_output(&mut setup_output);
+        let setup_error = SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
+            .unwrap()
+            .resolve_with_client(&FailedNetworkClientMock {
+                kind: ErrorKind::NoAuthenticatingAuthority,
+            })
+            .unwrap_err();
+        (client, setup_error)
+    }
+
+    #[test]
+    fn kerberos_change_password_uses_negotiated_salt_without_as_rep_hint() {
+        let mut environment = environment_with_preauth_salt("password-change-negotiated-salt");
         let service_key = vec![0x69; 32];
-        environment.keys.insert(UserName(service_name), service_key.clone());
+        add_changepw_service(&mut environment, service_key.clone());
         let network = PasswordChangeRequestInspector {
             network: NetworkClientMock {
                 kdc: KdcMock::new(
@@ -1400,30 +1449,8 @@ mod salt_regressions {
             as_requests: AtomicUsize::new(0),
             inspected_password_requests: AtomicUsize::new(0),
         };
-        let mut client = Kerberos::new_client_from_config(KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        })
-        .unwrap();
-        // change_password uses the context's previously resolved realm. Initialize it
-        // through the public context API, stopping at the mocked transport boundary.
-        let mut handle = Some(CredentialsBuffers::try_from(environment.credentials).unwrap());
-        let mut input = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut setup_output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
-        let mut initialize = client
-            .initialize_security_context()
-            .with_credentials_handle(&mut handle)
-            .with_context_requirements(ClientRequestFlags::empty())
-            .with_target_data_representation(DataRepresentation::Native)
-            .with_target_name(&environment.target_name)
-            .with_input(&mut input)
-            .with_output(&mut setup_output);
-        let setup_error = SspiImpl::initialize_security_context_impl(&mut client, &mut initialize)
-            .unwrap()
-            .resolve_with_client(&FailedNetworkClientMock {
-                kind: ErrorKind::NoAuthenticatingAuthority,
-            })
-            .unwrap_err();
+        let (mut client, setup_error) =
+            client_before_change_password(environment.credentials, &environment.target_name);
         assert_eq!(setup_error.description, "error from mock network client");
         assert_eq!(network.as_requests.load(Ordering::SeqCst), 0);
         let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
@@ -1443,6 +1470,81 @@ mod salt_regressions {
         assert_eq!(error.description, INSPECTED);
         assert_eq!(network.as_requests.load(Ordering::SeqCst), 2);
         assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
+    }
+
+    // RFC 4120 section 5.2.9: the type of the session key is independent of the type of the key that encrypted the AS-REP.
+    // The authenticator of the password change is protected with the session key, so it uses the type of that key.
+    #[test]
+    fn kerberos_change_password_protects_the_request_with_the_type_of_the_session_key() {
+        let mut environment = environment_with_preauth_salt("password-change-session-key-type");
+        let service_key = vec![0x69; 32];
+        add_changepw_service(&mut environment, service_key.clone());
+        let network = PasswordChangeRequestInspector {
+            network: NetworkClientMock {
+                kdc: KdcMock::new(
+                    environment.realm,
+                    environment.keys,
+                    environment.users,
+                    Validators::default(),
+                )
+                .aes128_user_key(),
+            },
+            service_key,
+            as_requests: AtomicUsize::new(0),
+            inspected_password_requests: AtomicUsize::new(0),
+        };
+        let (mut client, _) = client_before_change_password(environment.credentials, &environment.target_name);
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let change = ChangePasswordBuilder::new()
+            .with_domain_name("EXAMPLE.COM")
+            .with_account_name("pw13")
+            .with_old_password("qweQWE123!@#")
+            .with_new_password(NEW_PASSWORD)
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+
+        let error = Sspi::change_password(&mut client, change)
+            .unwrap()
+            .resolve_with_client(&network)
+            .unwrap_err();
+
+        assert_eq!(error.description, INSPECTED);
+        assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
+    }
+
+    // RFC 4120 section 3.1.5: the client verifies the nonce of the AS-REP.
+    #[test]
+    fn kerberos_change_password_rejects_an_as_rep_with_another_nonce() {
+        let mut environment = environment_with_preauth_salt("password-change-wrong-nonce");
+        add_changepw_service(&mut environment, vec![0x69; 32]);
+        let network = NetworkClientMock {
+            kdc: KdcMock::new(
+                environment.realm,
+                environment.keys,
+                environment.users,
+                Validators::default(),
+            )
+            .wrong_as_rep_nonce(),
+        };
+        let (mut client, _) = client_before_change_password(environment.credentials, &environment.target_name);
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let change = ChangePasswordBuilder::new()
+            .with_domain_name("EXAMPLE.COM")
+            .with_account_name("pw13")
+            .with_old_password("qweQWE123!@#")
+            .with_new_password(NEW_PASSWORD)
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+
+        let error = Sspi::change_password(&mut client, change)
+            .unwrap()
+            .resolve_with_client(&network)
+            .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+        assert!(error.description.contains("AS-REP nonce"), "{error}");
     }
 
     #[test]
@@ -1491,7 +1593,7 @@ mod salt_regressions {
                     additional_service_keys: Vec::new(),
                     user: Some(credentials.clone()),
                     client: None,
-                    authenticators_cache: HashSet::new(),
+                    authenticators_cache: Default::default(),
                 },
             )
             .unwrap(),

@@ -9,6 +9,7 @@ use picky_krb::data_types::{
 };
 use picky_krb::messages::{ApRep, ApRepInner, TgtRep};
 
+use crate::kerberos::client::generators::u32_to_asn1;
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{KERBEROS_VERSION, Result, Secret};
 
@@ -16,7 +17,7 @@ pub(super) fn generate_ap_rep(
     session_key: &Secret<Vec<u8>>,
     ctime: KerberosTime,
     cusec: Microseconds,
-    seq_number: Vec<u8>,
+    seq_number: u32,
     enc_params: &EncryptionParams,
 ) -> Result<ApRep> {
     let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
@@ -30,7 +31,7 @@ pub(super) fn generate_ap_rep(
                 key_value: ExplicitContextTag1::from(OctetStringAsn1::from(sub_key.as_ref().to_vec())),
             })
         })),
-        seq_number: Optional::from(Some(ExplicitContextTag3::from(IntegerAsn1::from(seq_number)))),
+        seq_number: Optional::from(Some(ExplicitContextTag3::from(u32_to_asn1(seq_number)))),
     });
 
     let cipher = encryption_type.cipher();

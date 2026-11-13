@@ -1,6 +1,6 @@
 use std::io::Read;
 
-use picky_asn1::wrapper::{Asn1SequenceOf, ObjectIdentifierAsn1};
+use picky_asn1::wrapper::{Asn1SequenceOf, IntegerAsn1, ObjectIdentifierAsn1};
 use picky_asn1_der::Asn1RawDer;
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_krb::constants::error_codes::KDC_ERR_PREAUTH_REQUIRED;
@@ -13,6 +13,7 @@ use picky_krb::messages::{
 };
 use zeroize::Zeroizing;
 
+use crate::kerberos::client::generators::{nonce_matches, nonce_values_match};
 use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams};
 use crate::{Error, ErrorKind, Result, Secret};
 
@@ -45,17 +46,39 @@ impl Salt {
 /// > It is usually used to notify a client of which key to use for the encryption of an encrypted timestamp for the purposes of sending a
 /// > PA-ENC-TIMESTAMP pre-authentication value.
 pub fn extract_salt_from_krb_error(error: &KrbError) -> Result<Option<String>> {
-    Ok(match extract_salt_hint_from_krb_error(error)? {
-        Some(Salt::Explicit(salt)) => Some(salt),
-        Some(Salt::Default) | None => None,
+    Ok(match extract_etype_info_from_krb_error(error)? {
+        Some((Salt::Explicit(salt), _)) => Some(salt),
+        Some((Salt::Default, _)) | None => None,
     })
 }
 
-pub(crate) fn extract_preauth_salt(error: &KrbError, realm: &str, cname: &PrincipalName) -> Result<Option<String>> {
-    Ok(extract_salt_hint_from_krb_error(error)?.map(|salt| salt.resolve(realm, cname)))
+/// What the KDC tells in the pre-authentication error about the key of the PA-ENC-TIMESTAMP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PreauthHint {
+    /// The salt of the password key.
+    pub salt: String,
+    /// The encryption type of the password key, if the KDC names one that the client supports.
+    pub cipher_suite: Option<CipherSuite>,
 }
 
-fn extract_salt_hint_from_krb_error(error: &KrbError) -> Result<Option<Salt>> {
+pub(crate) fn extract_preauth_hint(
+    error: &KrbError,
+    realm: &str,
+    cname: &PrincipalName,
+) -> Result<Option<PreauthHint>> {
+    Ok(
+        extract_etype_info_from_krb_error(error)?.map(|(salt, cipher_suite)| PreauthHint {
+            salt: salt.resolve(realm, cname),
+            cipher_suite,
+        }),
+    )
+}
+
+/// Extracts the salt and the encryption type from the first entry of the PA-ETYPE-INFO2 that the client supports.
+///
+/// The client offers AES256 and AES128 in its AS-REQ, so only those can be named.
+/// If the KDC names none of them, the salt of the first entry is returned without an encryption type.
+fn extract_etype_info_from_krb_error(error: &KrbError) -> Result<Option<(Salt, Option<CipherSuite>)>> {
     trace!(?error, "KRB_ERROR");
 
     // Check if the error code is KDC_ERR_PREAUTH_REQUIRED. If not, propagate the KDC error.
@@ -72,11 +95,29 @@ fn extract_salt_hint_from_krb_error(error: &KrbError) -> Result<Option<Salt>> {
             .find(|pa_data| pa_data.padata_type.0.0 == PA_ETYPE_INFO2_TYPE)
         {
             let etype_info_2: EtypeInfo2 = picky_asn1_der::from_bytes(&pa_etype_info_2.padata_data.0.0)?;
-            if let Some(params) = etype_info_2.0.first() {
-                return Ok(Some(match &params.salt.0 {
+
+            let supported_entry =
+                etype_info_2
+                    .0
+                    .iter()
+                    .find_map(|entry| match CipherSuite::try_from(entry.etype.0.0.as_slice()) {
+                        Ok(cipher_suite @ (CipherSuite::Aes256CtsHmacSha196 | CipherSuite::Aes128CtsHmacSha196)) => {
+                            Some((entry, cipher_suite))
+                        }
+                        _ => None,
+                    });
+            let (entry, cipher_suite) = match supported_entry {
+                Some((entry, cipher_suite)) => (Some(entry), Some(cipher_suite)),
+                None => (etype_info_2.0.first(), None),
+            };
+
+            if let Some(entry) = entry {
+                let salt = match &entry.salt.0 {
                     Some(salt) => Salt::Explicit(salt.0.to_string()),
                     None => Salt::Default,
-                }));
+                };
+
+                return Ok(Some((salt, cipher_suite)));
             }
         }
     }
@@ -122,15 +163,19 @@ pub fn extract_session_key_from_as_rep(
     password: &str,
     enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
-    let cipher = enc_params
+    let key = password_key(password, salt, enc_params)?;
+
+    extract_session_key_from_as_rep_with_key(as_rep, &key, enc_params)
+}
+
+/// Derives the long-term key from the password with the negotiated encryption type.
+pub(crate) fn password_key(password: &str, salt: &str, enc_params: &EncryptionParams) -> Result<Vec<u8>> {
+    Ok(enc_params
         .encryption_type
         .as_ref()
         .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-        .cipher();
-
-    let key = cipher.generate_key_from_password(password.as_bytes(), salt.as_bytes())?;
-
-    extract_session_key_from_as_rep_with_key(as_rep, &key, enc_params)
+        .cipher()
+        .generate_key_from_password(password.as_bytes(), salt.as_bytes())?)
 }
 
 /// Extracts a session key from the [AsRep] using a pre-derived long-term key
@@ -150,18 +195,94 @@ pub fn extract_session_key_from_as_rep_with_key(
         .into())
 }
 
+/// A session key together with its encryption type.
+///
+/// The type of the session key is its own: it is not the type of the long-term key that encrypted the reply,
+/// and a service decides it for the service ticket (RFC 4120 section 5.4.2, `EncKDCRepPart.key`).
+#[derive(Debug, Clone)]
+pub(crate) struct SessionKey {
+    pub key: Secret<Vec<u8>>,
+    pub cipher_suite: CipherSuite,
+}
+
+impl SessionKey {
+    fn from_encryption_key(key: &picky_krb::data_types::EncryptionKey) -> Result<Self> {
+        Ok(Self {
+            cipher_suite: CipherSuite::try_from(key.key_type.0.0.as_slice())?,
+            key: key.key_value.0.to_vec().into(),
+        })
+    }
+}
+
+/// Extracts the session key from the [AsRep] after checking that its nonce is the AS-REQ nonce.
+///
+/// [RFC 4120, Section 3.1.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.5):
+/// the client must verify that the nonce in the encrypted part is the one it sent.
+/// Otherwise, a reply to an earlier request is accepted.
+pub(crate) fn extract_checked_session_key(
+    as_rep: &AsRep,
+    key: &[u8],
+    enc_params: &EncryptionParams,
+    expected_nonce: u32,
+) -> Result<SessionKey> {
+    let enc_part = decrypt_as_rep(as_rep, key, enc_params)?;
+
+    if !nonce_matches(&enc_part.nonce.0, expected_nonce) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "AS-REP nonce does not match the AS-REQ nonce",
+        ));
+    }
+
+    SessionKey::from_encryption_key(&enc_part.key.0)
+}
+
+/// Extracts the session key from the [TgsRep] after checking it against the request.
+///
+/// [RFC 4120, Section 3.3.5](https://www.rfc-editor.org/rfc/rfc4120#section-3.3.5):
+/// the client verifies that the nonce in the encrypted part is the one it sent.
+/// The service name and realm of the encrypted part must also be those of the enclosed ticket,
+/// because only the encrypted part is protected and the client acts on the name of the ticket.
+pub(crate) fn extract_checked_tgs_session_key(
+    tgs_rep: &TgsRep,
+    session_key: &Secret<Vec<u8>>,
+    expected_nonce: &IntegerAsn1,
+) -> Result<SessionKey> {
+    let enc_part = decrypt_tgs_rep(tgs_rep, session_key)?;
+
+    if !nonce_values_match(&enc_part.nonce.0, expected_nonce) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "TGS-REP nonce does not match the TGS-REQ nonce",
+        ));
+    }
+
+    let ticket = &tgs_rep.0.ticket.0.0;
+    if enc_part.srealm.0 != ticket.realm.0 || enc_part.sname.0.name_string.0 != ticket.sname.0.name_string.0 {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "the service name of the TGS-REP ticket does not match the encrypted part",
+        ));
+    }
+
+    SessionKey::from_encryption_key(&enc_part.key.0)
+}
+
 /// Extracts a session from the [TgsRep].
 #[instrument(level = "trace", ret)]
 pub fn extract_session_key_from_tgs_rep(
     tgs_rep: &TgsRep,
     session_key: &Secret<Vec<u8>>,
-    enc_params: &EncryptionParams,
+    _enc_params: &EncryptionParams,
 ) -> Result<Secret<Vec<u8>>> {
-    let cipher = enc_params
-        .encryption_type
-        .as_ref()
-        .unwrap_or(&DEFAULT_ENCRYPTION_TYPE)
-        .cipher();
+    Ok(decrypt_tgs_rep(tgs_rep, session_key)?.key.0.key_value.0.to_vec().into())
+}
+
+/// Decrypts the encrypted part of the TGS-REP with the session key of the TGT.
+///
+/// The cipher is the one that the KDC states for the encrypted part, which is the type of that key.
+fn decrypt_tgs_rep(tgs_rep: &TgsRep, session_key: &Secret<Vec<u8>>) -> Result<EncKdcRepPart> {
+    let cipher = CipherSuite::try_from(tgs_rep.0.enc_part.0.etype.0.0.as_slice())?.cipher();
 
     let enc_data = cipher
         .decrypt(
@@ -173,9 +294,9 @@ pub fn extract_session_key_from_tgs_rep(
 
     trace!(?enc_data, "Plain TgsRep::EncData");
 
-    let enc_as_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
+    let enc_tgs_rep_part: EncTgsRepPart = picky_asn1_der::from_bytes(&enc_data)?;
 
-    Ok(enc_as_rep_part.0.key.0.key_value.0.to_vec().into())
+    Ok(enc_tgs_rep_part.0)
 }
 
 /// Extracts encryption type and salt from [AsRep].
@@ -329,6 +450,21 @@ pub fn extract_sub_session_key_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Re
         .into())
 }
 
+/// Extracts the encryption type of the sub-session key from the [EncApRepPart].
+///
+/// The acceptor chooses its subkey, so the type can differ from the one of the session key.
+#[instrument(level = "trace", ret)]
+pub(crate) fn extract_sub_session_key_type_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Result<CipherSuite> {
+    let subkey = ap_rep_enc_part
+        .0
+        .subkey
+        .0
+        .as_ref()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing sub-key in ap_req"))?;
+
+    Ok(CipherSuite::try_from(subkey.0.key_type.0.0.as_slice())?)
+}
+
 /// Extracts a sequence number from the [EncApRepPart].
 #[instrument(level = "trace", ret)]
 pub fn extract_seq_number_from_ap_rep(ap_rep_enc_part: &EncApRepPart) -> Result<u32> {
@@ -449,7 +585,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod as_rep_regressions {
+pub(crate) mod as_rep_regressions {
     use picky_asn1::bit_string::BitString;
     use picky_asn1::date::GeneralizedTime;
     use picky_asn1::restricted_string::IA5String;
@@ -510,14 +646,21 @@ mod as_rep_regressions {
     }
 
     fn encrypted_as_rep(tag: u8, salt: &str) -> (AsRep, Vec<u8>) {
+        encrypted_as_rep_with_session_key(tag, salt, &CipherSuite::Aes256CtsHmacSha196)
+    }
+
+    /// An AS-REP encrypted with the AES256 long-term key, whose session key has the given encryption type.
+    fn encrypted_as_rep_with_session_key(tag: u8, salt: &str, session_key_suite: &CipherSuite) -> (AsRep, Vec<u8>) {
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
         let key = cipher
             .generate_key_from_password(PASSWORD.as_bytes(), salt.as_bytes())
             .unwrap();
         let part = EncKdcRepPart {
             key: ExplicitContextTag0::from(EncryptionKey {
-                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
-                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(SESSION_KEY.to_vec())),
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_suite.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(
+                    SESSION_KEY[..session_key_suite.cipher().key_size()].to_vec(),
+                )),
             }),
             last_req: ExplicitContextTag1::from(LastReq::from(Vec::new())),
             nonce: ExplicitContextTag2::from(IntegerAsn1::from(vec![1, 2, 3, 4])),
@@ -586,7 +729,7 @@ mod as_rep_regressions {
     }
 
     #[test]
-    fn extract_preauth_salt_distinguishes_absent_default_empty_and_custom() {
+    fn extract_preauth_hint_distinguishes_absent_default_empty_and_custom_salt() {
         for (data, expected) in [
             (None, None),
             (Some(hint(None)), None),
@@ -595,10 +738,57 @@ mod as_rep_regressions {
             (Some(hint(Some(Some("custom-preauth")))), Some("custom-preauth")),
         ] {
             assert_eq!(
-                extract_preauth_salt(&preauth_error(data), "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap(),
+                extract_preauth_hint(&preauth_error(data), "ExAmPlE.COM", &principal(&["Alice", "Admin"]))
+                    .unwrap()
+                    .map(|hint| hint.salt),
                 expected.map(str::to_owned)
             );
         }
+    }
+
+    /// An ETYPE-INFO2 with an entry for each `(etype, salt)`.
+    fn etype_info2(entries: &[(u8, Option<&str>)]) -> Asn1SequenceOf<PaData> {
+        Asn1SequenceOf::from(vec![PaData {
+            padata_type: ExplicitContextTag1::from(IntegerAsn1::from(PA_ETYPE_INFO2_TYPE.to_vec())),
+            padata_data: ExplicitContextTag2::from(OctetStringAsn1::from(
+                picky_asn1_der::to_vec(&Asn1SequenceOf::from(
+                    entries
+                        .iter()
+                        .map(|(etype, salt)| EtypeInfo2Entry {
+                            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![*etype])),
+                            salt: Optional::from(salt.map(|salt| ExplicitContextTag1::from(krb_string(salt)))),
+                            s2kparams: Optional::from(None),
+                        })
+                        .collect::<Vec<_>>(),
+                ))
+                .unwrap(),
+            )),
+        }])
+    }
+
+    // RFC 4120 §5.2.7.5: the entries tell which key to use for the PA-ENC-TIMESTAMP.
+    // The client takes the first entry with an encryption type that it supports.
+    #[rstest::rstest]
+    #[case::first_entry(&[(17, Some("salt-a")), (18, Some("salt-b"))], Some(("salt-a", Some(CipherSuite::Aes128CtsHmacSha196))))]
+    #[case::skips_unsupported_encryption_types(&[(23, Some("rc4-salt")), (18, Some("salt-b"))], Some(("salt-b", Some(CipherSuite::Aes256CtsHmacSha196))))]
+    #[case::default_salt_of_the_chosen_entry(&[(23, Some("rc4-salt")), (17, None)], Some(("ExAmPlE.COMAliceAdmin", Some(CipherSuite::Aes128CtsHmacSha196))))]
+    #[case::nothing_supported_keeps_the_salt_of_the_first_entry(&[(23, Some("rc4-salt")), (3, Some("des-salt"))], Some(("rc4-salt", None)))]
+    #[case::no_entries(&[], None)]
+    fn the_hint_names_the_key_for_the_pre_authentication(
+        #[case] entries: &[(u8, Option<&str>)],
+        #[case] expected: Option<(&str, Option<CipherSuite>)>,
+    ) {
+        let error = preauth_error(Some(etype_info2(entries)));
+
+        let hint = extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap();
+
+        assert_eq!(
+            hint,
+            expected.map(|(salt, cipher_suite)| PreauthHint {
+                salt: salt.to_owned(),
+                cipher_suite,
+            })
+        );
     }
 
     #[test]
@@ -754,7 +944,7 @@ mod as_rep_regressions {
         let mut malformed_hint = hint(Some(None));
         malformed_hint.0[0].padata_data = ExplicitContextTag2::from(OctetStringAsn1::from(vec![0xff]));
         for error in [wrong_error, malformed_method_data, preauth_error(Some(malformed_hint))] {
-            assert!(extract_preauth_salt(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).is_err());
+            assert!(extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).is_err());
             assert!(extract_salt_from_krb_error(&error).is_err());
         }
 
@@ -764,7 +954,9 @@ mod as_rep_regressions {
         ));
         let error = preauth_error(Some(empty_hint));
         assert_eq!(
-            extract_preauth_salt(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"])).unwrap(),
+            extract_preauth_hint(&error, "ExAmPlE.COM", &principal(&["Alice", "Admin"]))
+                .unwrap()
+                .map(|hint| hint.salt),
             None
         );
         assert_eq!(extract_salt_from_krb_error(&error).unwrap(), None);
@@ -814,5 +1006,195 @@ mod as_rep_regressions {
                 .error_type,
             ErrorKind::InvalidParameter
         );
+    }
+
+    #[test]
+    fn the_sub_session_key_type_is_the_type_of_the_acceptor_subkey() {
+        use picky_krb::data_types::EncApRepPartInner;
+
+        let ap_rep_enc_part = |subkey: Option<u8>| {
+            EncApRepPart::from(EncApRepPartInner {
+                ctime: ExplicitContextTag0::from(fixed_time(1_700_000_000)),
+                cusec: ExplicitContextTag1::from(IntegerAsn1::from(vec![0])),
+                subkey: Optional::from(subkey.map(|key_type| {
+                    ExplicitContextTag2::from(EncryptionKey {
+                        key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![key_type])),
+                        key_value: ExplicitContextTag1::from(OctetStringAsn1::from(vec![0x77; 16])),
+                    })
+                })),
+                seq_number: Optional::from(None),
+            })
+        };
+
+        assert_eq!(
+            extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part(Some(17))).unwrap(),
+            CipherSuite::Aes128CtsHmacSha196
+        );
+        assert_eq!(
+            extract_sub_session_key_type_from_ap_rep(&ap_rep_enc_part(None))
+                .unwrap_err()
+                .error_type,
+            ErrorKind::InvalidToken
+        );
+    }
+
+    // The long-term key encrypts the reply, but the session key has its own type (RFC 4120 section 5.4.2).
+    #[test]
+    fn checked_extractor_reports_the_encryption_type_of_the_session_key() {
+        let (reply, key) = encrypted_as_rep_with_session_key(25, SALT, &CipherSuite::Aes128CtsHmacSha196);
+
+        let session_key =
+            extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), 0x0102_0304).unwrap();
+
+        assert_eq!(session_key.cipher_suite, CipherSuite::Aes128CtsHmacSha196);
+        assert_eq!(session_key.key.as_ref(), &SESSION_KEY[..16]);
+    }
+
+    // RFC 4120 §3.1.5: the client verifies that the nonce in the encrypted part matches the AS-REQ nonce.
+    // The fixture reply carries the nonce 0x01020304.
+    #[test]
+    fn checked_extractor_returns_the_session_key_for_the_matching_nonce() {
+        for tag in [25, 26] {
+            let (reply, key) = encrypted_as_rep(tag, SALT);
+
+            assert_eq!(
+                extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), 0x0102_0304)
+                    .unwrap()
+                    .key
+                    .as_ref(),
+                &SESSION_KEY
+            );
+        }
+    }
+
+    // A reply to an earlier request has a different nonce, but is otherwise authentic.
+    #[rstest::rstest]
+    #[case::last_octet_differs(0x0102_0305)]
+    #[case::zero(0)]
+    #[case::high_bit_set(0x8102_0304)]
+    fn checked_extractor_rejects_a_mismatched_nonce(#[case] expected_nonce: u32) {
+        let (reply, key) = encrypted_as_rep(25, SALT);
+
+        let error = extract_checked_session_key(&reply, &key, &EncryptionParams::default_for_client(), expected_nonce)
+            .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    /// A TGS-REP for `krbtgt/NEXT.EXAMPLE` encrypted with the session key of the TGT.
+    ///
+    /// The enclosed ticket is named `ticket_sname@ticket_realm`, the encrypted part `enc_sname@enc_realm`.
+    pub(crate) fn encrypted_tgs_rep(
+        nonce: Vec<u8>,
+        ticket_sname: &[&str],
+        ticket_realm: &str,
+    ) -> (TgsRep, Secret<Vec<u8>>) {
+        encrypted_tgs_rep_with_key(
+            nonce,
+            "NEXT.EXAMPLE",
+            &["krbtgt", "NEXT.EXAMPLE"],
+            ticket_sname,
+            ticket_realm,
+            &CipherSuite::Aes256CtsHmacSha196,
+        )
+    }
+
+    /// Like [encrypted_tgs_rep], for the given service of the encrypted part and the given session key type.
+    pub(crate) fn encrypted_tgs_rep_with_key(
+        nonce: Vec<u8>,
+        enc_realm: &str,
+        enc_sname: &[&str],
+        ticket_sname: &[&str],
+        ticket_realm: &str,
+        session_key_suite: &CipherSuite,
+    ) -> (TgsRep, Secret<Vec<u8>>) {
+        let tgt_session_key = Secret::new(vec![0x44; 32]);
+        let part = EncKdcRepPart {
+            key: ExplicitContextTag0::from(EncryptionKey {
+                key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![session_key_suite.into()])),
+                key_value: ExplicitContextTag1::from(OctetStringAsn1::from(
+                    SESSION_KEY[..session_key_suite.cipher().key_size()].to_vec(),
+                )),
+            }),
+            last_req: ExplicitContextTag1::from(LastReq::from(Vec::new())),
+            nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce)),
+            key_expiration: Optional::from(None),
+            flags: ExplicitContextTag4::from(KerberosFlags::from(BitString::with_bytes(vec![0x40, 0, 0, 0]))),
+            auth_time: ExplicitContextTag5::from(fixed_time(1_700_000_000)),
+            start_time: Optional::from(None),
+            end_time: ExplicitContextTag7::from(fixed_time(1_700_003_600)),
+            renew_till: Optional::from(None),
+            srealm: ExplicitContextTag9::from(krb_string(enc_realm)),
+            sname: ExplicitContextTag10::from(principal(enc_sname)),
+            caddr: Optional::from(None),
+            encrypted_pa_data: Optional::from(None),
+        };
+        let encrypted = |data| EncryptedData {
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![18])),
+            kvno: Optional::from(None),
+            cipher: ExplicitContextTag2::from(OctetStringAsn1::from(data)),
+        };
+        let plaintext = picky_asn1_der::to_vec(&EncTgsRepPart::from(part)).unwrap();
+        let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
+
+        let reply = TgsRep::from(KdcRep {
+            pvno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+            msg_type: ExplicitContextTag1::from(IntegerAsn1::from(vec![13])),
+            padata: Optional::from(None),
+            crealm: ExplicitContextTag3::from(krb_string("HOME.EXAMPLE")),
+            cname: ExplicitContextTag4::from(principal(&["alice"])),
+            ticket: ExplicitContextTag5::from(Ticket::from(TicketInner {
+                tkt_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
+                realm: ExplicitContextTag1::from(krb_string(ticket_realm)),
+                sname: ExplicitContextTag2::from(principal(ticket_sname)),
+                enc_part: ExplicitContextTag3::from(encrypted(vec![0x55; 32])),
+            })),
+            enc_part: ExplicitContextTag6::from(encrypted(
+                cipher
+                    .encrypt(tgt_session_key.as_ref(), TGS_REP_ENC_SESSION_KEY, &plaintext)
+                    .unwrap(),
+            )),
+        });
+
+        (reply, tgt_session_key)
+    }
+
+    fn nonce(value: u32) -> IntegerAsn1 {
+        crate::kerberos::client::generators::nonce_to_asn1(value)
+    }
+
+    // RFC 4120 §3.3.5: the client verifies that the nonce in the encrypted part is the TGS-REQ nonce.
+    #[test]
+    fn checked_tgs_extractor_returns_the_session_key_for_the_matching_nonce() {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
+
+        let key = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0304)).unwrap();
+
+        assert_eq!(key.key.as_ref(), &SESSION_KEY);
+    }
+
+    #[test]
+    fn checked_tgs_extractor_rejects_a_mismatched_nonce() {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], &["krbtgt", "NEXT.EXAMPLE"], "NEXT.EXAMPLE");
+
+        let error = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0305)).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // The referral logic reads the service name of the enclosed ticket, which is not protected.
+    // The service name of the encrypted part is, so the two must agree (RFC 4120 §5.4.2).
+    #[rstest::rstest]
+    #[case::other_service(&["krbtgt", "OTHER.EXAMPLE"], "NEXT.EXAMPLE")]
+    #[case::other_realm(&["krbtgt", "NEXT.EXAMPLE"], "OTHER.EXAMPLE")]
+    fn checked_tgs_extractor_rejects_a_ticket_that_differs_from_the_encrypted_part(
+        #[case] ticket_sname: &[&str],
+        #[case] ticket_realm: &str,
+    ) {
+        let (reply, tgt_session_key) = encrypted_tgs_rep(vec![1, 2, 3, 4], ticket_sname, ticket_realm);
+
+        let error = extract_checked_tgs_session_key(&reply, &tgt_session_key, &nonce(0x0102_0304)).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }

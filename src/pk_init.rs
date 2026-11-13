@@ -447,6 +447,71 @@ pub(crate) fn extract_server_ecdh_public_key(signed_data: &SignedData) -> Result
         .to_vec())
 }
 
+/// Checks that the `KDCDHKeyInfo` nonce echoes the `PKAuthenticator` nonce of the request.
+///
+/// [RFC 4556, Section 3.2.3](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3):
+/// the nonce is the request nonce if the KDC does not reuse its DH keys, and 0 otherwise.
+/// A reused key is not bound to a request by the nonce, but by the fresh client DH key,
+/// so the nonce is not checked when `dhKeyExpiration` is present.
+#[cfg(feature = "scard")]
+pub(crate) fn check_kdc_dh_key_info_nonce(signed_data: &SignedData, expected_nonce: u32) -> Result<()> {
+    let kdc_dh_key_info = extract_kdc_dh_key_info(signed_data)?;
+
+    if kdc_dh_key_info.dh_key_expiration.0.is_some() {
+        return Ok(());
+    }
+
+    if !crate::kerberos::client::generators::nonce_matches(&kdc_dh_key_info.nonce.0, expected_nonce) {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "KDC DH key info nonce does not match the PKAuthenticator nonce",
+        ));
+    }
+
+    Ok(())
+}
+
+/// Checks that the server DH public value `y` is in the range `1 < y < p - 1`.
+///
+/// [RFC 2631, Section 2.1.5](https://www.rfc-editor.org/rfc/rfc2631#section-2.1.5):
+/// a value of 0, 1 or `p - 1` makes the shared secret predictable, so a peer can force the session key.
+/// The values are big-endian unsigned integers.
+#[cfg(feature = "scard")]
+pub(crate) fn validate_dh_public_key(public_key: &[u8], modulus: &[u8]) -> Result<()> {
+    use std::cmp::Ordering;
+
+    use crate::utils::trim_leading_zeros;
+
+    // Big-endian integers without leading zeros: the longer one is greater.
+    fn compare(left: &[u8], right: &[u8]) -> Ordering {
+        left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+    }
+
+    let public_key = trim_leading_zeros(public_key);
+    let modulus = trim_leading_zeros(modulus);
+
+    // A DH modulus is odd, so `p - 1` only differs from `p` in the last octet and never borrows.
+    let mut modulus_minus_one = modulus.to_vec();
+    match modulus_minus_one.last_mut() {
+        Some(last) if *last & 1 == 1 => *last -= 1,
+        _ => {
+            return Err(Error::new(
+                ErrorKind::InvalidParameter,
+                "DH modulus is not an odd number",
+            ));
+        }
+    }
+
+    if compare(public_key, &[1]) != Ordering::Greater || compare(public_key, &modulus_minus_one) != Ordering::Less {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "server DH public key is out of the valid range",
+        ));
+    }
+
+    Ok(())
+}
+
 fn extract_kdc_dh_key_info(signed_data: &SignedData) -> Result<KdcDhKeyInfo> {
     let pkinit_dh_key_data = ObjectIdentifier::try_from(PKINIT_DH_KEY_DATA).unwrap();
     if signed_data.content_info.content_type.0 != pkinit_dh_key_data {
@@ -721,5 +786,135 @@ mod ecdh_tests {
         };
 
         assert_eq!(server_public_key, extract_server_ecdh_public_key(&signed_data).unwrap());
+    }
+}
+
+#[cfg(all(test, feature = "scard"))]
+mod kdc_dh_key_info_nonce_tests {
+    use picky_asn1::bit_string::BitString;
+    use picky_asn1::date::GeneralizedTime;
+    use picky_asn1::wrapper::{
+        Asn1SetOf, BitStringAsn1, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1,
+        ObjectIdentifierAsn1, OctetStringAsn1, Optional,
+    };
+    use picky_asn1_x509::cmsversion::CmsVersion;
+    use picky_asn1_x509::content_info::{ContentValue, EncapsulatedContentInfo};
+    use picky_asn1_x509::oids;
+    use picky_asn1_x509::signed_data::{CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos};
+    use picky_krb::data_types::KerberosTime;
+    use picky_krb::pkinit::KdcDhKeyInfo;
+    use rstest::rstest;
+    use time::OffsetDateTime;
+
+    use super::check_kdc_dh_key_info_nonce;
+    use crate::ErrorKind;
+
+    /// Builds the `SignedData` a KDC sends in `DHRepInfo.dhSignedData`.
+    ///
+    /// `nonce` is the raw big-endian content of the `KDCDHKeyInfo.nonce` INTEGER.
+    /// The signature is irrelevant here: only the encapsulated `KDCDHKeyInfo` is inspected.
+    fn signed_data(nonce: Vec<u8>, dh_keys_reused: bool) -> SignedData {
+        let dh_key_expiration = dh_keys_reused.then(|| {
+            ExplicitContextTag2::from(KerberosTime::from(GeneralizedTime::from(
+                OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap(),
+            )))
+        });
+
+        let kdc_dh_key_info = KdcDhKeyInfo {
+            subject_public_key: ExplicitContextTag0::from(BitStringAsn1::from(BitString::with_bytes(vec![2, 1, 5]))),
+            nonce: ExplicitContextTag1::from(IntegerAsn1::from(nonce)),
+            dh_key_expiration: Optional::from(dh_key_expiration),
+        };
+
+        SignedData {
+            version: CmsVersion::V3,
+            digest_algorithms: DigestAlgorithmIdentifiers(Asn1SetOf::from(Vec::new())),
+            content_info: EncapsulatedContentInfo {
+                content_type: ObjectIdentifierAsn1::from(oids::kpinit_dh_key_data()),
+                content: Some(ExplicitContextTag0::from(ContentValue::OctetString(
+                    OctetStringAsn1::from(picky_asn1_der::to_vec(&kdc_dh_key_info).unwrap()),
+                ))),
+            },
+            certificates: Optional::from(CertificateSet(Vec::new())),
+            crls: None,
+            signers_infos: SignersInfos(Asn1SetOf::from(Vec::new())),
+        }
+    }
+
+    // RFC 4556 §3.2.3: the nonce of the KDCDHKeyInfo is the pkAuthenticator nonce when the KDC does not reuse its DH keys.
+    #[test]
+    fn matching_nonce_is_accepted() {
+        let signed_data = signed_data(vec![0x01, 0x02, 0x03, 0x04], false);
+
+        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
+    }
+
+    // The nonce 0x81020304 has the high bit set, so its minimal DER INTEGER starts with a `00` sign octet.
+    // The sign octet is not part of the value.
+    #[test]
+    fn nonce_with_a_sign_octet_is_accepted() {
+        let signed_data = signed_data(vec![0x00, 0x81, 0x02, 0x03, 0x04], false);
+
+        check_kdc_dh_key_info_nonce(&signed_data, 0x8102_0304).unwrap();
+    }
+
+    // A replayed reply carries the nonce of an earlier request.
+    #[rstest]
+    #[case::other_value(vec![0x01, 0x02, 0x03, 0x05])]
+    #[case::zero(vec![0x00])]
+    #[case::longer_than_32_bits(vec![0x01, 0x01, 0x02, 0x03, 0x04])]
+    fn mismatched_nonce_is_rejected_when_dh_keys_are_not_reused(#[case] nonce: Vec<u8>) {
+        let signed_data = signed_data(nonce, false);
+
+        let error = check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // RFC 4556 §3.2.3: the nonce is 0 when the KDC reuses its DH keys, so it does not echo the request nonce.
+    // The reply is still bound to the request by the fresh client DH key, so the nonce is not checked in this mode.
+    #[rstest]
+    #[case::zero(vec![0x00])]
+    #[case::other_value(vec![0x01, 0x02, 0x03, 0x05])]
+    fn nonce_is_not_checked_when_dh_keys_are_reused(#[case] nonce: Vec<u8>) {
+        let signed_data = signed_data(nonce, true);
+
+        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
+    }
+}
+
+#[cfg(all(test, feature = "scard"))]
+mod dh_public_key_range_tests {
+    use rstest::rstest;
+
+    use super::validate_dh_public_key;
+    use crate::ErrorKind;
+
+    // RFC 2631 §2.1.5: 1 < y < p - 1.
+    // The modulus 23 is a toy safe prime, 0x0101 is 257.
+    #[rstest]
+    #[case::two(&[0x02], &[0x17])]
+    #[case::p_minus_two(&[0x15], &[0x17])]
+    #[case::leading_zero_octet(&[0x00, 0x05], &[0x17])]
+    #[case::multi_octet_modulus(&[0x00, 0xff], &[0x01, 0x01])]
+    fn value_in_range_is_accepted(#[case] public_key: &[u8], #[case] modulus: &[u8]) {
+        validate_dh_public_key(public_key, modulus).unwrap();
+    }
+
+    #[rstest]
+    #[case::empty(&[], &[0x17])]
+    #[case::zero(&[0x00], &[0x17])]
+    #[case::one(&[0x01], &[0x17])]
+    #[case::one_with_leading_zeros(&[0x00, 0x00, 0x01], &[0x17])]
+    #[case::p_minus_one(&[0x16], &[0x17])]
+    #[case::p(&[0x17], &[0x17])]
+    #[case::above_p(&[0x18], &[0x17])]
+    #[case::multi_octet_p_minus_one(&[0x01, 0x00], &[0x01, 0x01])]
+    #[case::multi_octet_above_p(&[0x01, 0xff], &[0x01, 0x01])]
+    #[case::longer_than_p(&[0x01, 0x00, 0x00], &[0x17])]
+    fn value_out_of_range_is_rejected(#[case] public_key: &[u8], #[case] modulus: &[u8]) {
+        let error = validate_dh_public_key(public_key, modulus).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }

@@ -27,7 +27,7 @@ use url::Url;
 pub use self::client::initialize_security_context;
 use self::config::{KdcResolution, KerberosConfig};
 pub use self::encryption_params::EncryptionParams;
-pub use self::server::{ClientPrincipal, ServerProperties, accept_security_context};
+pub use self::server::{AuthenticatorsCache, ClientPrincipal, ServerProperties, accept_security_context};
 use super::channel_bindings::ChannelBindings;
 use crate::builders::ChangePassword;
 use crate::generator::{
@@ -592,9 +592,16 @@ impl Sspi for Kerberos {
         }
 
         let mut checksum = wrap_token.checksum;
+        if checksum.is_empty() {
+            return Err(Error::new(ErrorKind::DecryptFailure, "empty sealed WRAP token"));
+        }
+        // [RFC 4121 §4.2.5](https://datatracker.ietf.org/doc/html/rfc4121#section-4.2.5): the receiver must honor
+        // the sender's RRC value, including values larger than the token.
+        //
         // [3.4.5.4.1 Kerberos Binding of GSS_WrapEx()](learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/e94b3acd-8415-4d0d-9786-749d0c39d550):
         // The trailing metadata H1 is rotated by RRC+EC bytes, which is different from RRC alone.
-        checksum.rotate_left((RRC + wrap_token.ec).into());
+        let rotation = (usize::from(wrap_token.rrc) + usize::from(wrap_token.ec)) % checksum.len();
+        checksum.rotate_left(rotation);
 
         let DecryptWithoutChecksum {
             plaintext: decrypted,

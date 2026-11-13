@@ -8,7 +8,7 @@ use time::OffsetDateTime;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::TGT_SERVICE_NAME;
-use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_salt};
+use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_hint};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateKeytabPaDataOptions, generate_as_req,
     generate_as_req_kdc_body, generate_nonce,
@@ -17,7 +17,7 @@ use crate::kerberos::client::kdc::as_exchange::clock_offset_from_error;
 use crate::kerberos::client::principal::{
     ClientPrincipalName, get_client_principal_name, get_client_principal_name_type, get_client_principal_realm,
 };
-use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions};
+use crate::kerberos::pa_datas::{AsRepSessionKeyExtractor, AsReqPaDataOptions, AsRequestNonces};
 use crate::kerberos::utils::serialize_message;
 use crate::{ClientRequestFlags, CredentialsBuffers, Error, ErrorKind, Kerberos, Result, Secret};
 
@@ -103,6 +103,12 @@ pub(crate) async fn request_tgt(
         context_requirements: ClientRequestFlags::empty(),
     };
     let kdc_req_body = generate_as_req_kdc_body(&options)?;
+    let nonces = AsRequestNonces {
+        kdc_req: nonce,
+        // The acceptor does not support smart card credentials, so it sends no PKAuthenticator.
+        #[cfg(feature = "scard")]
+        pk_authenticator: 0,
+    };
 
     let pa_data_options = match credentials {
         CredentialsBuffers::AuthIdentity(auth_identity) => {
@@ -146,10 +152,12 @@ pub(crate) async fn request_tgt(
             salt: &salt,
             password: &password,
             enc_params: &server.encryption_params,
+            nonces,
         },
         CredentialsBuffers::Keytab(keytab) => AsRepSessionKeyExtractor::Keytab {
             key: &keytab.key,
             enc_params: &server.encryption_params,
+            nonces,
         },
         #[cfg(feature = "scard")]
         CredentialsBuffers::SmartCard(_) => {
@@ -166,7 +174,7 @@ pub(crate) async fn request_tgt(
             "Kerberos server properties are not initialized",
         )
     })?;
-    server_props.ticket_decryption_key = Some(session_key_extractor.session_key(&as_rep)?);
+    server_props.ticket_decryption_key = Some(session_key_extractor.session_key(&as_rep)?.key);
 
     Ok(as_rep.0.ticket.0)
 }
@@ -200,17 +208,17 @@ pub(crate) async fn as_exchange(
         let mut d = picky_asn1_der::Deserializer::new_from_bytes(&response[4..]);
         let as_rep: KrbResult<AsRep> = KrbResult::deserialize(&mut d)?;
 
-        if as_rep.is_ok() {
-            error!("KDC replied with AS_REP to the AS_REQ without the encrypted timestamp. The KRB_ERROR expected.");
+        let krb_error = match as_rep {
+            Ok(as_rep) => {
+                // [3.1.3.  Receipt of KRB_AS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3)
+                // If pre-authentication is not required, the KDC replies with the AS-REP right away.
+                return Ok((as_rep, String::from_utf8_lossy(pa_data_options.salt()).into_owned()));
+            }
+            Err(krb_error) => krb_error,
+        };
 
-            return Err(Error::new(
-                ErrorKind::InvalidToken,
-                "KDC server should not process AS_REQ without the pa-pac data",
-            ));
-        }
-
-        if let Some(correct_salt) = extract_preauth_salt(
-            &as_rep.unwrap_err(),
+        if let Some(hint) = extract_preauth_hint(
+            &krb_error,
             kdc_req_body.realm.0.0.as_utf8(),
             kdc_req_body
                 .cname
@@ -220,7 +228,11 @@ pub(crate) async fn as_exchange(
         )? {
             debug!("salt extracted successfully from the KRB_ERROR");
 
-            pa_data_options.with_salt(correct_salt.into_bytes());
+            pa_data_options.with_salt(hint.salt.into_bytes());
+            // The KDC accepts the timestamp only in the key type of the account.
+            if let Some(cipher_suite) = hint.cipher_suite {
+                pa_data_options.with_encryption_type(cipher_suite);
+            }
         }
     }
 

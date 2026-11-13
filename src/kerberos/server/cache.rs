@@ -5,7 +5,7 @@ use picky_asn1::wrapper::GeneralizedTimeAsn1;
 use picky_krb::data_types::{Microseconds, PrincipalName};
 
 #[derive(Debug, Clone, Eq)]
-pub struct AuthenticatorCacheRecord {
+pub(super) struct AuthenticatorCacheRecord {
     pub cname: PrincipalName,
     pub sname: PrincipalName,
     pub ctime: GeneralizedTimeAsn1,
@@ -65,4 +65,28 @@ impl Hash for AuthenticatorCacheRecord {
     }
 }
 
-pub(super) type AuthenticatorsCache = HashSet<AuthenticatorCacheRecord>;
+/// The authenticators the acceptor has seen within the allowed clock skew.
+///
+/// [Receipt of KRB_AP_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3):
+/// the acceptor must remember them to detect a replayed AP-REQ.
+/// Share one cache, behind an `Arc<Mutex<_>>`, between all contexts that serve the same service.
+/// A replay against a context that has another cache goes undetected.
+#[derive(Debug, Default, Clone)]
+pub struct AuthenticatorsCache(HashSet<AuthenticatorCacheRecord>);
+
+impl AuthenticatorsCache {
+    pub(super) fn retain(&mut self, predicate: impl FnMut(&AuthenticatorCacheRecord) -> bool) {
+        self.0.retain(predicate);
+    }
+
+    /// Remembers the authenticator.
+    /// Returns `false` if it has already been seen.
+    pub(super) fn insert(&mut self, record: AuthenticatorCacheRecord) -> bool {
+        self.0.insert(record)
+    }
+
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.0.len()
+    }
+}
