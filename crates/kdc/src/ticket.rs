@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
@@ -19,38 +20,67 @@ use time::OffsetDateTime;
 use crate::KERBEROS_VERSION;
 use crate::error::KdcError;
 
+// `TicketFlags` bit numbers, counted from the most significant bit.
+// [RFC 4120 §5.3](https://www.rfc-editor.org/rfc/rfc4120#section-5.3).
+
+/// `invalid` ticket flag: the ticket is not valid until validated.
+pub(super) const TICKET_FLAG_INVALID: usize = 7;
+/// `initial` ticket flag: the ticket was issued by the AS exchange rather than on the basis of a TGT.
+pub(super) const TICKET_FLAG_INITIAL: usize = 9;
+/// `pre-authent` ticket flag: the client was pre-authenticated before the ticket was issued.
+pub(super) const TICKET_FLAG_PRE_AUTHENT: usize = 10;
+/// `hw-authent` ticket flag: the client was authenticated with a hardware token.
+pub(super) const TICKET_FLAG_HW_AUTHENT: usize = 11;
+
+/// Encodes the ticket flags with the given bit numbers set.
+/// The KDC chooses the flags itself: they are not the client's `KDCOptions`.
+pub(super) fn ticket_flags(bits: &[usize]) -> KerberosFlags {
+    let value = bits.iter().fold(0u32, |acc, bit| acc | (1 << (31 - bit)));
+
+    KerberosFlags::from(BitString::with_bytes(value.to_be_bytes().to_vec()))
+}
+
 pub(super) struct MakeTicketParams<'ticket_enc_key> {
+    /// Realm of the server the ticket is issued for.
     pub realm: Realm,
+    /// Realm of the client `cname`.
+    pub client_realm: Realm,
     pub session_key: Vec<u8>,
     pub ticket_encryption_key: &'ticket_enc_key [u8],
-    pub kdc_options: KerberosFlags,
+    /// Etype of `ticket_encryption_key`.
+    pub ticket_encryption_etype: CipherSuite,
+    pub flags: KerberosFlags,
     pub sname: PrincipalName,
     pub cname: PrincipalName,
     pub etype: CipherSuite,
     pub auth_time: OffsetDateTime,
+    pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
 }
 
 pub(super) fn make_ticket(params: MakeTicketParams<'_>) -> Result<Ticket, KdcError> {
     let MakeTicketParams {
         realm,
+        client_realm,
         session_key,
         ticket_encryption_key,
-        kdc_options,
+        ticket_encryption_etype,
+        flags,
         sname,
         cname,
         etype,
         auth_time,
+        start_time,
         end_time,
     } = params;
 
     let ticket_enc_part = EncTicketPart::from(EncTicketPartInner {
-        flags: ExplicitContextTag0::from(kdc_options),
+        flags: ExplicitContextTag0::from(flags),
         key: ExplicitContextTag1::from(EncryptionKey {
             key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![u8::from(etype)])),
             key_value: ExplicitContextTag1::from(OctetStringAsn1::from(session_key)),
         }),
-        crealm: ExplicitContextTag2::from(realm.clone()),
+        crealm: ExplicitContextTag2::from(client_realm),
         cname: ExplicitContextTag3::from(cname),
         transited: ExplicitContextTag4::from(TransitedEncoding {
             // the client is unable to check these fields, so we can put any values we want
@@ -58,20 +88,20 @@ pub(super) fn make_ticket(params: MakeTicketParams<'_>) -> Result<Ticket, KdcErr
             contents: ExplicitContextTag1::from(OctetStringAsn1::from(vec![1])),
         }),
         auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),
-        starttime: Optional::from(None),
+        starttime: Optional::from(Some(ExplicitContextTag6::from(KerberosTime::from(
+            GeneralizedTime::from(start_time),
+        )))),
         endtime: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time))),
         renew_till: Optional::from(None),
         caddr: Optional::from(None),
         authorization_data: Optional::from(None),
     });
 
-    // The KDC can use any type of encryption it wants. RFC (https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3):
+    // RFC (https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3):
     // > ...the server will encrypt the ciphertext part of the ticket using the encryption key extracted from the server
     // > principal's record in the Kerberos database using the encryption type associated with the server principal's key.
     // > (This choice is NOT affected by the etype field in the request.)
-    //
-    // So, we always choose the most secure encryption type: AES256_CTS_HMAC_SHA1_96.
-    let ticket_enc_data = CipherSuite::Aes256CtsHmacSha196.cipher().encrypt(
+    let ticket_enc_data = ticket_encryption_etype.cipher().encrypt(
         ticket_encryption_key,
         TICKET_REP,
         &picky_asn1_der::to_vec(&ticket_enc_part)?,
@@ -82,7 +112,7 @@ pub(super) fn make_ticket(params: MakeTicketParams<'_>) -> Result<Ticket, KdcErr
         realm: ExplicitContextTag1::from(realm),
         sname: ExplicitContextTag2::from(sname),
         enc_part: ExplicitContextTag3::from(EncryptedData {
-            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![u8::from(CipherSuite::Aes256CtsHmacSha196)])),
+            etype: ExplicitContextTag0::from(IntegerAsn1::from(vec![u8::from(ticket_encryption_etype)])),
             kvno: Optional::from(None),
             cipher: ExplicitContextTag2::from(OctetStringAsn1::from(ticket_enc_data)),
         }),
@@ -93,16 +123,19 @@ pub(super) struct RepEncPartParams {
     pub etype: CipherSuite,
     pub session_key: Vec<u8>,
     pub nonce: Vec<u8>,
-    pub kdc_options: KerberosFlags,
+    pub flags: KerberosFlags,
     pub auth_time: OffsetDateTime,
+    pub start_time: OffsetDateTime,
     pub end_time: OffsetDateTime,
     pub realm: Realm,
     pub sname: PrincipalName,
     pub addresses: Option<HostAddresses>,
 }
 
+/// Encrypts the `EncKDCRepPart` with `encryption_key`, whose etype is `encryption_etype` (the client's key, not `params.etype`).
 pub(super) fn make_rep_enc_part<const TAG: u8>(
     params: RepEncPartParams,
+    encryption_etype: &CipherSuite,
     encryption_key: &[u8],
     key_usage: i32,
 ) -> Result<Vec<u8>, KdcError> {
@@ -110,8 +143,9 @@ pub(super) fn make_rep_enc_part<const TAG: u8>(
         etype,
         session_key,
         nonce,
-        kdc_options,
+        flags,
         auth_time,
+        start_time,
         end_time,
         realm,
         sname,
@@ -142,10 +176,10 @@ pub(super) fn make_rep_enc_part<const TAG: u8>(
         // > that MUST be matched with the nonce from the KRB_AS_REQ message.
         nonce: ExplicitContextTag2::from(IntegerAsn1::from(nonce)),
         key_expiration: Optional::from(None),
-        flags: ExplicitContextTag4::from(kdc_options),
+        flags: ExplicitContextTag4::from(flags),
         auth_time: ExplicitContextTag5::from(KerberosTime::from(GeneralizedTime::from(auth_time))),
         start_time: Optional::from(Some(ExplicitContextTag6::from(KerberosTime::from(
-            GeneralizedTime::from(auth_time),
+            GeneralizedTime::from(start_time),
         )))),
         end_time: ExplicitContextTag7::from(KerberosTime::from(GeneralizedTime::from(end_time))),
         renew_till: Optional::from(None),
@@ -157,7 +191,7 @@ pub(super) fn make_rep_enc_part<const TAG: u8>(
         encrypted_pa_data: Optional::from(None),
     });
 
-    let enc_data = etype
+    let enc_data = encryption_etype
         .cipher()
         .encrypt(encryption_key, key_usage, &picky_asn1_der::to_vec(&enc_part)?)?;
 

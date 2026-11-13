@@ -6,7 +6,6 @@ use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, ExplicitContextTag3,
     ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, IntegerAsn1, OctetStringAsn1, Optional,
 };
-use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
 use picky_krb::constants::key_usages::AS_REP_ENC;
 use picky_krb::constants::types::{
     AS_REP_MSG_TYPE, AS_REQ_MSG_TYPE, ENC_AS_REP_PART_TYPE, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE,
@@ -20,9 +19,13 @@ use zeroize::Zeroizing;
 
 use crate::config::{DomainUser, KerberosServer};
 use crate::error::KdcError;
-use crate::ticket::{MakeTicketParams, RepEncPartParams, make_rep_enc_part, make_ticket};
+use crate::ticket::{
+    MakeTicketParams, RepEncPartParams, TICKET_FLAG_INITIAL, TICKET_FLAG_PRE_AUTHENT, make_rep_enc_part, make_ticket,
+    ticket_flags,
+};
 use crate::{
-    KERBEROS_VERSION, TGT_SERVICE_NAME, find_user_credentials, validate_request_from_and_till, validate_request_sname,
+    KERBEROS_VERSION, TGT_SERVICE_NAME, find_user_credentials, supported_cipher_suite, validate_kdc_options,
+    validate_request_from_and_till, validate_request_sname,
 };
 
 /// Validates AS-REQ PA-DATAs.
@@ -33,7 +36,7 @@ fn validate_pa_data_timestamp(
     domain_user: &DomainUser,
     max_time_skew: u64,
     pa_datas: &[PaData],
-) -> Result<Zeroizing<Vec<u8>>, KdcError> {
+) -> Result<(Zeroizing<Vec<u8>>, CipherSuite), KdcError> {
     let pa_data = pa_datas
         .iter()
         .find_map(|pa_data| {
@@ -50,9 +53,8 @@ fn validate_pa_data_timestamp(
     let encrypted_timestamp: EncryptedData =
         picky_asn1_der::from_bytes(pa_data).map_err(|_| KdcError::PreAuthFailed("unable to decode pa-data value"))?;
 
-    let cipher = CipherSuite::try_from(encrypted_timestamp.etype.0.0.as_slice())
-        .map_err(|_| KdcError::PreAuthFailed("invalid etype in PA_ENC_TIMESTAMP"))?
-        .cipher();
+    let etype = supported_cipher_suite(encrypted_timestamp.etype.0.0.as_slice())?;
+    let cipher = etype.cipher();
     let key = Zeroizing::new(
         cipher
             .generate_key_from_password(domain_user.password.as_ref().as_bytes(), domain_user.salt.as_bytes())
@@ -65,7 +67,7 @@ fn validate_pa_data_timestamp(
             PA_ENC_TIMESTAMP_KEY_USAGE,
             &encrypted_timestamp.cipher.0.0,
         )
-        .map_err(|_| KdcError::Modified("PA_ENC_TIMESTAMP"))?;
+        .map_err(|_| KdcError::PreAuthFailed("PA_ENC_TIMESTAMP decryption failed: wrong key"))?;
     let timestamp: PaEncTsEnc = picky_asn1_der::from_bytes(&timestamp_data)
         .map_err(|_| KdcError::PreAuthFailed("unable to decode PaEncTsEnc value"))?;
 
@@ -77,7 +79,7 @@ fn validate_pa_data_timestamp(
         return Err(KdcError::ClockSkew("invalid pa-data: clock skew too great"));
     }
 
-    Ok(key)
+    Ok((key, etype))
 }
 
 /// Performs AS exchange according to the RFC 4120.
@@ -120,6 +122,8 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
         additional_tickets: _,
     } = &req_body.0;
 
+    validate_kdc_options(&kdc_options.0, false)?;
+
     let sname = sname
         .0
         .clone()
@@ -153,25 +157,16 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
         .0
         .0;
 
-    let user_key = validate_pa_data_timestamp(domain_user, kdc_config.max_time_skew, pa_datas)?;
+    let (user_key, etype_of_user_key) = validate_pa_data_timestamp(domain_user, kdc_config.max_time_skew, pa_datas)?;
     let as_req_nonce = nonce.0.0.clone();
-    let etype_raw = etype
-        .0
-        .0
-        .iter()
-        .find(|etype| {
-            // We support only AES256_CTS_HMAC_SHA1_96 and AES128_CTS_HMAC_SHA1_96. According to the RFC (https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3):
-            // > The KDC will not issue tickets with a weak session key encryption type.
-            if let Some(etype) = etype.0.first().copied().map(usize::from) {
-                etype == AES256_CTS_HMAC_SHA1_96 || etype == AES128_CTS_HMAC_SHA1_96
-            } else {
-                false
-            }
-        })
-        .ok_or(KdcError::NoSuitableEtype)?
-        .0
-        .as_slice();
-    let etype = CipherSuite::try_from(etype_raw).map_err(|_| KdcError::NoSuitableEtype)?;
+
+    // The reply is encrypted with the user key, so its etype is the one the pre-authentication data was derived for.
+    // It is supported (see `supported_cipher_suite`) and must be offered by the client.
+    let etype_raw = [u8::from(etype_of_user_key.clone())];
+    if !etype.0.0.iter().any(|offered| offered.0 == etype_raw) {
+        return Err(KdcError::PreAuthEtypeNotRequested);
+    }
+    let etype = etype_of_user_key;
     let cipher = etype.cipher();
     let realm = realm_asn1.0.clone();
     let (auth_time, end_time) = validate_request_from_and_till(from.0.as_deref(), &till.0, kdc_config.max_time_skew)?;
@@ -185,13 +180,15 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
             etype: etype.clone(),
             session_key: session_key.clone(),
             nonce: as_req_nonce,
-            kdc_options: kdc_options.0.clone(),
+            flags: ticket_flags(&[TICKET_FLAG_INITIAL, TICKET_FLAG_PRE_AUTHENT]),
             auth_time,
+            start_time: auth_time,
             end_time,
             realm: realm.clone(),
             sname: sname.clone(),
             addresses: addresses.0.clone().map(|addresses| addresses.0),
         },
+        &etype,
         user_key.as_ref(),
         AS_REP_ENC,
     )?;
@@ -214,14 +211,17 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
         crealm: ExplicitContextTag3::from(realm.clone()),
         cname: ExplicitContextTag4::from(cname.clone()),
         ticket: ExplicitContextTag5::from(make_ticket(MakeTicketParams {
+            client_realm: realm.clone(),
             realm,
             session_key,
             ticket_encryption_key: kdc_config.krbtgt_key.as_ref(),
-            kdc_options: kdc_options.0.clone(),
+            ticket_encryption_etype: CipherSuite::Aes256CtsHmacSha196,
+            flags: ticket_flags(&[TICKET_FLAG_INITIAL, TICKET_FLAG_PRE_AUTHENT]),
             sname,
             cname: cname.clone(),
             etype,
             auth_time,
+            start_time: auth_time,
             end_time,
         })?),
         enc_part: ExplicitContextTag6::from(EncryptedData {
@@ -238,7 +238,11 @@ mod tests {
     use picky_asn1::wrapper::ExplicitContextTag0;
     use picky_krb::data_types::KerberosTime;
 
-    use super::*;
+    use super::{
+        CipherSuite, DomainUser, EncryptedData, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1, KdcError,
+        OctetStringAsn1, OffsetDateTime, Optional, PA_ENC_TIMESTAMP, PA_ENC_TIMESTAMP_KEY_USAGE, PaData, PaEncTsEnc,
+        validate_pa_data_timestamp,
+    };
 
     fn encrypted_timestamp(user: &DomainUser, client_time: OffsetDateTime) -> PaData {
         let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
