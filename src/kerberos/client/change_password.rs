@@ -86,8 +86,11 @@ pub async fn change_password<'a>(
         &password_key(password.as_ref(), &salt, &client.encryption_params)?,
         &client.encryption_params,
         nonce,
-    )?
-    .key;
+    )?;
+    // The long-term key encrypted the reply, the session key has its own type.
+    // The AP-REQ authenticator and the KRB-PRIV are protected with it.
+    client.encryption_params.encryption_type = Some(session_key.cipher_suite);
+    let session_key = session_key.key;
 
     let seq_num = client.next_seq_number();
 

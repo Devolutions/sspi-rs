@@ -1341,6 +1341,10 @@ mod salt_regressions {
             let ApMessage::ApReq(ap_req) = message.ap_message else {
                 panic!("password change must carry an AP-REQ");
             };
+            // The KDC issues AES256 session keys.
+            let aes256 = [u8::try_from(picky_krb::constants::etypes::AES256_CTS_HMAC_SHA1_96).unwrap()];
+            assert_eq!(ap_req.0.authenticator.0.etype.0.0, aes256);
+            assert_eq!(message.krb_priv.0.enc_part.0.etype.0.0, aes256);
             let cipher = CipherSuite::Aes256CtsHmacSha196.cipher();
             let ticket: EncTicketPart = picky_asn1_der::from_bytes(
                 &cipher
@@ -1465,6 +1469,47 @@ mod salt_regressions {
         assert_eq!(error.error_type, ErrorKind::InternalError);
         assert_eq!(error.description, INSPECTED);
         assert_eq!(network.as_requests.load(Ordering::SeqCst), 2);
+        assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
+    }
+
+    // RFC 4120 section 5.2.9: the type of the session key is independent of the type of the key that encrypted the AS-REP.
+    // The authenticator of the password change is protected with the session key, so it uses the type of that key.
+    #[test]
+    fn kerberos_change_password_protects_the_request_with_the_type_of_the_session_key() {
+        let mut environment = environment_with_preauth_salt("password-change-session-key-type");
+        let service_key = vec![0x69; 32];
+        add_changepw_service(&mut environment, service_key.clone());
+        let network = PasswordChangeRequestInspector {
+            network: NetworkClientMock {
+                kdc: KdcMock::new(
+                    environment.realm,
+                    environment.keys,
+                    environment.users,
+                    Validators::default(),
+                )
+                .aes128_user_key(),
+            },
+            service_key,
+            as_requests: AtomicUsize::new(0),
+            inspected_password_requests: AtomicUsize::new(0),
+        };
+        let (mut client, _) = client_before_change_password(environment.credentials, &environment.target_name);
+        let mut output = [SecurityBuffer::new(Vec::new(), BufferType::Token)];
+        let change = ChangePasswordBuilder::new()
+            .with_domain_name("EXAMPLE.COM")
+            .with_account_name("pw13")
+            .with_old_password("qweQWE123!@#")
+            .with_new_password(NEW_PASSWORD)
+            .with_output(&mut output)
+            .build()
+            .unwrap();
+
+        let error = Sspi::change_password(&mut client, change)
+            .unwrap()
+            .resolve_with_client(&network)
+            .unwrap_err();
+
+        assert_eq!(error.description, INSPECTED);
         assert_eq!(network.inspected_password_requests.load(Ordering::SeqCst), 1);
     }
 
