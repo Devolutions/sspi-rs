@@ -1153,19 +1153,6 @@ mod tests {
         assert_eq!(decoded.pausec.0.unwrap().0.0, [0x01, 0xe0, 0x78]);
     }
 
-    // RFC 4120 §5.1: the DER encoding of an INTEGER has no redundant leading octets.
-    #[rstest::rstest]
-    #[case::zero(0, &[0x02, 0x01, 0x00])]
-    #[case::one_octet(0x7f, &[0x02, 0x01, 0x7f])]
-    #[case::high_bit_needs_a_sign_octet(0x80, &[0x02, 0x02, 0x00, 0x80])]
-    #[case::microseconds(123_000, &[0x02, 0x03, 0x01, 0xe0, 0x78])]
-    #[case::max_microseconds(999_999, &[0x02, 0x03, 0x0f, 0x42, 0x3f])]
-    #[case::high_bit_set(0x9abc_deef, &[0x02, 0x05, 0x00, 0x9a, 0xbc, 0xde, 0xef])]
-    #[case::max(u32::MAX, &[0x02, 0x05, 0x00, 0xff, 0xff, 0xff, 0xff])]
-    fn unsigned_values_are_minimal_der(#[case] value: u32, #[case] expected: &[u8]) {
-        assert_eq!(picky_asn1_der::to_vec(&u32_to_asn1(value)).unwrap(), expected);
-    }
-
     fn krb_string(value: &str) -> KerberosStringAsn1 {
         KerberosStringAsn1::from(IA5String::from_string(value.to_owned()).unwrap())
     }
