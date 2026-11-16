@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use rand::RngExt as _;
+use rand::rngs::{StdRng, SysRng};
+use rand_core::SeedableRng as _;
+
 cfg_if::cfg_if! {
     if #[cfg(windows)] {
         use windows::{
@@ -11,11 +15,11 @@ cfg_if::cfg_if! {
         use std::ptr::{null_mut};
         use core::ffi::{c_void};
 
-        /// Queries SRV records for `name`, returning each `(target, port)`.
+        /// Queries SRV records for `name`, returning each record with its priority and weight.
         ///
         /// `DnsQuery_W` yields a linked list that may include non-SRV records (e.g. A records for
         /// the SRV targets), so we walk `pNext` and keep only SRV entries.
-        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<(String, u16)> {
+        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<SrvRecord> {
             let mut records = Vec::new();
 
             let mut p_query_results: *mut DNS_RECORDA = null_mut();
@@ -39,6 +43,9 @@ cfg_if::cfg_if! {
                     // record types tell the truth for the rest of the walk.
                     // Nothing here runs under test, so when bumping the `windows` crate compare both struct definitions
                     // in `Win32::NetworkManagement::Dns` field by field.
+                    // UNTESTED: `wPriority` and `wWeight` are read from the same `Srv` union member as `wPort`.
+                    // A swapped field would mis-order KDCs on Windows without failing any test.
+                    // When changing this code, check the field mapping against `DNS_SRV_DATAW`.
                     let mut p_record = p_query_results.cast::<DNS_RECORDW>();
                     while !p_record.is_null() {
                         // SAFETY: `p_record` is non-null and points to a valid record of the list `DnsQuery_W`
@@ -50,7 +57,12 @@ cfg_if::cfg_if! {
                             let srv = unsafe { record.Data.Srv };
                             // SAFETY: `pNameTarget` points to a valid, null-terminated UTF-16 string.
                             if let Ok(name_target) = unsafe { srv.pNameTarget.to_string() } {
-                                records.push((name_target, srv.wPort));
+                                records.push(SrvRecord {
+                                    target: name_target,
+                                    port: srv.wPort,
+                                    priority: srv.wPriority,
+                                    weight: srv.wWeight,
+                                });
                             }
                         }
 
@@ -146,21 +158,7 @@ cfg_if::cfg_if! {
         }
 
         pub(crate) fn detect_kdc_hosts_from_dns_windows(domain: &str) -> Vec<String> {
-            let krb_tcp_name = &format!("_kerberos._tcp.{domain}");
-            let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
-
-            if !krb_tcp_srv.is_empty() {
-                return srv_records_to_kdc_urls("tcp", &krb_tcp_srv)
-            }
-
-            let krb_udp_name = &format!("_kerberos._udp.{domain}");
-            let krb_udp_srv = dns_query_srv_records(krb_udp_name);
-
-            if !krb_udp_srv.is_empty() {
-                return srv_records_to_kdc_urls("udp", &krb_udp_srv)
-            }
-
-            Vec::new()
+            detect_kdc_hosts_from_srv(domain, &mut dns_query_srv_records)
         }
     }
 }
@@ -172,14 +170,6 @@ cfg_if::cfg_if! {
         use tokio::time::timeout;
         use futures::stream::{StreamExt};
         use async_dnssd::{query_record, QueryRecordResult, QueriedRecordFlags, Type};
-
-        #[derive(Clone)]
-        pub(crate) struct DnsSrvRecord {
-            priority: u16,
-            weight: u16,
-            port: u16,
-            target: String
-        }
 
         /// Why an SRV callback could not be turned into a usable record, kept for diagnostics.
         #[derive(Debug)]
@@ -206,7 +196,7 @@ cfg_if::cfg_if! {
 
         impl std::error::Error for SrvRecordParseError {}
 
-        impl DnsSrvRecord {
+        impl SrvRecord {
             /// Parses the wire RDATA of an SRV record (RFC 2782: priority, weight, port, target).
             fn from_rdata(rdata: &[u8]) -> Result<Self, SrvRecordParseError> {
                 // An SRV record's RDATA is 2 (priority) + 2 (weight) + 2 (port) = 6 fixed
@@ -230,7 +220,7 @@ cfg_if::cfg_if! {
                 if target.is_empty() {
                     return Err(SrvRecordParseError::EmptyTarget);
                 }
-                Ok(DnsSrvRecord {
+                Ok(SrvRecord {
                     priority,
                     weight,
                     port,
@@ -239,7 +229,7 @@ cfg_if::cfg_if! {
             }
         }
 
-        impl TryFrom<&QueryRecordResult> for DnsSrvRecord {
+        impl TryFrom<&QueryRecordResult> for SrvRecord {
             type Error = SrvRecordParseError;
 
             fn try_from(record: &QueryRecordResult) -> Result<Self, Self::Error> {
@@ -278,11 +268,11 @@ cfg_if::cfg_if! {
             Err(SrvRecordParseError::MalformedTarget)
         }
 
-        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<DnsSrvRecord> {
+        pub(crate) fn dns_query_srv_records(name: &str) -> Vec<SrvRecord> {
             const QUERY_TIMEOUT: u64 = 1000;
 
-            async fn query_with_timeout(name: &str, query_timeout: u64) -> Vec<DnsSrvRecord> {
-                let mut dns_records: Vec<DnsSrvRecord> = Vec::new();
+            async fn query_with_timeout(name: &str, query_timeout: u64) -> Vec<SrvRecord> {
+                let mut dns_records: Vec<SrvRecord> = Vec::new();
                 let mut query = query_record(name, Type::SRV);
 
                 loop {
@@ -306,7 +296,7 @@ cfg_if::cfg_if! {
                                     "Skipping DNS SRV callback without ADD flag (negative response or record removal)"
                                 );
                             } else {
-                                match DnsSrvRecord::try_from(&dns_record) {
+                                match SrvRecord::try_from(&dns_record) {
                                     Ok(srv_record) => dns_records.push(srv_record),
                                     Err(reason) => {
                                         warn!(
@@ -345,23 +335,7 @@ cfg_if::cfg_if! {
         }
 
         pub(crate) fn detect_kdc_hosts_from_dns_apple(domain: &str) -> Vec<String> {
-            let krb_tcp_name = &format!("_kerberos._tcp.{domain}");
-            let krb_tcp_srv = dns_query_srv_records(krb_tcp_name);
-
-            if !krb_tcp_srv.is_empty() {
-                let records: Vec<(String, u16)> = krb_tcp_srv.into_iter().map(|x| (x.target, x.port)).collect();
-                return srv_records_to_kdc_urls("tcp", &records)
-            }
-
-            let krb_udp_name = &format!("_kerberos._udp.{domain}");
-            let krb_udp_srv = dns_query_srv_records(krb_udp_name);
-
-            if !krb_udp_srv.is_empty() {
-                let records: Vec<(String, u16)> = krb_udp_srv.into_iter().map(|x| (x.target, x.port)).collect();
-                return srv_records_to_kdc_urls("udp", &records)
-            }
-
-            Vec::new()
+            detect_kdc_hosts_from_srv(domain, &mut dns_query_srv_records)
         }
     }
 }
@@ -449,23 +423,25 @@ cfg_if::cfg_if! {
         }
 
         pub(crate) fn detect_kdc_hosts_from_dns_resolver(domain: &str) -> Vec<String> {
-            let mut kdc_hosts = Vec::new();
+            let Some(resolver) = get_dns_resolver(domain) else {
+                return Vec::new();
+            };
 
-            if let Some(resolver) = get_dns_resolver(domain) {
-                if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._tcp.{domain}"))) {
-                    let records: Vec<(String, u16)> =
-                        records.into_iter().map(|r| (r.target().to_string(), r.port())).collect();
-                    kdc_hosts.extend(srv_records_to_kdc_urls("tcp", &records));
-                }
-
-                if let Ok(records) = execute_future(resolver.srv_lookup(format!("_kerberos._udp.{domain}"))) {
-                    let records: Vec<(String, u16)> =
-                        records.into_iter().map(|r| (r.target().to_string(), r.port())).collect();
-                    kdc_hosts.extend(srv_records_to_kdc_urls("udp", &records));
-                }
-            }
-
-            kdc_hosts
+            detect_kdc_hosts_from_srv(domain, &mut |name| {
+                execute_future(resolver.srv_lookup(name))
+                    .map(|records| {
+                        records
+                            .iter()
+                            .map(|record| SrvRecord {
+                                target: record.target().to_string(),
+                                port: record.port(),
+                                priority: record.priority(),
+                                weight: record.weight(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            })
         }
     }
 }
@@ -501,21 +477,104 @@ where
     }
 }
 
-/// Builds `scheme://host:port` KDC URLs from resolved SRV `(target, port)` records.
+/// A resolved SRV record, independent of the platform resolver that produced it.
+#[derive(Clone, Debug)]
+pub(crate) struct SrvRecord {
+    target: String,
+    port: u16,
+    priority: u16,
+    weight: u16,
+}
+
+/// Orders SRV records as [RFC 2782] "The format of the SRV RR" requires.
 ///
-/// DNS returns absolute names with a trailing dot (`dc.example.com.`); it is stripped so the result parses as a URL host.
-///
-/// Limitation: the SRV priority and weight of [RFC 2782] are not applied, so candidates keep the order the platform
-/// resolver returned.
-/// Windows `DnsQuery_W` already sorts by priority and weight; hickory and `async_dnssd` do not.
-/// Tracked in <https://github.com/Devolutions/sspi-rs/issues/787>.
+/// Records are ordered by ascending priority, and each priority group by repeated weighted draws.
+/// `pick(max)` returns a number in `0..=max`; a larger value is clamped to `max`.
 ///
 /// [RFC 2782]: https://www.rfc-editor.org/rfc/rfc2782
-fn srv_records_to_kdc_urls(scheme: &str, records: &[(String, u16)]) -> Vec<String> {
-    records
-        .iter()
-        .map(|(target, port)| format!("{scheme}://{}:{port}", target.trim_end_matches('.')))
-        .collect()
+fn order_srv_records(mut records: Vec<SrvRecord>, pick: &mut dyn FnMut(u32) -> u32) -> Vec<SrvRecord> {
+    // Weight-0 records go first in each priority group, so they are selected only when the draw is 0.
+    // https://www.rfc-editor.org/rfc/rfc2782:
+    // > To select a target to be contacted next, arrange all SRV RRs
+    // > (that have not been ordered yet) in any order, except that all
+    // > those with weight 0 are placed at the beginning of the list.
+    records.sort_by_key(|record| (record.priority, record.weight != 0));
+
+    let mut ordered = Vec::with_capacity(records.len());
+
+    // https://www.rfc-editor.org/rfc/rfc2782:
+    // > Compute the sum of the weights of those RRs, and with each RR
+    // > associate the running sum in the selected order. Then choose a
+    // > uniform random number between 0 and the sum computed
+    // > (inclusive), and select the RR whose running sum value is the
+    // > first in the selected order which is greater than or equal to
+    // > the random number selected. The target host specified in the
+    // > selected SRV RR is the next one to be contacted by the client.
+    // > Remove this SRV RR from the set of the unordered SRV RRs and
+    // > apply the described algorithm to the unordered SRV RRs to select
+    // > the next target host.  Continue the ordering process until there
+    // > are no unordered SRV RRs.  This process is repeated for each
+    // > Priority.
+    while let Some(first) = records.first() {
+        let priority = first.priority;
+        let group_len = records.partition_point(|record| record.priority == priority);
+        let mut group: Vec<SrvRecord> = records.drain(..group_len).collect();
+
+        while !group.is_empty() {
+            ordered.push(group.remove(weighted_draw_index(&group, pick)));
+        }
+    }
+
+    return ordered;
+
+    /// Returns the index of the record that a weighted draw over `group` selects, as RFC 2782 describes.
+    fn weighted_draw_index(group: &[SrvRecord], pick: &mut dyn FnMut(u32) -> u32) -> usize {
+        let weight_sum: u32 = group.iter().map(|record| u32::from(record.weight)).sum();
+        let draw = pick(weight_sum).min(weight_sum);
+
+        // The selected record follows every record whose running sum is below `draw`.
+        // INVARIANT: `draw <= weight_sum`, and `weight_sum` is the last running sum.
+        // `take_while` therefore stops at or before the last record, so the index is in bounds.
+        group
+            .iter()
+            .scan(0u32, |running_sum, record| {
+                *running_sum += u32::from(record.weight);
+                Some(*running_sum)
+            })
+            .take_while(|&running_sum| running_sum < draw)
+            .count()
+    }
+}
+
+/// Builds `scheme://host:port` KDC URLs from resolved SRV records, ordered by [`order_srv_records`].
+///
+/// DNS returns absolute names with a trailing dot (`dc.example.com.`); it is stripped so the result parses as a URL host.
+fn srv_records_to_kdc_urls(scheme: &str, records: Vec<SrvRecord>) -> Vec<String> {
+    // A failed seed only loses the weighted spread: every draw is then 0 and the records stay in priority order.
+    // UNTESTED: the seed cannot be made to fail under test, so nothing checks that a failed seed does not panic.
+    // The global thread RNG panics on a failed seed, and a panic here aborts a host process that reaches this code
+    // through the FFI, so keep the seed fallible when changing this code.
+    let mut rng = StdRng::try_from_rng(&mut SysRng).ok();
+
+    order_srv_records(records, &mut |max| {
+        rng.as_mut().map_or(0, |rng| rng.random_range(0..=max))
+    })
+    .into_iter()
+    .map(|SrvRecord { target, port, .. }| format!("{scheme}://{}:{port}", target.trim_end_matches('.')))
+    .collect()
+}
+
+/// Resolves KDC URLs for `domain` through `lookup`, which returns the SRV records of a DNS name.
+///
+/// The `_kerberos._udp` records are used only when there are no `_kerberos._tcp` records.
+/// Active Directory publishes both sets for the same domain controllers, so using both would list every KDC twice.
+fn detect_kdc_hosts_from_srv(domain: &str, lookup: &mut dyn FnMut(&str) -> Vec<SrvRecord>) -> Vec<String> {
+    let tcp_records = lookup(&format!("_kerberos._tcp.{domain}"));
+    if !tcp_records.is_empty() {
+        return srv_records_to_kdc_urls("tcp", tcp_records);
+    }
+
+    srv_records_to_kdc_urls("udp", lookup(&format!("_kerberos._udp.{domain}")))
 }
 
 #[allow(unused_variables)]
@@ -536,7 +595,7 @@ pub(crate) fn detect_kdc_hosts_from_dns(domain: &str) -> Vec<String> {
 
 #[cfg(all(test, any(target_os = "macos", target_os = "ios")))]
 mod apple_srv_tests {
-    use super::{DnsSrvRecord, SrvRecordParseError};
+    use super::{SrvRecord, SrvRecordParseError};
     use crate::Result;
 
     /// Builds SRV RDATA: priority, weight, port, then `target` as length-prefixed DNS labels
@@ -558,7 +617,7 @@ mod apple_srv_tests {
     #[test]
     fn parses_well_formed_srv_record() {
         let rdata = srv_rdata(1, 2, 88, "dc.example.com").expect("failed to build SRV rdata");
-        let record = DnsSrvRecord::from_rdata(&rdata).expect("valid SRV record should parse");
+        let record = SrvRecord::from_rdata(&rdata).expect("valid SRV record should parse");
         assert_eq!(record.priority, 1);
         assert_eq!(record.weight, 2);
         assert_eq!(record.port, 88);
@@ -569,7 +628,7 @@ mod apple_srv_tests {
     fn rejects_empty_rdata() {
         // The original crash: an empty negative-response callback sliced as if it were SRV.
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&[]),
+            SrvRecord::from_rdata(&[]),
             Err(SrvRecordParseError::RdataTooShort)
         ));
     }
@@ -577,7 +636,7 @@ mod apple_srv_tests {
     #[test]
     fn rejects_rdata_shorter_than_fixed_header() {
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&[0, 1, 0]),
+            SrvRecord::from_rdata(&[0, 1, 0]),
             Err(SrvRecordParseError::RdataTooShort)
         ));
     }
@@ -586,7 +645,7 @@ mod apple_srv_tests {
     fn rejects_six_byte_rdata_with_no_target() {
         // Exactly the 6 fixed bytes, not even a root label: a truncated name.
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&[0, 1, 0, 2, 0, 88]),
+            SrvRecord::from_rdata(&[0, 1, 0, 2, 0, 88]),
             Err(SrvRecordParseError::MalformedTarget)
         ));
     }
@@ -595,7 +654,7 @@ mod apple_srv_tests {
     fn rejects_rfc2782_root_target() {
         // Target "." (a lone root label): RFC 2782 "service not available".
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&[0, 1, 0, 2, 0, 88, 0]),
+            SrvRecord::from_rdata(&[0, 1, 0, 2, 0, 88, 0]),
             Err(SrvRecordParseError::EmptyTarget)
         ));
     }
@@ -606,7 +665,7 @@ mod apple_srv_tests {
         // must not be silently accepted as the partial name "dc".
         let rdata = [0, 1, 0, 2, 0, 88, 2, b'd', b'c', 5, b'x'];
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&rdata),
+            SrvRecord::from_rdata(&rdata),
             Err(SrvRecordParseError::MalformedTarget)
         ));
     }
@@ -616,7 +675,7 @@ mod apple_srv_tests {
         // A complete label but the name runs off the end without a root label.
         let rdata = [0, 1, 0, 2, 0, 88, 2, b'd', b'c'];
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&rdata),
+            SrvRecord::from_rdata(&rdata),
             Err(SrvRecordParseError::MalformedTarget)
         ));
     }
@@ -627,7 +686,7 @@ mod apple_srv_tests {
         // which RFC 2782 forbids in an SRV target.
         let rdata = [0, 1, 0, 2, 0, 88, 0xC0, 0x0C];
         assert!(matches!(
-            DnsSrvRecord::from_rdata(&rdata),
+            SrvRecord::from_rdata(&rdata),
             Err(SrvRecordParseError::MalformedTarget)
         ));
     }
@@ -635,13 +694,179 @@ mod apple_srv_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::srv_records_to_kdc_urls;
+    use super::{SrvRecord, detect_kdc_hosts_from_srv, order_srv_records, srv_records_to_kdc_urls};
 
+    fn record(target: &str, priority: u16, weight: u16) -> SrvRecord {
+        SrvRecord {
+            target: target.to_owned(),
+            port: 88,
+            priority,
+            weight,
+        }
+    }
+
+    fn targets(records: &[SrvRecord]) -> Vec<&str> {
+        records.iter().map(|record| record.target.as_str()).collect()
+    }
+
+    // A backup KDC listed first by the resolver must not be tried before the primary.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Priority)
     #[test]
-    fn builds_scheme_host_port_and_preserves_order() {
-        let records = vec![("dc1.example.com".to_owned(), 88), ("dc2.example.com".to_owned(), 8888)];
+    fn lower_priority_value_is_tried_first() {
+        let records = vec![
+            record("backup.example.com", 20, 0),
+            record("tertiary.example.com", 30, 0),
+            record("primary.example.com", 10, 0),
+        ];
+
+        // A target within a priority is chosen by `pick`; each priority here has one record, so `pick` is irrelevant.
+        let ordered = order_srv_records(records, &mut |_| 0);
+
         assert_eq!(
-            srv_records_to_kdc_urls("tcp", &records),
+            targets(&ordered),
+            ["primary.example.com", "backup.example.com", "tertiary.example.com"]
+        );
+    }
+
+    // Weights 0, 1 and 3 have running sums 0, 1 and 4.
+    // A draw of 2 selects the first record whose running sum reaches 2, the weight-3 record.
+    // The remaining weights 0 and 1 have running sums 0 and 1, so a draw of 1 selects the weight-1 record.
+    // Each draw is taken from `0..=sum of the remaining weights`.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight)
+    #[test]
+    fn equal_priority_records_are_selected_by_running_weight_sum() {
+        let records = vec![
+            record("zero.example.com", 10, 0),
+            record("one.example.com", 10, 1),
+            record("three.example.com", 10, 3),
+        ];
+
+        let mut script = [2, 1, 0].into_iter();
+        let mut draw_maxima = Vec::new();
+        let ordered = order_srv_records(records, &mut |max| {
+            draw_maxima.push(max);
+            script.next().expect("more draws than records")
+        });
+
+        assert_eq!(
+            targets(&ordered),
+            ["three.example.com", "one.example.com", "zero.example.com"]
+        );
+        assert_eq!(draw_maxima[..2], [4, 1]);
+    }
+
+    // Weights 0, 1 and 3 have running sums 0, 1 and 4.
+    // A draw of 1 selects the weight-1 record, which is neither the first nor the last one.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight)
+    #[test]
+    fn draw_selects_a_record_in_the_middle_of_the_group() {
+        let records = vec![
+            record("zero.example.com", 10, 0),
+            record("one.example.com", 10, 1),
+            record("three.example.com", 10, 3),
+        ];
+
+        let ordered = order_srv_records(records, &mut |_| 1);
+
+        assert_eq!(targets(&ordered)[0], "one.example.com");
+    }
+
+    // Weight-0 records are placed at the beginning of the list, so only a draw of 0 selects one.
+    // That holds even when the resolver returned the weight-0 record after positively weighted ones.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight)
+    #[test]
+    fn weight_zero_record_is_selected_only_by_a_zero_draw() {
+        let records = vec![
+            record("three.example.com", 10, 3),
+            record("zero.example.com", 10, 0),
+            record("one.example.com", 10, 1),
+        ];
+
+        let ordered = order_srv_records(records, &mut |_| 0);
+
+        assert_eq!(targets(&ordered)[0], "zero.example.com");
+    }
+
+    // With every weight 0, the only draw is 0 and every record must still be returned once.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight)
+    #[test]
+    fn all_zero_weights_keep_every_record() {
+        let records = vec![
+            record("a.example.com", 10, 0),
+            record("b.example.com", 10, 0),
+            record("c.example.com", 10, 0),
+        ];
+
+        let ordered = order_srv_records(records, &mut |max| {
+            assert_eq!(max, 0, "the draw range is 0..=sum of weights");
+            0
+        });
+
+        let mut ordered_targets = targets(&ordered);
+        ordered_targets.sort_unstable();
+        assert_eq!(ordered_targets, ["a.example.com", "b.example.com", "c.example.com"]);
+    }
+
+    // A draw is taken over the weights of one priority only, and a group is fully ordered before the next one starts.
+    // The first draw of priority 10, with weights 1 and 3, is from `0..=4`.
+    // The first draw of priority 20, with weights 5 and 7, is from `0..=12`.
+    // Which record a draw selects is left open by the RFC, so only the first draw of each group and the grouping are
+    // asserted.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight)
+    #[test]
+    fn weights_are_summed_within_one_priority_only() {
+        let records = vec![
+            record("p20-w7.example.com", 20, 7),
+            record("p10-w3.example.com", 10, 3),
+            record("p20-w5.example.com", 20, 5),
+            record("p10-w1.example.com", 10, 1),
+        ];
+
+        let mut draw_maxima = Vec::new();
+        let ordered = order_srv_records(records, &mut |max| {
+            draw_maxima.push(max);
+            0
+        });
+
+        assert_eq!(draw_maxima.len(), 4);
+        assert_eq!([draw_maxima[0], draw_maxima[2]], [4, 12]);
+        assert!(ordered[..2].iter().all(|record| record.priority == 10));
+        assert!(ordered[2..].iter().all(|record| record.priority == 20));
+    }
+
+    // Two weights of `u16::MAX` sum past `u16::MAX`, so the draw range must be computed in a wider type.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Weight: 16-bit field, sum of weights)
+    #[test]
+    fn weight_sum_does_not_overflow_16_bits() {
+        let records = vec![
+            record("a.example.com", 10, u16::MAX),
+            record("b.example.com", 10, u16::MAX),
+        ];
+
+        let mut draw_maxima = Vec::new();
+        let ordered = order_srv_records(records, &mut |max| {
+            draw_maxima.push(max);
+            max
+        });
+
+        // The running sums are 65535 and 131070, so a draw of 131070 first reaches the sum at the second record.
+        assert_eq!(draw_maxima[0], 2 * u32::from(u16::MAX));
+        assert_eq!(targets(&ordered), ["b.example.com", "a.example.com"]);
+    }
+
+    // Distinct priorities make the order independent of the random draw.
+    // oracle: mutant a swapped scheme, host or port in the URL, or a dropped record
+    #[test]
+    fn builds_scheme_host_port_in_priority_order() {
+        let records = vec![
+            SrvRecord {
+                port: 8888,
+                ..record("dc2.example.com", 20, 0)
+            },
+            record("dc1.example.com", 10, 0),
+        ];
+        assert_eq!(
+            srv_records_to_kdc_urls("tcp", records),
             vec![
                 "tcp://dc1.example.com:88".to_owned(),
                 "tcp://dc2.example.com:8888".to_owned()
@@ -649,17 +874,77 @@ mod tests {
         );
     }
 
+    // oracle: mutant a kept trailing dot, which leaves a URL host that does not parse
     #[test]
     fn strips_trailing_dot_from_absolute_names() {
-        let records = vec![("dc.example.com.".to_owned(), 88)];
+        let records = vec![record("dc.example.com.", 0, 0)];
         assert_eq!(
-            srv_records_to_kdc_urls("udp", &records),
+            srv_records_to_kdc_urls("udp", records),
             vec!["udp://dc.example.com:88".to_owned()]
         );
     }
 
+    // oracle: mutant a panic or a spurious URL on empty input
     #[test]
     fn empty_input_yields_empty() {
-        assert!(srv_records_to_kdc_urls("tcp", &[]).is_empty());
+        assert!(srv_records_to_kdc_urls("tcp", Vec::new()).is_empty());
+    }
+
+    fn lookup_from<'a>(tcp: &'a [SrvRecord], udp: &'a [SrvRecord]) -> impl FnMut(&str) -> Vec<SrvRecord> + 'a {
+        move |name| match name {
+            "_kerberos._tcp.tbt.com" => tcp.to_vec(),
+            "_kerberos._udp.tbt.com" => udp.to_vec(),
+            other => panic!("unexpected DNS name {other}"),
+        }
+    }
+
+    // AD publishes both record sets for the same DCs, so using both would list every KDC twice.
+    // oracle: mutant tcp and udp candidates concatenated, which retries a dead KDC over the other transport
+    #[test]
+    fn udp_records_are_ignored_when_tcp_records_exist() {
+        let tcp = [record("dc1.example.com", 0, 100)];
+        let udp = [record("dc1.example.com", 0, 100), record("dc2.example.com", 0, 100)];
+
+        let hosts = detect_kdc_hosts_from_srv("tbt.com", &mut lookup_from(&tcp, &udp));
+
+        assert_eq!(hosts, ["tcp://dc1.example.com:88"]);
+    }
+
+    // oracle: mutant udp records dropped, which leaves a realm that publishes only udp records without a KDC
+    #[test]
+    fn udp_records_are_used_when_there_are_no_tcp_records() {
+        let udp = [record("dc2.example.com", 0, 100)];
+
+        let hosts = detect_kdc_hosts_from_srv("tbt.com", &mut lookup_from(&[], &udp));
+
+        assert_eq!(hosts, ["udp://dc2.example.com:88"]);
+    }
+
+    // Whatever the draws, every record is returned once and a lower priority value never follows a higher one.
+    // oracle: spec RFC 2782 §"The format of the SRV RR" (Priority)
+    proptest::proptest! {
+        #[test]
+        fn ordering_is_a_priority_sorted_permutation(
+            fields in proptest::collection::vec((0u16..4, proptest::num::u16::ANY), 0..12),
+            draws in proptest::collection::vec(proptest::num::u32::ANY, 1..12),
+        ) {
+            let records: Vec<SrvRecord> = fields
+                .iter()
+                .enumerate()
+                .map(|(index, &(priority, weight))| record(&format!("dc{index}.example.com"), priority, weight))
+                .collect();
+
+            let mut draws = draws.into_iter().cycle();
+            let ordered = order_srv_records(records.clone(), &mut |max| draws.next().unwrap_or(0) % (max + 1));
+
+            let mut expected_targets = targets(&records);
+            let mut actual_targets = targets(&ordered);
+            expected_targets.sort_unstable();
+            actual_targets.sort_unstable();
+            // Make sure we do not lost any targets in the ordering and did not introduce any duplicates or omissions.
+            proptest::prop_assert_eq!(actual_targets, expected_targets);
+            // Make sure the ordering respects the priority rules of SRV records.
+            proptest::prop_assert!(ordered.windows(2).all(|pair| pair[0].priority <= pair[1].priority));
+        }
     }
 }
