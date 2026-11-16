@@ -273,16 +273,16 @@ pub fn try_get_piv_container_name(reader: &str, certificate_label: &[u8]) -> Res
 mod tests {
     use super::chuid_to_container_name;
 
+    /// Valid CHUID from the testing YubiKey device.
+    const CHUID: [u8; 61] = [
+        83, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33, 200,
+        66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53, 8, 50, 48,
+        51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
+    ];
+
     #[test]
     fn container_name_formatting() {
-        // Valid CHUID from the testing YubiKey device.
-        let chuid = &[
-            83, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
-            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
-        ];
-
-        let container_name = chuid_to_container_name(chuid, winscard::PIV_CERT_TAG).unwrap();
+        let container_name = chuid_to_container_name(&CHUID, winscard::PIV_CERT_TAG).unwrap();
 
         assert_eq!(container_name, "1d8ac658-e065-92a0-85af-090b075fc105");
     }
@@ -291,43 +291,23 @@ mod tests {
     fn invalid_chuid() {
         let cert_tag = winscard::PIV_CERT_TAG;
 
-        // Too short.
-        let invalid_chuid = &[
-            83, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
+        type Mutation = fn(&mut Vec<u8>);
+        let mutations: [(&str, Mutation); 5] = [
+            ("too short", |chuid| chuid.truncate(48)),
+            ("CHUID tag", |chuid| chuid[0] = 81),
+            ("FASC-N tag", |chuid| chuid[2] = 42),
+            ("GUID tag", |chuid| chuid[29] = 51),
+            ("error detection code", |chuid| {
+                chuid[59] = 250;
+                chuid[60] = 1;
+            }),
         ];
-        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
 
-        // Invalid CHUID tag.
-        let invalid_chuid = &[
-            81, 59, 48, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
-            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
-        ];
-        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+        for (name, mutate) in mutations {
+            let mut chuid = CHUID.to_vec();
+            mutate(&mut chuid);
 
-        // Invalid FASC-N tag.
-        let invalid_chuid = &[
-            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 52, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
-            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
-        ];
-        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
-
-        // Invalid GUID tag.
-        let invalid_chuid = &[
-            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 51, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
-            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 254, 0,
-        ];
-        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
-
-        // Invalid error detection code.
-        let invalid_chuid = &[
-            81, 59, 42, 25, 212, 231, 57, 218, 115, 156, 237, 57, 206, 115, 157, 131, 104, 88, 33, 8, 66, 16, 132, 33,
-            200, 66, 16, 195, 235, 51, 16, 88, 198, 138, 29, 101, 224, 160, 146, 133, 175, 9, 11, 7, 11, 93, 121, 53,
-            8, 50, 48, 51, 48, 48, 49, 48, 49, 62, 0, 250, 1,
-        ];
-        assert!(chuid_to_container_name(invalid_chuid, cert_tag).is_err());
+            assert!(chuid_to_container_name(&chuid, cert_tag).is_err(), "{name}");
+        }
     }
 }

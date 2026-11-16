@@ -444,19 +444,17 @@ pub unsafe extern "system" fn DpapiFree(buf: LpCByte) -> u32 {
     reason = "undocumented unsafe is acceptable in tests"
 )]
 mod tests {
-    //! This tests simulate `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
-    //! It's better to run them using Miri: https://github.com/rust-lang/miri.
-    //! cargo +nightly miri test
+    //! These tests simulate `DpapiProtectSecret`, `DpapiUnprotectSecret`, and `DpapiFree` function calls.
+    //! Run them under [Miri](https://github.com/rust-lang/miri): `cargo +nightly miri test`.
     //!
-    //! Note: this tests aim to check only the FFI functions implementation.
-    //! Checking the correctness of DPAPI functions is not a goal of these tests.
+    //! They check only the FFI layer, not the correctness of the DPAPI functions.
 
     use std::ptr::{null, null_mut};
 
     use super::*;
 
-    #[test]
-    fn test_dpapi_protect_secret() {
+    /// Protects and unprotects a secret. A null `proxy_url` with no token callback means no proxy.
+    fn protect_unprotect_round_trip(proxy_url: *const u8, get_session_token: Option<GetSessionTokenFn>) {
         let secret = b"secret-to-encrypt";
         let secret_len: u32 = secret.len().try_into().expect("secret length must fit into u32");
         let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
@@ -476,8 +474,8 @@ mod tests {
                 username.as_ptr(),
                 password.as_ptr(),
                 null(),
-                null(),
-                None,
+                proxy_url,
+                get_session_token,
                 &mut blob,
                 &mut blob_len,
             )
@@ -498,8 +496,8 @@ mod tests {
                 username.as_ptr(),
                 password.as_ptr(),
                 null(),
-                null(),
-                None,
+                proxy_url,
+                get_session_token,
                 &mut decrypted_secret,
                 &mut secret_len,
             )
@@ -514,61 +512,14 @@ mod tests {
     }
 
     #[test]
+    fn test_dpapi_protect_secret() {
+        protect_unprotect_round_trip(null(), None);
+    }
+
+    #[test]
     fn test_dpapi_protect_secret_proxied() {
-        let secret = b"secret-to-encrypt";
-        let secret_len: u32 = secret.len().try_into().expect("secret length must fit into u32");
-        let sid = "S-1-5-21-1485435871-894665558-560847465-1104\0";
-        let server = "win-956cqossjtf.tbt.com\0";
-        let username = "t2@tbt.com\0";
-        let password = "qqqQQQ111!!!\0";
         let proxy_url = "ws://dg.tbt.com:7171/\0";
-        let mut blob: LpByte = null_mut();
-        let mut blob_len = 0;
 
-        let result = unsafe {
-            DpapiProtectSecret(
-                secret.as_ptr(),
-                secret_len,
-                sid.as_ptr(),
-                null(),
-                server.as_ptr(),
-                username.as_ptr(),
-                password.as_ptr(),
-                null(),
-                proxy_url.as_ptr(),
-                Some(api::get_session_token),
-                &mut blob,
-                &mut blob_len,
-            )
-        };
-
-        assert_eq!(result, ERROR_SUCCESS);
-        assert!(!blob.is_null());
-        assert!(blob_len > 0);
-
-        let mut decrypted_secret: LpByte = null_mut();
-        let mut secret_len = 0;
-
-        let result = unsafe {
-            DpapiUnprotectSecret(
-                blob,
-                blob_len,
-                server.as_ptr(),
-                username.as_ptr(),
-                password.as_ptr(),
-                null(),
-                proxy_url.as_ptr(),
-                Some(api::get_session_token),
-                &mut decrypted_secret,
-                &mut secret_len,
-            )
-        };
-
-        assert_eq!(result, ERROR_SUCCESS);
-        assert!(!decrypted_secret.is_null());
-        assert!(secret_len > 0);
-
-        unsafe { DpapiFree(blob) };
-        unsafe { DpapiFree(decrypted_secret) };
+        protect_unprotect_round_trip(proxy_url.as_ptr(), Some(api::get_session_token));
     }
 }

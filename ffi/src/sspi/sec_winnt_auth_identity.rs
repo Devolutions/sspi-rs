@@ -1173,36 +1173,15 @@ mod tests {
         let identity = identity.cast::<SecWinntAuthIdentityW>();
         let identity = unsafe { identity.as_mut() }.expect("identity is not null");
 
-        let user_length = identity
-            .user_length
-            .try_into()
-            .expect("user_length should fit into usize");
-        let password_length = identity
-            .password_length
-            .try_into()
-            .expect("password_length should fit into usize");
-        let domain_length = identity
-            .domain_length
-            .try_into()
-            .expect("domain_length should fit into usize");
+        // Each pointer is valid for the length stored next to it.
+        let utf16_to_string = |ptr: *const u16, len: u32| {
+            String::from_utf16(unsafe { from_raw_parts(ptr, len.try_into().expect("length should fit into usize")) })
+                .expect("value is a correct utf-16 string")
+        };
 
-        assert_eq!(
-            "user",
-            String::from_utf16(unsafe { from_raw_parts(identity.user, user_length) })
-                .expect("user is a correct utf-16 string")
-        );
-
-        assert_eq!(
-            "pass",
-            String::from_utf16(unsafe { from_raw_parts(identity.password, password_length) })
-                .expect("password is a correct utf-16 string")
-        );
-
-        assert_eq!(
-            "domain",
-            String::from_utf16(unsafe { from_raw_parts(identity.domain, domain_length) })
-                .expect("domain is a correct utf-16 string")
-        );
+        assert_eq!("user", utf16_to_string(identity.user, identity.user_length));
+        assert_eq!("pass", utf16_to_string(identity.password, identity.password_length));
+        assert_eq!("domain", utf16_to_string(identity.domain, identity.domain_length));
 
         let auth_data = ptr::from_mut(identity).cast();
         let status = unsafe { SspiFreeAuthIdentity(auth_data) };

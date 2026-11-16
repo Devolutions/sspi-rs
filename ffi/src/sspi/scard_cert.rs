@@ -264,16 +264,14 @@ mod tests {
 
     use super::{extract_upn_from_certificate, is_ec_certificate, validate_certificate};
 
+    fn der(pem: &str) -> Vec<u8> {
+        Cert::from_pem_str(pem).unwrap().to_der().unwrap()
+    }
+
     #[test]
     fn ec_certificate_detection() {
-        let ec = Cert::from_pem_str(include_str!("../../../test_assets/ec_p256.cer"))
-            .unwrap()
-            .to_der()
-            .unwrap();
-        let rsa = Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer"))
-            .unwrap()
-            .to_der()
-            .unwrap();
+        let ec = der(include_str!("../../../test_assets/ec_p256.cer"));
+        let rsa = der(include_str!("../../../test_assets/pw11.cer"));
 
         assert!(is_ec_certificate(&ec));
         assert!(!is_ec_certificate(&rsa));
@@ -291,15 +289,9 @@ mod tests {
 
     #[test]
     fn valid_scard_certificate() {
-        let certificate = Cert::from_pem_str(include_str!("../../../test_assets/pw11.cer"))
-            .unwrap()
-            .to_der()
-            .unwrap();
-        // The following certificate has "pW11@ExAmPlE.cOm" UPN.
-        let cert_uppercase_upn = Cert::from_pem_str(include_str!("../../../test_assets/pw11_upper_case_upn.cer"))
-            .unwrap()
-            .to_der()
-            .unwrap();
+        let certificate = der(include_str!("../../../test_assets/pw11.cer"));
+        // The UPN of this certificate is "pW11@ExAmPlE.cOm".
+        let cert_uppercase_upn = der(include_str!("../../../test_assets/pw11_upper_case_upn.cer"));
 
         validate_certificate(&certificate, "pw11@example.com").expect("certificate is valid");
         validate_certificate(&cert_uppercase_upn, "pw11@example.com").expect("certificate is valid");
@@ -307,29 +299,27 @@ mod tests {
 
     #[test]
     fn invalid_scard_certificate() {
-        let cert_without_upn = Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_upn.cer"))
-            .unwrap()
-            .to_der()
-            .unwrap();
-        let cert_without_ext_key_usage =
-            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_ext_key_usage.cer"))
-                .unwrap()
-                .to_der()
-                .unwrap();
-        let cert_without_scard_logon =
-            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_scard_logon.cer"))
-                .unwrap()
-                .to_der()
-                .unwrap();
-        let cert_without_client_auth =
-            Cert::from_pem_str(include_str!("../../../test_assets/pw11_without_client_auth.cer"))
-                .unwrap()
-                .to_der()
-                .unwrap();
+        let invalid_certificates = [
+            (
+                "without UPN",
+                der(include_str!("../../../test_assets/pw11_without_upn.cer")),
+            ),
+            (
+                "without extended key usage",
+                der(include_str!("../../../test_assets/pw11_without_ext_key_usage.cer")),
+            ),
+            (
+                "without smart card logon",
+                der(include_str!("../../../test_assets/pw11_without_scard_logon.cer")),
+            ),
+            (
+                "without client auth",
+                der(include_str!("../../../test_assets/pw11_without_client_auth.cer")),
+            ),
+        ];
 
-        assert!(validate_certificate(&cert_without_upn, "pw11@example.com").is_err());
-        assert!(validate_certificate(&cert_without_ext_key_usage, "pw11@example.com").is_err());
-        assert!(validate_certificate(&cert_without_scard_logon, "pw11@example.com").is_err());
-        assert!(validate_certificate(&cert_without_client_auth, "pw11@example.com").is_err());
+        for (name, certificate) in &invalid_certificates {
+            assert!(validate_certificate(certificate, "pw11@example.com").is_err(), "{name}");
+        }
     }
 }
