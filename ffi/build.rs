@@ -132,9 +132,9 @@ fn main() {
     if !is_running_tests {
         let mut csbindgen_builder = csbindgen::Builder::default()
             .input_extern_file("src/logging.rs")
-            .input_extern_file("src/sspi/common.rs")
-            .input_extern_file("src/sspi/sec_handle.rs")
-            .input_extern_file("src/sspi/sec_pkg_info.rs")
+            .input_extern_file("src/sspi/common/mod.rs")
+            .input_extern_file("src/sspi/sec_handle/mod.rs")
+            .input_extern_file("src/sspi/sec_pkg_info/mod.rs")
             .input_extern_file("src/sspi/sec_winnt_auth_identity.rs")
             .input_extern_file("src/sspi/security_tables.rs")
             .input_extern_file("src/sspi/sec_buffer.rs")
