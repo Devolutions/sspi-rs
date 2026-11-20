@@ -10,7 +10,6 @@ use crate::kerberos::client::generators::{
 };
 use crate::kerberos::encryption_params::EncryptionParams;
 #[cfg(feature = "scard")]
-use crate::kerberos::kdc_cert::KdcTrust;
 #[cfg(feature = "scard")]
 use crate::pk_init::{
     GenerateAsPaDataOptions as SmartCardPaDataOptions, generate_pa_datas_for_as_req_at as generate_private_key_based_at,
@@ -67,20 +66,20 @@ impl AsReqPaDataOptions<'_> {
 
 /// Validates the `SignedData` of the KDC reply and extracts the KDC key agreement public key from it.
 ///
-/// The signing certificate is checked against `trust` and `now`, and the signature
+/// The signing certificate is checked against `ca_cert` and `now`, and the signature
 /// and the `content-type` signed attribute are verified.
 /// `extract_public_key` is expected to check the expiration of the key against `now`.
 #[cfg(feature = "scard")]
 fn verify_kdc_reply(
     signed_data: &picky_asn1_x509::signed_data::SignedData,
-    trust: KdcTrust<'_>,
+    ca_cert: Option<&picky_asn1_x509::Certificate>,
     now: OffsetDateTime,
     extract_public_key: fn(&picky_asn1_x509::signed_data::SignedData, Option<OffsetDateTime>) -> Result<Vec<u8>>,
 ) -> Result<Vec<u8>> {
     use super::kdc_cert::{validate_content_type_attribute, validate_kdc_certificate};
     use crate::pku2u::{validate_server_p2p_certificate, validate_signed_data};
 
-    validate_kdc_certificate(signed_data, trust, now)?;
+    validate_kdc_certificate(signed_data, ca_cert, now)?;
     let rsa_public_key = validate_server_p2p_certificate(signed_data)?;
     validate_signed_data(signed_data, &rsa_public_key)?;
     validate_content_type_attribute(signed_data)?;
@@ -105,7 +104,7 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
     SmartCard {
         key_agreement: &'a mut crate::pk_init::KeyAgreement,
         enc_params: &'a mut EncryptionParams,
-        /// Trust anchor for the KDC certificate. The system trust store is used if it is not set.
+        /// CA certificate that the KDC certificate must chain up to. The system trust store is used if it is not set.
         ca_cert: Option<&'a crate::CertificateRaw>,
         /// The time to validate the KDC certificate and the KDC DH key against.
         now: OffsetDateTime,
@@ -159,7 +158,6 @@ impl AsRepSessionKeyExtractor<'_> {
                 let signed_data = wrapped_signed_data.content.0;
 
                 let ca_cert = ca_cert.map(picky_asn1_x509::Certificate::from);
-                let trust = KdcTrust::from_env(ca_cert.as_ref());
 
                 enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
                 let cipher =
@@ -169,7 +167,8 @@ impl AsRepSessionKeyExtractor<'_> {
                     KeyAgreement::Dh(dh_parameters) => {
                         dh_parameters.server_nonce = Some(server_nonce);
 
-                        let public_key = verify_kdc_reply(&signed_data, trust, *now, extract_server_dh_public_key)?;
+                        let public_key =
+                            verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now, extract_server_dh_public_key)?;
                         dh_parameters.other_public_key = Some(public_key);
 
                         generate_key(
@@ -191,7 +190,7 @@ impl AsRepSessionKeyExtractor<'_> {
                     }
                     KeyAgreement::Ecdh(ecdh_parameters) => {
                         let server_public_key =
-                            verify_kdc_reply(&signed_data, trust, *now, extract_server_ecdh_public_key)?;
+                            verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now, extract_server_ecdh_public_key)?;
                         let shared_secret = ecdh_parameters.shared_secret(&server_public_key)?;
 
                         generate_key_from_shared_secret(
@@ -243,7 +242,7 @@ mod tests {
     use picky_krb::pkinit::KdcDhKeyInfo;
     use time::{Date, Month, OffsetDateTime};
 
-    use super::{KdcTrust, verify_kdc_reply};
+    use super::verify_kdc_reply;
     use crate::ErrorKind;
     use crate::pk_init::extract_server_dh_public_key;
 
@@ -365,8 +364,12 @@ mod tests {
         picky_asn1_der::from_bytes(&picky_asn1_der::to_vec(&signed_data).unwrap()).unwrap()
     }
 
-    fn verify(signed_data: &SignedData, trust: KdcTrust<'_>, now: OffsetDateTime) -> crate::Result<Vec<u8>> {
-        verify_kdc_reply(signed_data, trust, now, extract_server_dh_public_key)
+    fn verify(
+        signed_data: &SignedData,
+        ca_cert: Option<&picky_asn1_x509::Certificate>,
+        now: OffsetDateTime,
+    ) -> crate::Result<Vec<u8>> {
+        verify_kdc_reply(signed_data, ca_cert, now, extract_server_dh_public_key)
     }
 
     #[test]
@@ -374,7 +377,7 @@ mod tests {
         let fixture = kdc_fixture(2028);
         let signed_data = signed_dh_reply(&fixture, true, Some(now() + time::Duration::hours(1)));
 
-        let key = verify(&signed_data, KdcTrust::CaCert(&asn1_cert(&fixture.root)), now()).unwrap();
+        let key = verify(&signed_data, Some(&asn1_cert(&fixture.root)), now()).unwrap();
 
         assert_eq!(key, DH_PUBLIC_KEY);
     }
@@ -384,7 +387,7 @@ mod tests {
         let fixture = kdc_fixture(2028);
         let signed_data = signed_dh_reply(&fixture, false, None);
 
-        let error = verify(&signed_data, KdcTrust::CaCert(&asn1_cert(&fixture.root)), now()).unwrap_err();
+        let error = verify(&signed_data, Some(&asn1_cert(&fixture.root)), now()).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
@@ -394,7 +397,7 @@ mod tests {
         let fixture = kdc_fixture(2028);
         let signed_data = signed_dh_reply(&fixture, true, Some(now() - time::Duration::hours(1)));
 
-        let error = verify(&signed_data, KdcTrust::CaCert(&asn1_cert(&fixture.root)), now()).unwrap_err();
+        let error = verify(&signed_data, Some(&asn1_cert(&fixture.root)), now()).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
@@ -404,29 +407,19 @@ mod tests {
         let fixture = kdc_fixture(2027);
         let signed_data = signed_dh_reply(&fixture, true, None);
 
-        let error = verify(&signed_data, KdcTrust::Skip, utc(2027, Month::February)).unwrap_err();
+        let error = verify(&signed_data, None, utc(2027, Month::February)).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
     #[test]
-    fn dh_reply_signed_by_a_certificate_outside_the_trust_anchor_is_rejected() {
+    fn dh_reply_signed_by_a_certificate_outside_the_ca_certificate_is_rejected() {
         let fixture = kdc_fixture(2028);
         let other = kdc_fixture(2028);
         let signed_data = signed_dh_reply(&fixture, true, None);
 
-        let error = verify(&signed_data, KdcTrust::CaCert(&asn1_cert(&other.root)), now()).unwrap_err();
+        let error = verify(&signed_data, Some(&asn1_cert(&other.root)), now()).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
-    }
-
-    #[test]
-    fn dh_reply_is_accepted_when_the_chain_verification_is_skipped() {
-        let fixture = kdc_fixture(2028);
-        let signed_data = signed_dh_reply(&fixture, true, None);
-
-        let key = verify(&signed_data, KdcTrust::Skip, now()).unwrap();
-
-        assert_eq!(key, DH_PUBLIC_KEY);
     }
 }

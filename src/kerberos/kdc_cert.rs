@@ -8,96 +8,69 @@ use time::OffsetDateTime;
 use crate::pku2u::{extract_signing_certificate, is_valid_at};
 use crate::{Error, ErrorKind, Result};
 
-/// If this environment variable is set to `1` or `true` (case-insensitive), the chain of the KDC certificate
-/// is not verified. Any other value keeps the verification on.
-/// The validity period of the KDC certificate is still checked.
-const SKIP_KDC_CERT_VERIFICATION_ENV: &str = "SSPI_SKIP_KDC_CERT_VERIFICATION";
+/// If this environment variable is set to `1` or `true` (case-insensitive), the KDC certificate must be verified.
+/// Otherwise, a failed verification against the system trust store only logs a warning.
+const ENFORCE_CA_ENV: &str = "SSPI_SCARD_ENFORCE_CA";
 
-/// Turning off a security check requires an explicit value: flags like `0` or `false` must not disable it.
-fn is_skip_requested(value: &str) -> bool {
+/// Only an explicit truthy value enables the requirement.
+fn is_enforce_requested(value: &str) -> bool {
     let value = value.trim();
 
     value == "1" || value.eq_ignore_ascii_case("true")
 }
 
-/// The certificates the KDC certificate has to chain up to.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum KdcTrust<'a> {
-    /// The chain is not verified: only the validity period of the KDC certificate is checked.
-    Skip,
-    /// The chain must end in a certificate of the system trust store.
-    SystemStore,
-    /// The chain must end in the provided CA certificate.
-    CaCert(&'a Certificate),
-}
-
-impl<'a> KdcTrust<'a> {
-    /// Reads the [`SKIP_KDC_CERT_VERIFICATION_ENV`] environment variable.
-    pub(crate) fn from_env(ca_cert: Option<&'a Certificate>) -> Self {
-        let skip_verification = match std::env::var(SKIP_KDC_CERT_VERIFICATION_ENV) {
-            Ok(value) => {
-                let skip_verification = is_skip_requested(&value);
-                if !skip_verification {
-                    warn!(
-                        %value,
-                        "Unrecognized {SKIP_KDC_CERT_VERIFICATION_ENV} value: the KDC certificate chain is verified"
-                    );
-                }
-
-                skip_verification
-            }
-            Err(_) => false,
-        };
-
-        Self::new(ca_cert, skip_verification)
-    }
-
-    /// Skipping the verification takes precedence over the CA certificate.
-    fn new(ca_cert: Option<&'a Certificate>, skip_verification: bool) -> Self {
-        match (skip_verification, ca_cert) {
-            (true, _) => Self::Skip,
-            (false, Some(ca_cert)) => Self::CaCert(ca_cert),
-            (false, None) => Self::SystemStore,
-        }
-    }
+// UNTESTED: the variable is read on every validation, so changing it at runtime takes effect on the next logon.
+// Tests cover `is_enforce_requested` and pass the flag explicitly, so check this wiring when changing it.
+fn is_ca_enforced() -> bool {
+    std::env::var(ENFORCE_CA_ENV).is_ok_and(|value| is_enforce_requested(&value))
 }
 
 /// Validates the certificate the KDC used to sign its PKINIT reply.
 ///
 /// The validity period of the KDC certificate is always checked against `now`.
-/// The chain is checked according to `trust`.
+/// If `ca_cert` is provided, the certificate must chain up to it.
+/// Otherwise, the chain is checked against the system trust store. If the store does not vouch for the certificate,
+/// validation fails when `SSPI_SCARD_ENFORCE_CA` is set to `1` or `true`, and only logs a warning otherwise.
 pub(crate) fn validate_kdc_certificate(
     signed_data: &SignedData,
-    trust: KdcTrust<'_>,
+    ca_cert: Option<&Certificate>,
     now: OffsetDateTime,
 ) -> Result<()> {
-    validate_kdc_certificate_with(signed_data, trust, system_trust_anchors, now)
+    validate_kdc_certificate_with(signed_data, ca_cert, system_trust_anchors, is_ca_enforced(), now)
 }
 
-/// Same as [`validate_kdc_certificate`], but the system trust anchors are provided by the caller.
+/// Same as [`validate_kdc_certificate`], but the system trust anchors and the enforcement are provided by the caller.
 fn validate_kdc_certificate_with<'a>(
     signed_data: &SignedData,
-    trust: KdcTrust<'_>,
+    ca_cert: Option<&Certificate>,
     system_trust_anchors: impl FnOnce() -> Result<&'a [Certificate]>,
+    enforce_ca: bool,
     now: OffsetDateTime,
 ) -> Result<()> {
     let kdc_cert = extract_signing_certificate(signed_data)?;
     check_validity_period(&kdc_cert, now)?;
 
-    match trust {
-        KdcTrust::Skip => {
-            warn!("The KDC certificate chain verification is skipped");
+    if let Some(ca_cert) = ca_cert {
+        return verify_kdc_chain(signed_data, kdc_cert, std::slice::from_ref(ca_cert), now);
+    }
+
+    let result = system_trust_anchors().and_then(|anchors| verify_kdc_chain(signed_data, kdc_cert, anchors, now));
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) if enforce_ca => Err(Error::new(
+            error.error_type,
+            format!(
+                "no CA certificate is configured and {ENFORCE_CA_ENV} requires the system trust store to vouch for the KDC certificate: {error}"
+            ),
+        )),
+        Err(error) => {
+            warn!(
+                %error,
+                "The KDC certificate chain is not verified. Set {ENFORCE_CA_ENV}=1 to reject an unverified KDC certificate."
+            );
 
             Ok(())
-        }
-        KdcTrust::CaCert(ca_cert) => verify_kdc_chain(signed_data, kdc_cert, std::slice::from_ref(ca_cert), now),
-        KdcTrust::SystemStore => {
-            verify_kdc_chain(signed_data, kdc_cert, system_trust_anchors()?, now).map_err(|error| {
-                Error::new(
-                    error.error_type,
-                    format!("no CA certificate is configured and the system trust store does not vouch for the KDC certificate: {error}"),
-                )
-            })
         }
     }
 }
@@ -350,7 +323,7 @@ mod tests {
     use picky_asn1_x509::{AlgorithmIdentifier, KeyUsage, oids};
     use time::{Date, Month, OffsetDateTime};
 
-    use super::{KdcTrust, is_skip_requested, validate_kdc_certificate, validate_kdc_certificate_with};
+    use super::{is_enforce_requested, validate_kdc_certificate_with};
     use crate::ErrorKind;
     use crate::log_capture::LogCapture;
 
@@ -382,11 +355,24 @@ mod tests {
             .assume_utc()
     }
 
+    /// Tests of the chain check pass the CA certificate explicitly, so they do not depend on the environment.
+    fn validate_unenforced(
+        signed_data: &SignedData,
+        ca_cert: Option<&picky_asn1_x509::Certificate>,
+        now: OffsetDateTime,
+    ) -> crate::Result<()> {
+        validate_kdc_certificate_with(signed_data, ca_cert, no_system_roots, false, now)
+    }
+
+    fn no_system_roots() -> crate::Result<&'static [picky_asn1_x509::Certificate]> {
+        Ok(&[])
+    }
+
     fn lab_kdc_certificate_result_at(now: OffsetDateTime) -> crate::Result<()> {
         let kdc_cert = Cert::from_pem_str(LAB_KDC_CERT).unwrap();
         let signed_data = signed_data_with_certificates(&[&kdc_cert]);
 
-        validate_kdc_certificate(&signed_data, KdcTrust::Skip, now)
+        validate_unenforced(&signed_data, None, now)
     }
 
     // oracle: the validity period of the committed fixture as printed by `openssl x509 -dates`.
@@ -471,9 +457,9 @@ mod tests {
     fn validate_in_2027(reply_certificates: &[&Cert], anchor: &Cert) -> crate::Result<()> {
         let signed_data = signed_data_with_certificates(reply_certificates);
 
-        validate_kdc_certificate(
+        validate_unenforced(
             &signed_data,
-            KdcTrust::CaCert(&asn1_cert(anchor)),
+            Some(&asn1_cert(anchor)),
             utc(2027, Month::June, 1, 0, 0, 0),
         )
     }
@@ -633,9 +619,9 @@ mod tests {
         let unrelated_ca = Cert::from_pem_str(include_str!("../../test_assets/pw11.cer")).unwrap();
         let signed_data = signed_data_with_certificates(&[&kdc_cert]);
 
-        let error = validate_kdc_certificate(
+        let error = validate_unenforced(
             &signed_data,
-            KdcTrust::CaCert(&asn1_cert(&unrelated_ca)),
+            Some(&asn1_cert(&unrelated_ca)),
             utc(2026, Month::June, 1, 0, 0, 0),
         )
         .unwrap_err();
@@ -643,37 +629,143 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    fn validate_in_2027_with_system_roots(
+        reply_certificates: &[&Cert],
+        ca_cert: Option<&Cert>,
+        system_roots: &[&Cert],
+        enforce_ca: bool,
+    ) -> crate::Result<()> {
+        let signed_data = signed_data_with_certificates(reply_certificates);
+        let ca_cert = ca_cert.map(asn1_cert);
+        let system_roots = system_roots.iter().map(|cert| asn1_cert(cert)).collect::<Vec<_>>();
+
+        validate_kdc_certificate_with(
+            &signed_data,
+            ca_cert.as_ref(),
+            || Ok(system_roots.as_slice()),
+            enforce_ca,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+    }
+
+    const UNVERIFIED_CHAIN_WARNING: &str = "chain is not verified";
+
     #[test]
-    fn skipped_verification_accepts_an_untrusted_chain_and_warns() {
-        let imposter = root_ca("Other Root");
-        let kdc = issue(&imposter, "kdc", false, date(2026, 6), date(2028, 1));
-        let signed_data = signed_data_with_certificates(&[&kdc.ca]);
+    fn system_trust_anchor_vouches_for_the_kdc_certificate() {
+        let root = root_ca("Test Root");
+        let kdc = issue(&root, "kdc", false, date(2026, 6), date(2028, 1));
         let logs = LogCapture::start(tracing::Level::WARN);
 
-        validate_kdc_certificate(&signed_data, KdcTrust::Skip, utc(2027, Month::June, 1, 0, 0, 0)).unwrap();
+        validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&root.ca], false).unwrap();
 
-        let output = logs.output();
-        assert!(output.contains("WARN"), "no warning in: {output}");
-        assert!(
-            output.contains("verification is skipped"),
-            "unexpected warning in: {output}"
-        );
+        assert!(!logs.output().contains(UNVERIFIED_CHAIN_WARNING));
     }
 
     #[test]
-    fn skipped_verification_still_checks_the_validity_period() {
-        let imposter = root_ca("Other Root");
-        let kdc = issue(&imposter, "kdc", false, date(2026, 6), date(2027, 1));
-        let signed_data = signed_data_with_certificates(&[&kdc.ca]);
+    fn kdc_certificate_unknown_to_the_system_store_is_accepted_with_a_warning_when_not_enforced() {
+        let trusted = root_ca("Test Root");
+        let unknown = root_ca("Other Root");
+        let kdc = issue(&unknown, "kdc", false, date(2026, 6), date(2028, 1));
+        let logs = LogCapture::start(tracing::Level::WARN);
 
-        let error =
-            validate_kdc_certificate(&signed_data, KdcTrust::Skip, utc(2027, Month::June, 1, 0, 0, 0)).unwrap_err();
+        validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&trusted.ca], false).unwrap();
+
+        let output = logs.output();
+        assert!(output.contains(UNVERIFIED_CHAIN_WARNING), "no warning in: {output}");
+    }
+
+    #[test]
+    fn kdc_certificate_unknown_to_the_system_store_is_rejected_when_enforced() {
+        let trusted = root_ca("Test Root");
+        let unknown = root_ca("Other Root");
+        let kdc = issue(&unknown, "kdc", false, date(2026, 6), date(2028, 1));
+
+        let error = validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&trusted.ca], true).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
     #[test]
-    fn only_explicit_values_request_skipping_the_verification() {
+    fn unavailable_system_store_is_accepted_with_a_warning_when_not_enforced() {
+        let root = root_ca("Test Root");
+        let kdc = issue(&root, "kdc", false, date(2026, 6), date(2028, 1));
+        let signed_data = signed_data_with_certificates(&[&kdc.ca]);
+        let logs = LogCapture::start(tracing::Level::WARN);
+
+        validate_kdc_certificate_with(
+            &signed_data,
+            None,
+            || Err(crate::Error::new(ErrorKind::Pku2uCertFailure, "store is unavailable")),
+            false,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap();
+
+        assert!(logs.output().contains(UNVERIFIED_CHAIN_WARNING));
+    }
+
+    #[test]
+    fn unavailable_system_store_is_rejected_when_enforced() {
+        let root = root_ca("Test Root");
+        let kdc = issue(&root, "kdc", false, date(2026, 6), date(2028, 1));
+        let signed_data = signed_data_with_certificates(&[&kdc.ca]);
+
+        let error = validate_kdc_certificate_with(
+            &signed_data,
+            None,
+            || Err(crate::Error::new(ErrorKind::Pku2uCertFailure, "store is unavailable")),
+            true,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
+    }
+
+    #[test]
+    fn configured_ca_cert_that_does_not_vouch_is_rejected_even_when_not_enforced() {
+        let configured = root_ca("Other Root");
+        let system = root_ca("Test Root");
+        let kdc = issue(&system, "kdc", false, date(2026, 6), date(2028, 1));
+
+        let error =
+            validate_in_2027_with_system_roots(&[&kdc.ca], Some(&configured.ca), &[&system.ca], false).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
+    }
+
+    #[test]
+    fn issuer_with_a_renewed_key_is_found_among_the_same_named_trust_anchors() {
+        let old_root = root_ca("Test Root");
+        let renewed_root = root_ca("Test Root");
+        let kdc = issue(&renewed_root, "kdc", false, date(2026, 6), date(2028, 1));
+        let logs = LogCapture::start(tracing::Level::WARN);
+
+        validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&old_root.ca, &renewed_root.ca], false).unwrap();
+
+        assert!(!logs.output().contains(UNVERIFIED_CHAIN_WARNING));
+    }
+
+    #[test]
+    fn missing_system_store_still_checks_the_validity_period() {
+        let root = root_ca("Test Root");
+        let kdc = issue(&root, "kdc", false, date(2026, 6), date(2027, 1));
+        let signed_data = signed_data_with_certificates(&[&kdc.ca]);
+
+        let error = validate_kdc_certificate_with(
+            &signed_data,
+            None,
+            no_system_roots,
+            false,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
+    }
+
+    #[test]
+    fn only_explicit_values_enable_the_ca_requirement() {
         for (value, expected) in [
             ("1", true),
             ("true", true),
@@ -684,73 +776,8 @@ mod tests {
             ("", false),
             ("yes", false),
         ] {
-            assert_eq!(is_skip_requested(value), expected, "value {value:?}");
+            assert_eq!(is_enforce_requested(value), expected, "value {value:?}");
         }
-    }
-
-    #[test]
-    fn skipping_takes_precedence_over_the_ca_certificate() {
-        let ca_cert = asn1_cert(&root_ca("Test Root").ca);
-
-        assert!(matches!(KdcTrust::new(Some(&ca_cert), true), KdcTrust::Skip));
-        assert!(matches!(KdcTrust::new(Some(&ca_cert), false), KdcTrust::CaCert(_)));
-        assert!(matches!(KdcTrust::new(None, false), KdcTrust::SystemStore));
-    }
-
-    fn validate_in_2027_with_system_roots(
-        reply_certificates: &[&Cert],
-        ca_cert: Option<&Cert>,
-        system_roots: &[&Cert],
-    ) -> crate::Result<()> {
-        let signed_data = signed_data_with_certificates(reply_certificates);
-        let ca_cert = ca_cert.map(asn1_cert);
-        let system_roots = system_roots.iter().map(|cert| asn1_cert(cert)).collect::<Vec<_>>();
-
-        validate_kdc_certificate_with(
-            &signed_data,
-            KdcTrust::new(ca_cert.as_ref(), false),
-            || Ok(system_roots.as_slice()),
-            utc(2027, Month::June, 1, 0, 0, 0),
-        )
-    }
-
-    #[test]
-    fn system_trust_anchor_vouches_for_the_kdc_certificate() {
-        let root = root_ca("Test Root");
-        let kdc = issue(&root, "kdc", false, date(2026, 6), date(2028, 1));
-
-        validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&root.ca]).unwrap();
-    }
-
-    #[test]
-    fn kdc_certificate_unknown_to_the_system_store_is_rejected() {
-        let trusted = root_ca("Test Root");
-        let unknown = root_ca("Other Root");
-        let kdc = issue(&unknown, "kdc", false, date(2026, 6), date(2028, 1));
-
-        let error = validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&trusted.ca]).unwrap_err();
-
-        assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
-    }
-
-    #[test]
-    fn configured_ca_cert_replaces_the_system_store() {
-        let configured = root_ca("Other Root");
-        let system = root_ca("Test Root");
-        let kdc = issue(&system, "kdc", false, date(2026, 6), date(2028, 1));
-
-        let error = validate_in_2027_with_system_roots(&[&kdc.ca], Some(&configured.ca), &[&system.ca]).unwrap_err();
-
-        assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
-    }
-
-    #[test]
-    fn issuer_with_a_renewed_key_is_found_among_the_same_named_trust_anchors() {
-        let old_root = root_ca("Test Root");
-        let renewed_root = root_ca("Test Root");
-        let kdc = issue(&renewed_root, "kdc", false, date(2026, 6), date(2028, 1));
-
-        validate_in_2027_with_system_roots(&[&kdc.ca], None, &[&old_root.ca, &renewed_root.ca]).unwrap();
     }
 }
 

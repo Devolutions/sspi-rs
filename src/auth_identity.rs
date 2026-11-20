@@ -600,11 +600,12 @@ mod scard_credentials {
         /// DER-encoded X509 certificate of the CA that issued the KDC certificate.
         ///
         /// It is used only to verify the KDC certificate during the Kerberos AS exchange.
-        /// If it is not set, the KDC certificate is verified against the system trust store,
-        /// and the logon fails if the store does not vouch for the certificate.
-        /// The system trust store is not available on wasm, so the certificate is required there.
-        /// The verification of the certificate chain is skipped if the `SSPI_SKIP_KDC_CERT_VERIFICATION`
-        /// environment variable is set to `1` or `true`. The validity period of the KDC certificate is always checked.
+        /// If it is set, the KDC certificate must chain up to it.
+        /// If it is not set, the KDC certificate is verified against the system trust store.
+        /// If the store does not vouch for the certificate, the logon continues with a warning, unless the
+        /// `SSPI_SCARD_ENFORCE_CA` environment variable is set to `1` or `true`, in which case the logon fails.
+        /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
+        /// The validity period of the KDC certificate is always checked.
         pub ca_cert: Option<CertificateRaw>,
         /// UTF-16 encoded smart card name
         pub card_name: Option<NonEmpty<Utf16String>>,
@@ -632,11 +633,12 @@ mod scard_credentials {
         /// X509 certificate of the CA that issued the KDC certificate.
         ///
         /// It is used only to verify the KDC certificate during the Kerberos AS exchange.
-        /// If it is not set, the KDC certificate is verified against the system trust store,
-        /// and the logon fails if the store does not vouch for the certificate.
-        /// The system trust store is not available on wasm, so the certificate is required there.
-        /// The verification of the certificate chain is skipped if the `SSPI_SKIP_KDC_CERT_VERIFICATION`
-        /// environment variable is set to `1` or `true`. The validity period of the KDC certificate is always checked.
+        /// If it is set, the KDC certificate must chain up to it.
+        /// If it is not set, the KDC certificate is verified against the system trust store.
+        /// If the store does not vouch for the certificate, the logon continues with a warning, unless the
+        /// `SSPI_SCARD_ENFORCE_CA` environment variable is set to `1` or `true`, in which case the logon fails.
+        /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
+        /// The validity period of the KDC certificate is always checked.
         pub ca_cert: Option<Certificate>,
         /// Smart card reader name
         pub reader_name: String,
