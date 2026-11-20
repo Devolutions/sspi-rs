@@ -11,9 +11,12 @@ use std::io::Write;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
+pub(crate) use cert_utils::validation::extract_signing_certificate;
+#[cfg(feature = "scard")]
+pub(crate) use cert_utils::validation::is_valid_at;
 pub use cert_utils::validation::validate_server_p2p_certificate;
 pub use config::{Pku2uConfig, Pku2uCredential, Pku2uPrivateKey};
-pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
+pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce};
 pub use generators::{generate_authenticator, generate_authenticator_extension, generate_client_dh_parameters};
 use picky_asn1_x509::Certificate;
 use picky_asn1_x509::signed_data::SignedData;
@@ -51,7 +54,7 @@ use crate::kerberos::{DEFAULT_ENCRYPTION_TYPE, EncryptionParams, RRC};
 use crate::pk_init::{
     DhParameters, GenerateAsPaDataOptions, KeyAgreement, extract_server_dh_public_key, generate_pa_datas_for_as_req,
 };
-use crate::pku2u::cert_utils::validation::{extract_signing_certificate, validate_peer_p2p_certificate};
+use crate::pku2u::cert_utils::validation::validate_peer_p2p_certificate;
 use crate::pku2u::extractors::{extract_krb_rep, extract_krb_result, extract_session_key_and_nonce_from_as_rep};
 use crate::pku2u::generators::generate_as_req_username_from_certificate;
 use crate::security_buffer::BufferSummaryExt as _;
@@ -1262,7 +1265,7 @@ impl Pku2u {
                 self.peer_certificate_trusted = self.config.trusted_server_certificates.contains(&server_certificate);
                 self.peer_certificate = Some(server_certificate);
 
-                let public_key = extract_server_dh_public_key(&signed_data)?;
+                let public_key = extract_server_dh_public_key(&signed_data, None)?;
                 self.dh_parameters.other_public_key = Some(public_key);
 
                 self.encryption_params.encryption_type =

@@ -425,26 +425,50 @@ pub(crate) fn generate_signer_info(
 }
 
 /// Extracts the server DH public key (the DER-encoded `INTEGER` inside of the `subjectPublicKey`).
+///
+/// If `now` is provided, the key is rejected when its `dhKeyExpiration` is before `now`.
+///
+/// [Receipt of KDC Reply](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.4):
+/// "dhKeyExpiration: [...] the KDC's key is valid until this time."
 #[instrument(level = "trace", ret)]
-pub(crate) fn extract_server_dh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
+pub(crate) fn extract_server_dh_public_key(signed_data: &SignedData, now: Option<OffsetDateTime>) -> Result<Vec<u8>> {
     let dh_key_info = extract_kdc_dh_key_info(signed_data)?;
+    check_dh_key_expiration(&dh_key_info, now)?;
 
-    let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
-
-    Ok(key.as_unsigned_bytes_be().to_vec())
+    dh_public_key(&dh_key_info)
 }
 
 /// Extracts the server ECDH public key (the SEC1-encoded EC point stored in the `subjectPublicKey`).
 ///
+/// If `now` is provided, the key is rejected when its `dhKeyExpiration` is before `now`.
+///
 /// [RFC 5349, Section 2.2](https://www.rfc-editor.org/rfc/rfc5349.html#section-2.2)
 #[cfg(feature = "scard")]
 #[instrument(level = "trace", ret)]
-pub(crate) fn extract_server_ecdh_public_key(signed_data: &SignedData) -> Result<Vec<u8>> {
-    Ok(extract_kdc_dh_key_info(signed_data)?
-        .subject_public_key
-        .0
-        .payload_view()
-        .to_vec())
+pub(crate) fn extract_server_ecdh_public_key(signed_data: &SignedData, now: Option<OffsetDateTime>) -> Result<Vec<u8>> {
+    let dh_key_info = extract_kdc_dh_key_info(signed_data)?;
+    check_dh_key_expiration(&dh_key_info, now)?;
+
+    Ok(dh_key_info.subject_public_key.0.payload_view().to_vec())
+}
+
+fn check_dh_key_expiration(dh_key_info: &KdcDhKeyInfo, now: Option<OffsetDateTime>) -> Result<()> {
+    if let (Some(now), Some(expiration)) = (now, &dh_key_info.dh_key_expiration.0) {
+        let expiration = OffsetDateTime::try_from(expiration.0.0.clone()).map_err(|error| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("invalid DH key expiration time: {error}"),
+            )
+        })?;
+        if now > expiration {
+            return Err(Error::new(
+                ErrorKind::InvalidToken,
+                format!("KDC DH key expired at {expiration}"),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn extract_kdc_dh_key_info(signed_data: &SignedData) -> Result<KdcDhKeyInfo> {
@@ -480,13 +504,31 @@ fn extract_kdc_dh_key_info(signed_data: &SignedData) -> Result<KdcDhKeyInfo> {
     Ok(picky_asn1_der::from_bytes(dh_key_info_data)?)
 }
 
+fn dh_public_key(dh_key_info: &KdcDhKeyInfo) -> Result<Vec<u8>> {
+    let key: IntegerAsn1 = picky_asn1_der::from_bytes(dh_key_info.subject_public_key.0.payload_view())?;
+
+    Ok(key.as_unsigned_bytes_be().to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use picky::x509::Cert;
-    use picky_asn1::wrapper::{Asn1SetOf, ObjectIdentifierAsn1, OctetStringAsn1};
-    use picky_asn1_x509::{Attribute, AttributeValues, Certificate, oids};
+    use picky_asn1::bit_string::BitString;
+    use picky_asn1::date::GeneralizedTime;
+    use picky_asn1::wrapper::{
+        Asn1SetOf, BitStringAsn1, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag2, IntegerAsn1,
+        ObjectIdentifierAsn1, OctetStringAsn1, Optional,
+    };
+    use picky_asn1_x509::cmsversion::CmsVersion;
+    use picky_asn1_x509::content_info::EncapsulatedContentInfo;
+    use picky_asn1_x509::signed_data::{CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos};
+    use picky_asn1_x509::{AlgorithmIdentifier, Attribute, AttributeValues, Certificate, oids};
+    use picky_krb::data_types::KerberosTime;
+    use picky_krb::pkinit::KdcDhKeyInfo;
+    use time::OffsetDateTime;
 
-    use super::{SigningScheme, generate_signer_info};
+    use super::{SigningScheme, extract_server_dh_public_key, generate_signer_info};
+    use crate::ErrorKind;
 
     fn load_certificate(pem: &str) -> Certificate {
         Cert::from_pem_str(pem).unwrap().into()
@@ -550,6 +592,67 @@ mod tests {
         ]);
         let encoded_signed_attributes = picky_asn1_der::to_vec(&signed_attributes).unwrap();
         println!("{encoded_signed_attributes:?}");
+    }
+
+    fn dh_key_signed_data(expiration: Option<OffsetDateTime>) -> SignedData {
+        let key_info = KdcDhKeyInfo {
+            subject_public_key: ExplicitContextTag0::from(BitStringAsn1::from(BitString::with_bytes(
+                picky_asn1_der::to_vec(&IntegerAsn1::from(vec![0x01, 0x02, 0x03])).unwrap(),
+            ))),
+            nonce: ExplicitContextTag1::from(IntegerAsn1::from(vec![0x07])),
+            dh_key_expiration: Optional::from(
+                expiration.map(|time| ExplicitContextTag2::from(KerberosTime::from(GeneralizedTime::from(time)))),
+            ),
+        };
+
+        let signed_data = SignedData {
+            version: CmsVersion::V3,
+            digest_algorithms: DigestAlgorithmIdentifiers(Asn1SetOf::from(vec![AlgorithmIdentifier::new_sha1()])),
+            content_info: EncapsulatedContentInfo::new(
+                oids::kpinit_dh_key_data(),
+                Some(picky_asn1_der::to_vec(&key_info).unwrap()),
+            ),
+            certificates: Optional::from(CertificateSet(Vec::new())),
+            crls: None,
+            signers_infos: SignersInfos(Asn1SetOf::from(Vec::new())),
+        };
+
+        // The content is only decoded as an octet string when it is read from the wire.
+        picky_asn1_der::from_bytes(&picky_asn1_der::to_vec(&signed_data).unwrap()).unwrap()
+    }
+
+    const NOW_UNIX_SECONDS: i64 = 1_800_000_000;
+
+    fn now() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(NOW_UNIX_SECONDS).unwrap()
+    }
+
+    #[test]
+    fn dh_key_without_expiration_is_accepted() {
+        let key = extract_server_dh_public_key(&dh_key_signed_data(None), Some(now())).unwrap();
+
+        assert_eq!(key, [0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn dh_key_expiring_in_the_future_is_accepted() {
+        let signed_data = dh_key_signed_data(Some(now() + time::Duration::seconds(1)));
+
+        extract_server_dh_public_key(&signed_data, Some(now())).unwrap();
+    }
+
+    #[test]
+    fn dh_key_expiring_at_the_current_time_is_accepted() {
+        extract_server_dh_public_key(&dh_key_signed_data(Some(now())), Some(now())).unwrap();
+    }
+
+    #[test]
+    fn dh_key_expired_in_the_past_is_rejected() {
+        let signed_data = dh_key_signed_data(Some(now() - time::Duration::seconds(1)));
+
+        let error = extract_server_dh_public_key(&signed_data, Some(now())).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }
 
@@ -720,6 +823,9 @@ mod ecdh_tests {
             signers_infos: SignersInfos(Asn1SetOf::from(Vec::new())),
         };
 
-        assert_eq!(server_public_key, extract_server_ecdh_public_key(&signed_data).unwrap());
+        assert_eq!(
+            server_public_key,
+            extract_server_ecdh_public_key(&signed_data, None).unwrap()
+        );
     }
 }

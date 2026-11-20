@@ -2,6 +2,8 @@ pub mod client;
 pub mod config;
 mod encryption_params;
 pub mod flags;
+#[cfg(feature = "scard")]
+mod kdc_cert;
 mod messages;
 mod pa_datas;
 pub mod server;

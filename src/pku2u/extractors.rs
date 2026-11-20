@@ -76,21 +76,6 @@ pub fn extract_server_nonce(dh_rep_info: &DhRepInfo) -> Result<[u8; DH_NONCE_LEN
     Ok(nonce.try_into().unwrap())
 }
 
-#[instrument(level = "trace", ret)]
-pub fn extract_session_key_from_as_rep(
-    as_rep: &AsRep,
-    key: &[u8],
-    enc_params: &EncryptionParams,
-) -> Result<Secret<Vec<u8>>> {
-    Ok(decrypt_as_rep(as_rep, key, enc_params)?
-        .key
-        .0
-        .key_value
-        .0
-        .to_vec()
-        .into())
-}
-
 pub(super) fn extract_session_key_and_nonce_from_as_rep(
     as_rep: &AsRep,
     key: &[u8],
@@ -202,7 +187,7 @@ mod as_rep_regressions {
     use time::OffsetDateTime;
 
     use super::{AsRep, EncryptionParams, ErrorKind, extract_session_key_and_nonce_from_as_rep};
-    use crate::pku2u::extract_session_key_from_as_rep;
+    use crate::kerberos::client::extractors::extract_session_key_from_as_rep_with_key;
 
     const LONG_TERM_KEY: [u8; 32] = [0x29; 32];
     const SESSION_KEY: [u8; 32] = [0xb6; 32];
@@ -277,9 +262,13 @@ mod as_rep_regressions {
         for tag in [25, 26] {
             let reply = encrypted_as_rep(tag, &[1, 2, 3, 4]);
             assert_eq!(
-                extract_session_key_from_as_rep(&reply, &LONG_TERM_KEY, &EncryptionParams::default_for_client())
-                    .unwrap()
-                    .as_ref(),
+                extract_session_key_from_as_rep_with_key(
+                    &reply,
+                    &LONG_TERM_KEY,
+                    &EncryptionParams::default_for_client()
+                )
+                .unwrap()
+                .as_ref(),
                 &SESSION_KEY
             );
         }
@@ -315,7 +304,7 @@ mod as_rep_regressions {
         for tag in [24, 27] {
             let reply = encrypted_as_rep(tag, &[1, 2, 3, 4]);
             assert!(
-                extract_session_key_from_as_rep(&reply, &LONG_TERM_KEY, &params).is_err(),
+                extract_session_key_from_as_rep_with_key(&reply, &LONG_TERM_KEY, &params).is_err(),
                 "tag {tag}"
             );
             assert!(
@@ -330,10 +319,10 @@ mod as_rep_regressions {
         let params = EncryptionParams::default_for_client();
         for tag in [25, 26] {
             let mut reply = encrypted_as_rep(tag, &[1, 2, 3, 4]);
-            assert!(extract_session_key_from_as_rep(&reply, &[0x88; 32], &params).is_err());
+            assert!(extract_session_key_from_as_rep_with_key(&reply, &[0x88; 32], &params).is_err());
             assert!(extract_session_key_and_nonce_from_as_rep(&reply, &[0x88; 32], &params).is_err());
             reply.0.enc_part.0.cipher.0.0[8] ^= 1;
-            assert!(extract_session_key_from_as_rep(&reply, &LONG_TERM_KEY, &params).is_err());
+            assert!(extract_session_key_from_as_rep_with_key(&reply, &LONG_TERM_KEY, &params).is_err());
             assert!(extract_session_key_and_nonce_from_as_rep(&reply, &LONG_TERM_KEY, &params).is_err());
         }
     }
@@ -351,7 +340,7 @@ mod as_rep_regressions {
                 assert_eq!(error.error_type, ErrorKind::InvalidToken);
                 // The key-only API deliberately does not interpret the nonce.
                 assert_eq!(
-                    extract_session_key_from_as_rep(&reply, &LONG_TERM_KEY, &params)
+                    extract_session_key_from_as_rep_with_key(&reply, &LONG_TERM_KEY, &params)
                         .unwrap()
                         .as_ref(),
                     &SESSION_KEY
