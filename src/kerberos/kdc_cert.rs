@@ -67,7 +67,7 @@ fn validate_kdc_certificate_with<'a>(
         Err(error) => {
             warn!(
                 %error,
-                "The KDC certificate chain is not verified. Set {ENFORCE_CA_ENV}=1 to reject an unverified KDC certificate."
+                "The KDC certificate chain is not verified; set {ENFORCE_CA_ENV}=1 to reject an unverified KDC certificate"
             );
 
             Ok(())
