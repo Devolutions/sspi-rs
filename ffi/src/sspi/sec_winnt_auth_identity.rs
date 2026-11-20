@@ -472,10 +472,14 @@ fn collect_smart_card_creds(
 /// See [SCARD_CA_CERT_DATA_ENV] and [SCARD_CA_CERT_PATH_ENV].
 #[cfg(feature = "scard")]
 fn ca_cert_from_env() -> Result<Option<sspi::CertificateRaw>> {
-    return ca_cert_from_values(
-        read(SCARD_CA_CERT_DATA_ENV)?.as_deref(),
-        read(SCARD_CA_CERT_PATH_ENV)?.as_deref(),
-    );
+    let data = read(SCARD_CA_CERT_DATA_ENV)?;
+    let path = if data.is_none() {
+        read(SCARD_CA_CERT_PATH_ENV)?
+    } else {
+        None
+    };
+
+    return ca_cert_from_values(data.as_deref(), path.as_deref());
 
     fn read(name: &str) -> Result<Option<String>> {
         match std::env::var(name) {
