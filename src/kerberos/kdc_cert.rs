@@ -159,7 +159,9 @@ fn verify_kdc_chain(
                 }
             }
 
-            return result;
+            if result.is_ok() {
+                return result;
+            }
         }
 
         // As for the trust anchors, every intermediate with the issuer name is tried.
