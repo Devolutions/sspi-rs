@@ -597,6 +597,16 @@ mod scard_credentials {
         pub username: Utf16String,
         /// DER-encoded X509 certificate
         pub certificate: CertificateRaw,
+        /// DER-encoded X509 certificate of the CA that issued the KDC certificate.
+        ///
+        /// It is used only to verify the KDC certificate during the Kerberos AS exchange.
+        /// If it is set, the KDC certificate must chain up to it.
+        /// If it is not set, the KDC certificate is verified against the system trust store.
+        /// If the store does not vouch for the certificate, the logon continues with a warning.
+        /// The `enforce_kdc_ca_cert` policy of the Kerberos configuration makes the logon fail instead.
+        /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
+        /// The validity period of the KDC certificate is always checked.
+        pub ca_cert: Option<CertificateRaw>,
         /// UTF-16 encoded smart card name
         pub card_name: Option<NonEmpty<Utf16String>>,
         /// UTF-16 encoded smart card reader name
@@ -620,6 +630,16 @@ mod scard_credentials {
         pub username: String,
         /// X509 certificate
         pub certificate: Certificate,
+        /// X509 certificate of the CA that issued the KDC certificate.
+        ///
+        /// It is used only to verify the KDC certificate during the Kerberos AS exchange.
+        /// If it is set, the KDC certificate must chain up to it.
+        /// If it is not set, the KDC certificate is verified against the system trust store.
+        /// If the store does not vouch for the certificate, the logon continues with a warning.
+        /// The `enforce_kdc_ca_cert` policy of the Kerberos configuration makes the logon fail instead.
+        /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
+        /// The validity period of the KDC certificate is always checked.
+        pub ca_cert: Option<Certificate>,
         /// Smart card reader name
         pub reader_name: String,
         /// Smart card name
@@ -655,6 +675,7 @@ mod scard_credentials {
 
             Ok(Self {
                 certificate: value.certificate.try_into()?,
+                ca_cert: value.ca_cert.map(CertificateRaw::try_from).transpose()?,
                 reader_name: value.reader_name.into(),
                 pin: ZeroizedUtf16String(String::from_utf8_lossy(value.pin.as_ref()).as_ref().into()).into(),
                 username: value.username.into(),
@@ -688,6 +709,7 @@ mod scard_credentials {
 
             Ok(Self {
                 certificate: Certificate::from(&value.certificate),
+                ca_cert: value.ca_cert.as_ref().map(Certificate::from),
                 reader_name: value.reader_name.to_string(),
                 pin: value.pin.as_ref().0.to_string().into_bytes().into(),
                 username: value.username.to_string(),
@@ -1098,5 +1120,36 @@ mod tests {
             UsernameParts::DownLevelLogonName(dlln) if dlln.netbios_domain().is_none()
         ));
         assert!(empty_domain.eq_ignore_ascii_case(&bare));
+    }
+
+    #[cfg(feature = "scard")]
+    fn certificate_from_pem(pem: &str) -> picky_asn1_x509::Certificate {
+        picky_asn1_der::from_bytes(&picky::x509::Cert::from_pem_str(pem).unwrap().to_der().unwrap()).unwrap()
+    }
+
+    #[cfg(feature = "scard")]
+    #[test]
+    fn smart_card_identity_keeps_the_ca_certificate_through_the_buffers_conversion() {
+        let certificate: picky_asn1_x509::Certificate = certificate_from_pem(include_str!("../test_assets/pw11.cer"));
+        let ca_cert: picky_asn1_x509::Certificate = certificate_from_pem(include_str!("../test_assets/kdc_cert.cer"));
+        let identity = SmartCardIdentity {
+            username: "user@example.com".into(),
+            certificate,
+            ca_cert: Some(ca_cert.clone()),
+            reader_name: "reader".into(),
+            card_name: None,
+            container_name: None,
+            csp_name: "csp".into(),
+            pin: b"1234".to_vec().into(),
+            private_key: None,
+            scard_type: SmartCardType::Emulated {
+                scard_pin: b"4321".to_vec().into(),
+            },
+        };
+
+        let buffers = SmartCardIdentityBuffers::try_from(identity).unwrap();
+        let restored = SmartCardIdentity::try_from(&buffers).unwrap();
+
+        assert_eq!(restored.ca_cert, Some(ca_cert));
     }
 }

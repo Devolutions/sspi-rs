@@ -145,6 +145,7 @@ mod tests {
             },
             auth_identity: None,
             client_computer_name: "acceptor".to_owned(),
+            enforce_kdc_ca_cert: false,
             mode: NegotiateMode::Server(Vec::new()),
             mech_types: Vec::new(),
             mic_verified: false,

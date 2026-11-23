@@ -57,10 +57,7 @@ fn secbuffer_readonly_with_checksum() {
 
     let mut kerberos_server = Kerberos {
         state: KerberosState::Final,
-        config: KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(None),
-            client_computer_name: "hostname".into(),
-        },
+        config: KerberosConfig::new(KdcResolution::KdcUrl(None), "hostname".into()),
         auth_identity: None,
         encryption_params: EncryptionParams {
             encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),
@@ -243,10 +240,7 @@ fn integrity_only_wrap_decryption() {
 
     let mut kerberos_client = Kerberos {
         state: KerberosState::Final,
-        config: KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(None),
-            client_computer_name: "hostname".into(),
-        },
+        config: KerberosConfig::new(KdcResolution::KdcUrl(None), "hostname".into()),
         auth_identity: None,
         encryption_params: EncryptionParams {
             encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),

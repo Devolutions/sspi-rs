@@ -10,10 +10,10 @@ const COMPUTER_NAME: &str = "DESKTOP-3D83IAN.example.com";
 fn client(protocol_config: NegotiateProtocolConfig, package_list: Option<&str>) -> Negotiate {
     let config = match protocol_config {
         NegotiateProtocolConfig::Kerberos => NegotiateConfig::new(
-            Box::new(KerberosConfig {
-                kdc_resolution: crate::KdcResolution::KdcUrl(None),
-                client_computer_name: COMPUTER_NAME.to_owned(),
-            }),
+            Box::new(KerberosConfig::new(
+                crate::KdcResolution::KdcUrl(None),
+                COMPUTER_NAME.to_owned(),
+            )),
             package_list.map(str::to_owned),
             COMPUTER_NAME.to_owned(),
         ),

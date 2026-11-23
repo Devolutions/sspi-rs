@@ -144,15 +144,15 @@ fn credssp_kerberos() {
     let kdc = KdcMock::new(realm, keys, users, Validators::default());
     let mut network_client = NetworkClientMock { kdc };
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        SERVER_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -239,10 +239,10 @@ fn record_tgs_requests(requests: Arc<Mutex<Vec<RecordedTgsReq>>>) -> Validators 
 
 fn remote_guard_server(credentials: &Credentials, target_service_name: PrincipalName) -> KerberosServerConfig {
     KerberosServerConfig {
-        kerberos_config: KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: SERVER_COMPUTER_NAME.into(),
-        },
+        kerberos_config: KerberosConfig::new(
+            KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            SERVER_COMPUTER_NAME.into(),
+        ),
         server_properties: ServerProperties {
             mech_types: MechTypeList::from(Vec::new()),
             max_time_skew: MAX_TIME_SKEW,
@@ -262,10 +262,10 @@ fn remote_guard_client(credentials: Credentials, target_name: String) -> CredSsp
         credentials,
         CredSspMode::RemoteGuard,
         ClientMode::Negotiate(NegotiateConfig::new(
-            Box::new(KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                client_computer_name: CLIENT_COMPUTER_NAME.into(),
-            }),
+            Box::new(KerberosConfig::new(
+                KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                CLIENT_COMPUTER_NAME.into(),
+            )),
             // NTLM is enabled on purpose: remote credential guard must disable it.
             Some(String::from("kerberos,ntlm")),
             CLIENT_COMPUTER_NAME.into(),
@@ -460,10 +460,10 @@ fn credssp_kerberos_replay_and_sequence_flags_are_remote_guard_only() {
             credentials.clone(),
             mode,
             ClientMode::Negotiate(NegotiateConfig::new(
-                Box::new(KerberosConfig {
-                    kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                    client_computer_name: CLIENT_COMPUTER_NAME.into(),
-                }),
+                Box::new(KerberosConfig::new(
+                    KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                    CLIENT_COMPUTER_NAME.into(),
+                )),
                 Some("kerberos,!ntlm".to_owned()),
                 CLIENT_COMPUTER_NAME.into(),
             )),
@@ -659,10 +659,10 @@ fn credssp_remote_guard_requires_negotiate() {
         credentials,
         CredSspMode::WithCredentials,
         ClientMode::Negotiate(NegotiateConfig::new(
-            Box::new(KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                client_computer_name: CLIENT_COMPUTER_NAME.into(),
-            }),
+            Box::new(KerberosConfig::new(
+                KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                CLIENT_COMPUTER_NAME.into(),
+            )),
             Some(String::from("kerberos,!ntlm")),
             CLIENT_COMPUTER_NAME.into(),
         )),
@@ -988,10 +988,10 @@ fn run_inspected_high_level(
         credentials.clone(),
         mode,
         ClientMode::Negotiate(NegotiateConfig::new(
-            Box::new(KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                client_computer_name: CLIENT_COMPUTER_NAME.into(),
-            }),
+            Box::new(KerberosConfig::new(
+                KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                CLIENT_COMPUTER_NAME.into(),
+            )),
             Some("kerberos,ntlm".to_owned()),
             CLIENT_COMPUTER_NAME.into(),
         )),
@@ -1060,10 +1060,10 @@ fn credssp_remote_guard_versioned_constructor_remains_kerberos_only() {
             CredSspMode::RemoteGuard,
             6,
             ClientMode::Negotiate(NegotiateConfig::new(
-                Box::new(KerberosConfig {
-                    kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                    client_computer_name: CLIENT_COMPUTER_NAME.into(),
-                }),
+                Box::new(KerberosConfig::new(
+                    KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                    CLIENT_COMPUTER_NAME.into(),
+                )),
                 Some("kerberos,ntlm".to_owned()),
                 CLIENT_COMPUTER_NAME.into(),
             )),
@@ -1461,10 +1461,10 @@ mod sspi_exchange {
                 default_constructor,
                 identity_source,
                 NegotiateConfig::new(
-                    Box::new(KerberosConfig {
-                        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-                    }),
+                    Box::new(KerberosConfig::new(
+                        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                        CLIENT_COMPUTER_NAME.into(),
+                    )),
                     Some("kerberos,ntlm".to_owned()),
                     CLIENT_COMPUTER_NAME.into(),
                 ),
