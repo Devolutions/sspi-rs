@@ -502,14 +502,21 @@ mod tests {
     use crate::pk_init::SigningScheme;
 
     const EC_P256_PRIVATE_KEY: &str = include_str!("../test_assets/ec_p256.key");
+    /// The certificate of [EC_P256_PRIVATE_KEY].
+    const EC_P256_CERTIFICATE: &str = include_str!("../test_assets/ec_p256_scard.cer");
 
     #[test]
     fn emulated_ec_smart_card_signs_data() {
         let private_key = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
-        // The smart card does not check that the certificate matches the key, but the signing scheme is chosen by the certificate.
-        let certificate: Certificate = Cert::from_pem_str(include_str!("../test_assets/ec_p256.cer"))
-            .unwrap()
-            .into();
+        // The certificate must hold the public key of the private key: the signature is verified with the certificate key below.
+        let cert = Cert::from_pem_str(EC_P256_CERTIFICATE).unwrap();
+        let certificate: Certificate = cert.clone().into();
+        let public_key = private_key.to_public_key().unwrap();
+        assert_eq!(
+            &public_key,
+            cert.public_key(),
+            "the certificate must match the private key"
+        );
         assert_eq!(
             SigningScheme::EcdsaP256Sha256,
             SigningScheme::from_certificate(&certificate).unwrap()
@@ -529,17 +536,16 @@ mod tests {
         let signature = smart_card.sign(data).unwrap();
 
         // `picky` is an independent implementation: it must accept the DER encoded signature.
+        // The KDC checks the signature with the public key of the certificate, so the certificate key is used here.
         SignatureAlgorithm::Ecdsa(HashAlgorithm::SHA2_256)
-            .verify(&private_key.to_public_key().unwrap(), data, &signature)
+            .verify(cert.public_key(), data, &signature)
             .expect("the signature must be valid");
     }
 
     #[test]
     fn emulated_ec_smart_card_rejects_wrong_pin() {
         let private_key = PrivateKey::from_pem_str(EC_P256_PRIVATE_KEY).unwrap();
-        let certificate: Certificate = Cert::from_pem_str(include_str!("../test_assets/ec_p256.cer"))
-            .unwrap()
-            .into();
+        let certificate: Certificate = Cert::from_pem_str(EC_P256_CERTIFICATE).unwrap().into();
 
         let mut smart_card = SmartCard::new_emulated(
             "Reader 0".into(),

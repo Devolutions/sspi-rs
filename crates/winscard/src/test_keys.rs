@@ -1,10 +1,10 @@
 //! Keys for unit tests.
 
 /// RSA 2048 private key.
-pub(crate) const RSA_2048_PRIVATE_KEY: &str = include_str!("../../../test_assets/rsa_2048.key");
+pub(crate) const RSA_2048_PRIVATE_KEY: &str = include_str!("../test_assets/rsa_2048.key");
 
 /// P-256 EC private key (PKCS#8).
-pub(crate) const EC_P256_PRIVATE_KEY: &str = include_str!("../../../test_assets/ec_p256.key");
+pub(crate) const EC_P256_PRIVATE_KEY: &str = include_str!("../test_assets/ec_p256.key");
 
 /// The uncompressed public key point of the [EC_P256_PRIVATE_KEY] key.
 pub(crate) const EC_P256_PUBLIC_POINT: [u8; 65] = [
@@ -15,7 +15,7 @@ pub(crate) const EC_P256_PUBLIC_POINT: [u8; 65] = [
 ];
 
 /// P-384 EC private key (PKCS#8). The emulated smart cards do not support this curve.
-pub(crate) const EC_P384_PRIVATE_KEY: &str = include_str!("../../../test_assets/ec_p384.key");
+pub(crate) const EC_P384_PRIVATE_KEY: &str = include_str!("../test_assets/ec_p384.key");
 
 /// Ed25519 private key (PKCS#8). The emulated smart cards do not support this key type.
-pub(crate) const ED25519_PRIVATE_KEY: &str = include_str!("../../../test_assets/ed25519.key");
+pub(crate) const ED25519_PRIVATE_KEY: &str = include_str!("../test_assets/ed25519.key");

@@ -227,3 +227,28 @@ impl YubiKey {
         block.into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use super::*;
+
+    #[test]
+    fn debug_output_does_not_contain_the_secrets() {
+        let mut yubikey = YubiKey::new(Uuid::from_u128(0x0123_4567_89ab_cdef_0123_4567_89ab_cdef), &[0xff; 16])
+            .expect("the card ID is a valid container name");
+        yubikey.start_management_authentication();
+
+        let printed_information = yubikey.printed_information();
+        let management_key = &printed_information.as_ref()[6..];
+        let challenge = yubikey
+            .pending_challenge
+            .as_ref()
+            .expect("the authentication has been started");
+        let debug = format!("{yubikey:?}");
+
+        assert!(!debug.contains(&format!("{management_key:?}")), "{debug}");
+        assert!(!debug.contains(&format!("{:?}", challenge.as_ref())), "{debug}");
+    }
+}

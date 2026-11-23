@@ -757,6 +757,7 @@ mod tests {
     }
 
 
+    // oracle: reference YubiKey 5 P-256 PIV logon capture: the Cached_ContainerInfo_00 layout.
     #[test]
     fn ec_container_info_matches_the_real_card_layout() {
         let cache = init_cache(EC_P256_PRIVATE_KEY).unwrap();

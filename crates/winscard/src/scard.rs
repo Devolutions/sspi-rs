@@ -82,6 +82,12 @@ pub const ATR: [u8; 17] = [
 ///
 /// The Windows inbox PIV minidriver supports only RSA keys, so emulated smart cards with EC keys report this ATR
 /// to be served by the YubiKey Smart Card Minidriver. The minidriver is registered for this exact value.
+///
+/// UNTESTED: an installed YubiKey Smart Card Minidriver (`ykmd.dll`) selects the emulated card by this ATR and accepts
+/// its container map, certificate encoding, and management key authentication (`yubikey.rs`).
+/// Unit tests compare the bytes with local constants only.
+/// When changing this value, the container map, the certificate encoding, or the management key authentication,
+/// check an EC logon on a Windows machine with `ykmd.dll` installed.
 #[rustfmt::skip]
 pub const YUBIKEY_ATR: [u8; 23] = [
     0x3b, 0xfd, 0x13, 0x00, 0x00, 0x81, 0x31, 0xfe, 0x15, 0x80, 0x73, 0xc0,
@@ -129,10 +135,43 @@ const EC_CARD_IDENTITY: CardIdentity = CardIdentity {
     card_module: YUBIKEY_SCARD_DRIVER_LOCATION,
 };
 
+/// Encodes the GENERAL AUTHENTICATE response: the `7C` template holding one primitive `tag` field.
+///
+/// The value is copied once, into the returned buffer. No temporary TLV copy is made, so a secret
+/// value (the ECDH shared secret) is never left in a buffer that is not zeroized.
+fn encode_dynamic_authentication_response(tag: u8, value: &[u8]) -> Vec<u8> {
+    let value_length = crate::ber_tlv::ber_tlv_length_encoding(value.len());
+    let field_length = 1 + value_length.len() + value.len();
+    let template_length = crate::ber_tlv::ber_tlv_length_encoding(field_length);
+
+    let mut response = Vec::with_capacity(1 + template_length.len() + field_length);
+    response.push(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE);
+    response.extend_from_slice(&template_length);
+    response.push(tag);
+    response.extend_from_slice(&value_length);
+    response.extend_from_slice(value);
+
+    response
+}
+
+/// The size of the RSA 2048 modulus in bytes.
+const RSA_2048_MODULUS_SIZE: usize = 256;
+
 /// Checks that the emulated smart card supports the provided key and returns the parsed EC key if it is an EC one.
 fn parse_ec_key(private_key: &PrivateKey) -> WinScardResult<Option<p256::SecretKey>> {
     match private_key.kind() {
-        KeyKind::Rsa => Ok(None),
+        KeyKind::Rsa => {
+            // The card advertises RSA 2048 in its key container and public key blob, so other sizes cannot be served.
+            let rsa_private_key = RsaPrivateKey::try_from(private_key)?;
+            if rsa_private_key.size() != RSA_2048_MODULUS_SIZE {
+                return Err(Error::new(
+                    ErrorKind::UnsupportedFeature,
+                    "only RSA 2048 smart card keys are supported",
+                ));
+            }
+
+            Ok(None)
+        }
         KeyKind::Ec => {
             let pkcs8 = Secret::new(private_key.to_pkcs8()?);
 
@@ -679,15 +718,10 @@ impl SmartCard<'_> {
                 Err(_) => return Ok(Status::IncorrectDataField.into()),
             },
         };
-        let response = Tlv::new(
-            Tag::try_from(tlv_tags::DYNAMIC_AUTHENTICATION_TEMPLATE)?,
-            Value::Constructed(vec![Tlv::new(
-                Tag::try_from(tlv_tags::DAT_RESPONSE)?,
-                Value::Primitive(signed_challenge.as_ref().clone()),
-            )?]),
-        )?
-        .to_vec();
-        self.pending_response = Some(response.into());
+        self.pending_response = Some(Secret::new(encode_dynamic_authentication_response(
+            tlv_tags::DAT_RESPONSE,
+            signed_challenge.as_ref().as_slice(),
+        )));
         self.get_response()
     }
 
@@ -1737,6 +1771,7 @@ mod tests {
                 assert_eq!(vec![0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03], response.data.unwrap());
             }
 
+            // oracle: reference YubiKey 5 P-256 PIV logon capture: the container map record layout and key sizes.
             #[test]
             fn ec_card_container_map_matches_the_real_card_layout() {
                 let mut scard = new_ec_scard().with_container_name("test-container").unwrap();
@@ -1756,6 +1791,7 @@ mod tests {
                 // Slot, key spec, key size, flags, PIN id, and no associated ECDH container.
                 assert_eq!([0x9A, 0x06, 0x00, 0x01, 0x03, 0x01, 0xFF], record[80..87]);
                 // The fingerprint is the beginning of the SHA-256 hash of the certificate.
+                // oracle: mutant the fingerprint length and hash are chosen by the code: no capture decides them, and the input is a stub.
                 assert_eq!(Sha256::digest([0xff; 1024])[..20], record[87..]);
             }
 

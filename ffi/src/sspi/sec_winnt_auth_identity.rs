@@ -279,7 +279,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
+        if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -318,7 +318,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone()) {
+        if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -415,7 +415,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
     // Try to collect credentials for the emulated/system-provided smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.as_ref().to_vec()) {
+    if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.as_ref().to_vec())? {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
@@ -424,6 +424,27 @@ pub unsafe fn auth_data_to_identity_buffers_w(
         domain: Utf16String::from_bytes_le(domain)?,
         password: ZeroizedUtf16String::from_bytes_le(password.as_ref())?.into(),
     }))
+}
+
+/// The environment variable that selects the smart card type.
+#[cfg(feature = "scard")]
+const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
+
+/// Collects smart card credentials only if the smart card type is selected explicitly.
+///
+/// Returns `Ok(None)` when `SSPI_SCARD_TYPE` is not set, so the caller falls back to password logon.
+/// Once the smart card type is selected, a collection failure is an error and the password is never used as a PIN fallback.
+#[cfg(feature = "scard")]
+fn try_collect_smart_card_creds(
+    username: Vec<u8>,
+    domain: Vec<u8>,
+    pin: Vec<u8>,
+) -> Result<Option<SmartCardIdentityBuffers>> {
+    if std::env::var_os(SCARD_TYPE_ENV).is_none() {
+        return Ok(None);
+    }
+
+    collect_smart_card_creds(username, domain, pin).map(Some)
 }
 
 /// Collects credentials for smart card logon.
@@ -446,7 +467,6 @@ fn collect_smart_card_creds(
 
     use sspi::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
 
-    const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
     const SCARD_EMULATED: &str = "emulated";
     const SCARD_SYSTEM_PROVIDED: &str = "system";
 
@@ -982,11 +1002,11 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
-    if let Ok(scard_creds) = collect_smart_card_creds(
+    if let Some(scard_creds) = try_collect_smart_card_creds(
         auth_identity_buffers.user.to_bytes_le(),
         auth_identity_buffers.domain.to_bytes_le(),
         password.as_ref().to_vec(),
-    ) {
+    )? {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
