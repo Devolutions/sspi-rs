@@ -410,7 +410,7 @@ impl<'a> ScardContext<'a> {
                     + 4 /* cbKeyExPublicKey */
                     + key_blob.len(),
             )
-                .map_err(|_| Error::new(ErrorKind::InternalError, "container info is too large for u32"))?;
+            .map_err(|_| Error::new(ErrorKind::InternalError, "container info is too large for u32"))?;
             value.extend_from_slice(&data_len.to_le_bytes());
 
             let key_blob_len = u32::try_from(key_blob.len())
@@ -755,7 +755,6 @@ mod tests {
 
         assert_eq!(ErrorKind::InvalidParameter, error.error_kind);
     }
-
 
     // oracle: reference YubiKey 5 P-256 PIV logon capture: the Cached_ContainerInfo_00 layout.
     #[test]
