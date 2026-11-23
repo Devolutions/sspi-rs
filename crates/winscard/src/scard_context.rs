@@ -403,7 +403,13 @@ impl<'a> ScardContext<'a> {
             };
 
             // actual data len: the container info header + the key blob
-            let data_len = u32::try_from(16 + key_blob.len())
+            let data_len = u32::try_from(
+                4 /* dwVersion */
+                    + 4 /* dwReserved */
+                    + 4 /* cbSigPublicKey */
+                    + 4 /* cbKeyExPublicKey */
+                    + key_blob.len(),
+            )
                 .map_err(|_| Error::new(ErrorKind::InternalError, "container info is too large for u32"))?;
             value.extend_from_slice(&data_len.to_le_bytes());
 
