@@ -44,7 +44,7 @@ pub(crate) fn encode_container_name(container_name: &str) -> WinScardResult<Vec<
         .flat_map(u16::to_le_bytes)
         .collect::<Vec<_>>();
 
-    if encoded.len() > MAX_CONTAINER_NAME_LEN * 2 {
+    if MAX_CONTAINER_NAME_LEN * 2 < encoded.len() {
         return Err(Error::new(
             ErrorKind::InvalidParameter,
             format!("key container name is too long: the maximum is {MAX_CONTAINER_NAME_LEN} UTF-16 code units"),
