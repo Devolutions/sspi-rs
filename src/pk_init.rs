@@ -426,13 +426,19 @@ pub(crate) fn generate_signer_info(
 
 /// Extracts the server DH public key (the DER-encoded `INTEGER` inside of the `subjectPublicKey`).
 ///
-/// If `now` is provided, the key is rejected when its `dhKeyExpiration` is before `now`.
+/// If `now` is provided, the key must carry a `dhKeyExpiration` that is not before `now`.
+/// A reply without the expiration is rejected in that case, because the smart card logon also requires
+/// the `serverDHNonce`, which RFC 4556 allows only together with the expiration.
 ///
-/// [Receipt of KDC Reply](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.4):
-/// "dhKeyExpiration: [...] the KDC's key is valid until this time."
+/// [RFC 4556, Section 3.2.3.1](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3.1):
+/// "The dhKeyExpiration field is present if and only if the DH keys are reused. If the dhKeyExpiration field is
+/// present, the KDC's public key in this KDCDHKeyInfo structure MUST NOT be used past the point of this expiration time."
 #[instrument(level = "trace", ret)]
 pub(crate) fn extract_server_dh_public_key(signed_data: &SignedData, now: Option<OffsetDateTime>) -> Result<Vec<u8>> {
     let dh_key_info = extract_kdc_dh_key_info(signed_data)?;
+    if now.is_some() && dh_key_info.dh_key_expiration.0.is_none() {
+        return Err(Error::new(ErrorKind::InvalidToken, "KDC DH key has no dhKeyExpiration"));
+    }
     check_dh_key_expiration(&dh_key_info, now)?;
 
     dh_public_key(&dh_key_info)
@@ -460,7 +466,7 @@ fn check_dh_key_expiration(dh_key_info: &KdcDhKeyInfo, now: Option<OffsetDateTim
                 format!("invalid DH key expiration time: {error}"),
             )
         })?;
-        if now > expiration {
+        if expiration < now {
             return Err(Error::new(
                 ErrorKind::InvalidToken,
                 format!("KDC DH key expired at {expiration}"),
@@ -594,7 +600,7 @@ mod tests {
         println!("{encoded_signed_attributes:?}");
     }
 
-    fn dh_key_signed_data(expiration: Option<OffsetDateTime>) -> SignedData {
+    pub(super) fn dh_key_signed_data(expiration: Option<OffsetDateTime>) -> SignedData {
         let key_info = KdcDhKeyInfo {
             subject_public_key: ExplicitContextTag0::from(BitStringAsn1::from(BitString::with_bytes(
                 picky_asn1_der::to_vec(&IntegerAsn1::from(vec![0x01, 0x02, 0x03])).unwrap(),
@@ -623,17 +629,25 @@ mod tests {
 
     const NOW_UNIX_SECONDS: i64 = 1_800_000_000;
 
-    fn now() -> OffsetDateTime {
+    pub(super) fn now() -> OffsetDateTime {
         OffsetDateTime::from_unix_timestamp(NOW_UNIX_SECONDS).unwrap()
     }
 
     #[test]
-    fn dh_key_without_expiration_is_accepted() {
-        let key = extract_server_dh_public_key(&dh_key_signed_data(None), Some(now())).unwrap();
+    fn dh_key_without_expiration_is_accepted_when_the_expiration_is_not_checked() {
+        let key = extract_server_dh_public_key(&dh_key_signed_data(None), None).unwrap();
 
         assert_eq!(key, [0x01, 0x02, 0x03]);
     }
 
+    #[test]
+    fn dh_key_without_expiration_is_rejected_when_the_expiration_is_checked() {
+        let error = extract_server_dh_public_key(&dh_key_signed_data(None), Some(now())).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // oracle: spec RFC 4556 §3.2.3.1 (the key "MUST NOT be used past the point of this expiration time")
     #[test]
     fn dh_key_expiring_in_the_future_is_accepted() {
         let signed_data = dh_key_signed_data(Some(now() + time::Duration::seconds(1)));
@@ -641,6 +655,7 @@ mod tests {
         extract_server_dh_public_key(&signed_data, Some(now())).unwrap();
     }
 
+    // oracle: spec RFC 4556 §3.2.3.1 (only "past" the expiration time is rejected, so the instant itself is accepted)
     #[test]
     fn dh_key_expiring_at_the_current_time_is_accepted() {
         extract_server_dh_public_key(&dh_key_signed_data(Some(now())), Some(now())).unwrap();
@@ -658,6 +673,7 @@ mod tests {
 
 #[cfg(all(test, feature = "scard"))]
 mod ecdh_tests {
+    use super::tests::{dh_key_signed_data, now};
     use picky::x509::Cert;
     use picky_asn1::wrapper::{Asn1SetOf, ObjectIdentifierAsn1, OctetStringAsn1};
     use picky_asn1_x509::signed_data::SignedData;
@@ -784,6 +800,15 @@ mod ecdh_tests {
                 .0
                 .0
         );
+    }
+
+    #[test]
+    fn ecdh_key_expired_in_the_past_is_rejected() {
+        let signed_data = dh_key_signed_data(Some(now() - time::Duration::seconds(1)));
+
+        let error = super::extract_server_ecdh_public_key(&signed_data, Some(now())).unwrap_err();
+
+        assert_eq!(error.error_type, crate::ErrorKind::InvalidToken);
     }
 
     #[test]

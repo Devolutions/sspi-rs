@@ -495,8 +495,10 @@ fn ca_cert_from_env() -> Result<Option<sspi::CertificateRaw>> {
 
 /// Parses the optional KDC CA certificate.
 ///
-/// `data` is a one-line base64 string with ASN1 DER certificate data. Surrounding whitespace is ignored.
-/// `path` is a path to a PEM certificate file. `data` wins if both are set.
+/// `data` is a one-line base64 string with ASN1 DER certificate data.
+/// Surrounding whitespace is ignored.
+/// `path` is a path to a PEM certificate file.
+/// `data` wins if both are set.
 /// A value that is set but cannot be read or parsed is an error.
 #[cfg(feature = "scard")]
 fn ca_cert_from_values(data: Option<&str>, path: Option<&str>) -> Result<Option<sspi::CertificateRaw>> {

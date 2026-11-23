@@ -5,7 +5,7 @@ use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
 use picky_asn1_x509::{AttributeValues, Certificate, ExtensionView, oids};
 use time::OffsetDateTime;
 
-use crate::pku2u::{extract_signing_certificate, is_valid_at};
+use crate::pku2u::{extract_signing_certificate, is_valid_at, signing_certificate_der};
 use crate::{Error, ErrorKind, Result};
 
 /// If this environment variable is set to `1` or `true` (case-insensitive), the KDC certificate must be verified.
@@ -29,8 +29,9 @@ fn is_ca_enforced() -> bool {
 ///
 /// The validity period of the KDC certificate is always checked against `now`.
 /// If `ca_cert` is provided, the certificate must chain up to it.
-/// Otherwise, the chain is checked against the system trust store. If the store does not vouch for the certificate,
-/// validation fails when `SSPI_SCARD_ENFORCE_CA` is set to `1` or `true`, and only logs a warning otherwise.
+/// Otherwise, the chain is checked against the system trust store.
+/// If the store does not vouch for the certificate, validation fails when `SSPI_SCARD_ENFORCE_CA` is set
+/// to `1` or `true`, and only logs a warning otherwise.
 pub(crate) fn validate_kdc_certificate(
     signed_data: &SignedData,
     ca_cert: Option<&Certificate>,
@@ -40,10 +41,10 @@ pub(crate) fn validate_kdc_certificate(
 }
 
 /// Same as [`validate_kdc_certificate`], but the system trust anchors and the enforcement are provided by the caller.
-fn validate_kdc_certificate_with<'a>(
+fn validate_kdc_certificate_with(
     signed_data: &SignedData,
     ca_cert: Option<&Certificate>,
-    system_trust_anchors: impl FnOnce() -> Result<&'a [Certificate]>,
+    system_trust_anchors: impl FnOnce() -> Result<Vec<Certificate>>,
     enforce_ca: bool,
     now: OffsetDateTime,
 ) -> Result<()> {
@@ -54,7 +55,7 @@ fn validate_kdc_certificate_with<'a>(
         return verify_kdc_chain(signed_data, kdc_cert, std::slice::from_ref(ca_cert), now);
     }
 
-    let result = system_trust_anchors().and_then(|anchors| verify_kdc_chain(signed_data, kdc_cert, anchors, now));
+    let result = system_trust_anchors().and_then(|anchors| verify_kdc_chain(signed_data, kdc_cert, &anchors, now));
 
     match result {
         Ok(()) => Ok(()),
@@ -75,35 +76,30 @@ fn validate_kdc_certificate_with<'a>(
     }
 }
 
-/// Returns the trust anchors of the system trust store.
+/// Loads the trust anchors of the system trust store.
 ///
-/// The store is read once. Certificates that cannot be read or parsed are skipped.
+/// The store is read on every call, so a CA installed or removed after the process started takes effect.
+/// Certificates that cannot be read or parsed are skipped.
 #[cfg(not(target_arch = "wasm32"))]
-fn system_trust_anchors() -> Result<&'static [Certificate]> {
-    use std::sync::OnceLock;
+fn system_trust_anchors() -> Result<Vec<Certificate>> {
+    let loaded = rustls_native_certs::load_native_certs();
 
-    static TRUST_ANCHORS: OnceLock<Vec<Certificate>> = OnceLock::new();
+    for error in &loaded.errors {
+        warn!(%error, "Failed to load a certificate from the system trust store");
+    }
 
-    Ok(TRUST_ANCHORS.get_or_init(|| {
-        let loaded = rustls_native_certs::load_native_certs();
-
-        for error in &loaded.errors {
-            warn!(%error, "Failed to load a certificate from the system trust store");
-        }
-
-        loaded
-            .certs
-            .iter()
-            .filter_map(|cert| picky_asn1_der::from_bytes::<Certificate>(cert.as_ref()).ok())
-            .collect()
-    }))
+    Ok(loaded
+        .certs
+        .iter()
+        .filter_map(|cert| picky_asn1_der::from_bytes::<Certificate>(cert.as_ref()).ok())
+        .collect())
 }
 
 /// The system trust store cannot be loaded on wasm, so the CA certificate has to be provided explicitly.
 ///
 /// TODO: load the trust anchors from `webpki-roots` on wasm instead.
 #[cfg(target_arch = "wasm32")]
-fn system_trust_anchors() -> Result<&'static [Certificate]> {
+fn system_trust_anchors() -> Result<Vec<Certificate>> {
     Err(Error::new(
         ErrorKind::Pku2uCertFailure,
         "no CA certificate is configured and the system trust store is not available on wasm",
@@ -112,21 +108,21 @@ fn system_trust_anchors() -> Result<&'static [Certificate]> {
 
 /// Verifies that the KDC certificate chains up to one of the `trust_anchors`.
 ///
-/// The certificates sent in the reply after the signing one are the candidate intermediates.
+/// The certificates of the reply other than the signer are the candidate intermediates.
 fn verify_kdc_chain(
     signed_data: &SignedData,
     kdc_cert: Certificate,
     trust_anchors: &[Certificate],
     now: OffsetDateTime,
 ) -> Result<()> {
-    let mut intermediates = signed_data
+    let signer_der = signing_certificate_der(signed_data)?;
+    let intermediates = signed_data
         .certificates
         .0
         .0
         .iter()
-        .skip(1)
         .filter_map(|choice| match choice {
-            CertificateChoices::Certificate(raw) => {
+            CertificateChoices::Certificate(raw) if raw.0.as_slice() != signer_der => {
                 let certificate = picky_asn1_der::from_bytes::<Certificate>(&raw.0).ok()?;
                 Some((certificate, raw.0.as_slice()))
             }
@@ -134,65 +130,63 @@ fn verify_kdc_chain(
         })
         .collect::<Vec<_>>();
 
-    // INVARIANT: `current_der` is the encoding of `current`, and every certificate below it on the path is verified.
-    let mut current = kdc_cert;
-    let Some(CertificateChoices::Certificate(raw)) = signed_data.certificates.0.0.first() else {
-        return Err(Error::new(
-            ErrorKind::Pku2uCertFailure,
-            "received unknown certificate format",
-        ));
-    };
-    let mut current_der = raw.0.as_slice();
-    loop {
-        // An issuer may have several certificates with the same name (for example, after a CA key renewal),
-        // so every one of them is tried.
-        let mut anchors = trust_anchors
-            .iter()
-            .filter(|anchor| anchor.tbs_certificate.subject == current.tbs_certificate.issuer)
-            .peekable();
-        if anchors.peek().is_some() {
-            let mut result = Ok(());
-            for anchor in anchors {
-                result = check_validity_period(anchor, now).and_then(|()| verify_issued_by(current_der, anchor, false));
-                if result.is_ok() {
-                    break;
-                }
-            }
+    let mut used = vec![false; intermediates.len()];
 
-            if result.is_ok() {
-                return result;
-            }
+    verify_path(&kdc_cert, signer_der, &intermediates, &mut used, trust_anchors, now)
+}
+
+/// Searches for a path from `current` to one of the `trust_anchors`, backtracking over the candidates.
+///
+/// `current_der` is the encoding of `current`. Each intermediate is used at most once on a path,
+/// which bounds the path length and rules out loops.
+fn verify_path(
+    current: &Certificate,
+    current_der: &[u8],
+    intermediates: &[(Certificate, &[u8])],
+    used: &mut [bool],
+    trust_anchors: &[Certificate],
+    now: OffsetDateTime,
+) -> Result<()> {
+    let mut error = Error::new(
+        ErrorKind::Pku2uCertFailure,
+        "KDC certificate does not chain up to a trusted CA certificate",
+    );
+
+    // An issuer may have several certificates with the same name (for example, after a CA key renewal),
+    // so every one of them is tried.
+    for anchor in trust_anchors
+        .iter()
+        .filter(|anchor| anchor.tbs_certificate.subject == current.tbs_certificate.issuer)
+    {
+        match check_validity_period(anchor, now).and_then(|()| verify_issued_by(current_der, anchor, false)) {
+            Ok(()) => return Ok(()),
+            Err(anchor_error) => error = anchor_error,
+        }
+    }
+
+    for (index, (intermediate, intermediate_der)) in intermediates.iter().enumerate() {
+        if used[index] || intermediate.tbs_certificate.subject != current.tbs_certificate.issuer {
+            continue;
         }
 
-        // As for the trust anchors, every intermediate with the issuer name is tried.
-        let mut error = Error::new(
-            ErrorKind::Pku2uCertFailure,
-            "KDC certificate does not chain up to a trusted CA certificate",
-        );
-        let position = intermediates.iter().position(|(intermediate, _)| {
-            if intermediate.tbs_certificate.subject != current.tbs_certificate.issuer {
-                return false;
-            }
+        let issued =
+            check_validity_period(intermediate, now).and_then(|()| verify_issued_by(current_der, intermediate, true));
+        if let Err(issued_error) = issued {
+            error = issued_error;
+            continue;
+        }
 
-            match check_validity_period(intermediate, now)
-                .and_then(|()| verify_issued_by(current_der, intermediate, true))
-            {
-                Ok(()) => true,
-                Err(intermediate_error) => {
-                    error = intermediate_error;
-                    false
-                }
-            }
-        });
-        let Some(position) = position else {
-            return Err(error);
-        };
-        // Removing the used certificate bounds the path length and rules out loops.
-        let (intermediate, intermediate_der) = intermediates.swap_remove(position);
+        used[index] = true;
+        let path = verify_path(intermediate, intermediate_der, intermediates, used, trust_anchors, now);
+        used[index] = false;
 
-        current = intermediate;
-        current_der = intermediate_der;
+        match path {
+            Ok(()) => return Ok(()),
+            Err(path_error) => error = path_error,
+        }
     }
+
+    Err(error)
 }
 
 /// Verifies that `issuer` signed the certificate encoded as `der`.
@@ -283,22 +277,34 @@ pub(crate) fn validate_content_type_attribute(signed_data: &SignedData) -> Resul
         .first()
         .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "missing signers_infos in signed data"))?;
 
-    let mut content_types = signer_info
+    let content_type_attributes = signer_info
         .signed_attrs
         .0
         .0
         .0
         .iter()
         .filter(|attribute| attribute.ty.0 == oids::content_type())
-        .filter_map(|attribute| match &attribute.value {
-            AttributeValues::ContentType(values) => values.0.first(),
-            _ => None,
-        });
-    let content_type = content_types
-        .next()
-        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "SignedData has no content-type attribute"))?;
+        .collect::<Vec<_>>();
+    let [attribute] = content_type_attributes.as_slice() else {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "SignedData must have exactly one content-type attribute",
+        ));
+    };
+    let AttributeValues::ContentType(values) = &attribute.value else {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "SignedData content-type attribute has an unexpected value",
+        ));
+    };
+    let [content_type] = values.0.as_slice() else {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "SignedData content-type attribute must have exactly one value",
+        ));
+    };
 
-    if content_types.next().is_some() || content_type.0 != signed_data.content_info.content_type.0 {
+    if content_type.0 != signed_data.content_info.content_type.0 {
         return Err(Error::new(
             ErrorKind::InvalidToken,
             "SignedData content-type attribute does not match its encapsulated content type",
@@ -315,14 +321,18 @@ mod tests {
     use picky::x509::certificate::CertificateBuilder;
     use picky::x509::date::UtcDate;
     use picky::x509::name::DirectoryName;
-    use picky_asn1::wrapper::{Asn1SetOf, Optional};
+    use picky_asn1::wrapper::{Asn1SequenceOf, Asn1SetOf, OctetStringAsn1, Optional};
     use picky_asn1_der::Asn1RawDer;
     use picky_asn1_x509::cmsversion::CmsVersion;
     use picky_asn1_x509::content_info::EncapsulatedContentInfo;
     use picky_asn1_x509::signed_data::{
         CertificateChoices, CertificateSet, DigestAlgorithmIdentifiers, SignedData, SignersInfos,
     };
-    use picky_asn1_x509::{AlgorithmIdentifier, KeyUsage, oids};
+    use picky_asn1_x509::signer_info::{
+        Attributes, CertificateSerialNumber, DigestAlgorithmIdentifier, IssuerAndSerialNumber,
+        SignatureAlgorithmIdentifier, SignatureValue, SignerIdentifier, SignerInfo, UnsignedAttributes,
+    };
+    use picky_asn1_x509::{AlgorithmIdentifier, KeyUsage, ShaVariant, oids};
     use time::{Date, Month, OffsetDateTime};
 
     use super::{is_enforce_requested, validate_kdc_certificate_with};
@@ -334,6 +344,10 @@ mod tests {
     const LAB_KDC_CERT: &str = include_str!("../../test_assets/kdc_cert.cer");
 
     fn signed_data_with_certificates(certificates: &[&Cert]) -> SignedData {
+        signed_data_with_signer(certificates, certificates[0])
+    }
+
+    fn signed_data_with_signer(certificates: &[&Cert], signer: &Cert) -> SignedData {
         SignedData {
             version: CmsVersion::V3,
             digest_algorithms: DigestAlgorithmIdentifiers(Asn1SetOf::from(vec![AlgorithmIdentifier::new_sha1()])),
@@ -345,7 +359,22 @@ mod tests {
                     .collect(),
             )),
             crls: None,
-            signers_infos: SignersInfos(Asn1SetOf::from(Vec::new())),
+            signers_infos: SignersInfos(Asn1SetOf::from(vec![signer_info(&asn1_cert(signer))])),
+        }
+    }
+
+    fn signer_info(signer: &picky_asn1_x509::Certificate) -> SignerInfo {
+        SignerInfo {
+            version: CmsVersion::V1,
+            sid: SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber {
+                issuer: signer.tbs_certificate.issuer.clone(),
+                serial_number: CertificateSerialNumber(signer.tbs_certificate.serial_number.clone()),
+            }),
+            digest_algorithm: DigestAlgorithmIdentifier(AlgorithmIdentifier::new_sha(ShaVariant::SHA1)),
+            signed_attrs: Optional::from(Attributes(Asn1SequenceOf::from(Vec::new()))),
+            signature_algorithm: SignatureAlgorithmIdentifier(AlgorithmIdentifier::new_rsa_encryption()),
+            signature: SignatureValue(OctetStringAsn1::from(Vec::new())),
+            unsigned_attrs: Optional::from(UnsignedAttributes(Vec::new())),
         }
     }
 
@@ -366,8 +395,8 @@ mod tests {
         validate_kdc_certificate_with(signed_data, ca_cert, no_system_roots, false, now)
     }
 
-    fn no_system_roots() -> crate::Result<&'static [picky_asn1_x509::Certificate]> {
-        Ok(&[])
+    fn no_system_roots() -> crate::Result<Vec<picky_asn1_x509::Certificate>> {
+        Ok(Vec::new())
     }
 
     fn lab_kdc_certificate_result_at(now: OffsetDateTime) -> crate::Result<()> {
@@ -377,14 +406,13 @@ mod tests {
         validate_unenforced(&signed_data, None, now)
     }
 
-    // oracle: the validity period of the committed fixture as printed by `openssl x509 -dates`.
+    // oracle: reference `openssl x509 -dates` output for the committed fixture test_assets/kdc_cert.cer
     #[test]
     fn lab_kdc_certificate_is_accepted_inside_its_validity_period() {
         lab_kdc_certificate_result_at(utc(2026, Month::June, 1, 0, 0, 0)).unwrap();
     }
 
-    // oracle: RFC 5280 section 4.1.2.5 defines the validity period as the interval from notBefore through notAfter
-    // inclusive, with the instants taken from `openssl x509 -dates` for the committed fixture.
+    // oracle: spec RFC 5280 §4.1.2.5 (the validity interval includes notBefore and notAfter)
     #[test]
     fn lab_kdc_certificate_is_accepted_at_not_before() {
         lab_kdc_certificate_result_at(utc(2026, Month::January, 8, 17, 25, 25)).unwrap();
@@ -414,8 +442,9 @@ mod tests {
         ca: Cert,
     }
 
+    // RSA-1024 keeps key generation fast in debug builds. Nothing in the validation depends on the key size.
     fn generate_key() -> PrivateKey {
-        PrivateKey::generate_rsa(2048).unwrap()
+        PrivateKey::generate_rsa(1024).unwrap()
     }
 
     fn date(year: u16, month: u8) -> UtcDate {
@@ -440,7 +469,18 @@ mod tests {
 
     /// Issues a certificate for a freshly generated key. Returns the certificate and its key.
     fn issue(issuer: &Pki, name: &str, ca: bool, valid_from: UtcDate, valid_to: UtcDate) -> Pki {
-        let key = generate_key();
+        issue_with_key(issuer, generate_key(), name, ca, valid_from, valid_to)
+    }
+
+    /// Issues a certificate for `key`, so the same key can be certified by several issuers.
+    fn issue_with_key(
+        issuer: &Pki,
+        key: PrivateKey,
+        name: &str,
+        ca: bool,
+        valid_from: UtcDate,
+        valid_to: UtcDate,
+    ) -> Pki {
         let cert = CertificateBuilder::new()
             .validity(valid_from, valid_to)
             .subject(DirectoryName::new_common_name(name), key.to_public_key().unwrap())
@@ -644,7 +684,7 @@ mod tests {
         validate_kdc_certificate_with(
             &signed_data,
             ca_cert.as_ref(),
-            || Ok(system_roots.as_slice()),
+            || Ok(system_roots.clone()),
             enforce_ca,
             utc(2027, Month::June, 1, 0, 0, 0),
         )
@@ -652,6 +692,7 @@ mod tests {
 
     const UNVERIFIED_CHAIN_WARNING: &str = "chain is not verified";
 
+    // oracle: spec RFC 5280 §6.1 (a chain that ends in a trust anchor is valid)
     #[test]
     fn system_trust_anchor_vouches_for_the_kdc_certificate() {
         let root = root_ca("Test Root");
@@ -663,6 +704,7 @@ mod tests {
         assert!(!logs.output().contains(UNVERIFIED_CHAIN_WARNING));
     }
 
+    // oracle: mutant an unverified chain is logged and the logon continues
     #[test]
     fn kdc_certificate_unknown_to_the_system_store_is_accepted_with_a_warning_when_not_enforced() {
         let trusted = root_ca("Test Root");
@@ -676,6 +718,7 @@ mod tests {
         assert!(output.contains(UNVERIFIED_CHAIN_WARNING), "no warning in: {output}");
     }
 
+    // oracle: spec RFC 5280 §6.1 (a chain that ends in an untrusted root is not valid)
     #[test]
     fn kdc_certificate_unknown_to_the_system_store_is_rejected_when_enforced() {
         let trusted = root_ca("Test Root");
@@ -687,6 +730,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    // oracle: mutant an unavailable store is logged and the logon continues
     #[test]
     fn unavailable_system_store_is_accepted_with_a_warning_when_not_enforced() {
         let root = root_ca("Test Root");
@@ -706,6 +750,7 @@ mod tests {
         assert!(logs.output().contains(UNVERIFIED_CHAIN_WARNING));
     }
 
+    // oracle: mutant an unavailable store fails the logon when enforced
     #[test]
     fn unavailable_system_store_is_rejected_when_enforced() {
         let root = root_ca("Test Root");
@@ -724,6 +769,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    // oracle: spec RFC 5280 §6.1 (a chain that does not end in the configured trust anchor is not valid)
     #[test]
     fn configured_ca_cert_that_does_not_vouch_is_rejected_even_when_not_enforced() {
         let configured = root_ca("Other Root");
@@ -736,6 +782,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    // oracle: spec RFC 5280 §6.1 (a same-named trust anchor with the matching key is a valid anchor)
     #[test]
     fn issuer_with_a_renewed_key_is_found_among_the_same_named_trust_anchors() {
         let old_root = root_ca("Test Root");
@@ -748,6 +795,7 @@ mod tests {
         assert!(!logs.output().contains(UNVERIFIED_CHAIN_WARNING));
     }
 
+    // oracle: spec RFC 5280 §4.1.2.5 (an expired certificate is not valid even without a verified chain)
     #[test]
     fn missing_system_store_still_checks_the_validity_period() {
         let root = root_ca("Test Root");
@@ -766,6 +814,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    // oracle: mutant only the explicit values 1 and true enable the requirement
     #[test]
     fn only_explicit_values_enable_the_ca_requirement() {
         for (value, expected) in [
@@ -780,6 +829,78 @@ mod tests {
         ] {
             assert_eq!(is_enforce_requested(value), expected, "value {value:?}");
         }
+    }
+
+    // oracle: spec RFC 5652 §5.1 (the certificates are a collection in no required order; §5.3 sid names the signer)
+    #[test]
+    fn signer_is_selected_by_its_signer_info_when_an_intermediate_comes_first() {
+        let root = root_ca("Test Root");
+        let intermediate = issue(&root, "Intermediate", true, date(2026, 6), date(2028, 1));
+        let kdc = issue(&intermediate, "kdc", false, date(2026, 6), date(2028, 1));
+        let signed_data = signed_data_with_signer(&[&intermediate.ca, &kdc.ca], &kdc.ca);
+
+        validate_kdc_certificate_with(
+            &signed_data,
+            Some(&asn1_cert(&root.ca)),
+            no_system_roots,
+            false,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap();
+    }
+
+    // oracle: mutant greedy intermediate selection fails when the first same-named intermediate cannot reach an anchor
+    #[test]
+    fn same_named_intermediate_with_another_issuer_does_not_hide_the_valid_path() {
+        let root = root_ca("Test Root");
+        let other = root_ca("Other Root");
+        let intermediate_key = generate_key();
+        let untrusted = issue_with_key(
+            &other,
+            intermediate_key.clone(),
+            "Intermediate",
+            true,
+            date(2026, 6),
+            date(2028, 1),
+        );
+        let trusted = issue_with_key(
+            &root,
+            intermediate_key,
+            "Intermediate",
+            true,
+            date(2026, 6),
+            date(2028, 1),
+        );
+        let kdc = issue(&trusted, "kdc", false, date(2026, 6), date(2028, 1));
+        let signed_data = signed_data_with_signer(&[&kdc.ca, &untrusted.ca, &trusted.ca], &kdc.ca);
+
+        validate_kdc_certificate_with(
+            &signed_data,
+            Some(&asn1_cert(&root.ca)),
+            no_system_roots,
+            false,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap();
+    }
+
+    // oracle: mutant an anchor with the issuer's name but another key ends the search before a cross-certified path
+    #[test]
+    fn cross_certified_renewed_key_is_accepted_when_the_old_anchor_has_the_same_name() {
+        let old_root = root_ca("Test Root");
+        let renewed_key = generate_key();
+        let cross_certificate = issue_with_key(&old_root, renewed_key, "Test Root", true, date(2026, 6), date(2028, 1));
+        let kdc = issue(&cross_certificate, "kdc", false, date(2026, 6), date(2028, 1));
+        let signed_data = signed_data_with_signer(&[&kdc.ca, &cross_certificate.ca], &kdc.ca);
+
+        validate_kdc_certificate_with(
+            &signed_data,
+            Some(&asn1_cert(&old_root.ca)),
+            no_system_roots,
+            false,
+            utc(2027, Month::June, 1, 0, 0, 0),
+        )
+        .unwrap();
     }
 }
 
@@ -837,8 +958,7 @@ mod content_type_tests {
         }
     }
 
-    // oracle: RFC 5652 section 5.3 requires the content-type attribute to be present and to equal the
-    // encapsulated content type whenever signed attributes are used.
+    // oracle: spec RFC 5652 §11.1 (the content-type attribute MUST be present and MUST match the encapsulated type)
     #[test]
     fn content_type_attribute_matching_the_content_is_accepted() {
         let signed_data = signed_data_with_attributes(vec![
@@ -862,6 +982,56 @@ mod content_type_tests {
     fn content_type_attribute_differing_from_the_content_is_rejected() {
         let signed_data = signed_data_with_attributes(vec![
             content_type_attribute(oids::pkinit_auth_data()),
+            message_digest_attribute(),
+        ]);
+
+        let error = validate_content_type_attribute(&signed_data).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    fn content_type_attribute_with_values(values: Vec<oid::ObjectIdentifier>) -> Attribute {
+        Attribute {
+            ty: ObjectIdentifierAsn1::from(oids::content_type()),
+            value: AttributeValues::ContentType(Asn1SetOf::from(
+                values.into_iter().map(ObjectIdentifierAsn1::from).collect::<Vec<_>>(),
+            )),
+        }
+    }
+
+    // oracle: spec RFC 5652 §11.1 (ContentType is a single OBJECT IDENTIFIER)
+    #[test]
+    fn content_type_attribute_with_several_values_is_rejected() {
+        let signed_data = signed_data_with_attributes(vec![
+            content_type_attribute_with_values(vec![oids::kpinit_dh_key_data(), oids::pkinit_auth_data()]),
+            message_digest_attribute(),
+        ]);
+
+        let error = validate_content_type_attribute(&signed_data).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // oracle: mutant a second content-type attribute hides a mismatching first one
+    #[test]
+    fn duplicate_content_type_attributes_are_rejected() {
+        let signed_data = signed_data_with_attributes(vec![
+            content_type_attribute(oids::kpinit_dh_key_data()),
+            content_type_attribute(oids::kpinit_dh_key_data()),
+            message_digest_attribute(),
+        ]);
+
+        let error = validate_content_type_attribute(&signed_data).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // oracle: mutant an empty content-type attribute is skipped and hides the matching one
+    #[test]
+    fn empty_content_type_attribute_next_to_a_matching_one_is_rejected() {
+        let signed_data = signed_data_with_attributes(vec![
+            content_type_attribute_with_values(Vec::new()),
+            content_type_attribute(oids::kpinit_dh_key_data()),
             message_digest_attribute(),
         ]);
 

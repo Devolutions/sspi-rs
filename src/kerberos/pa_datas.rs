@@ -66,8 +66,8 @@ impl AsReqPaDataOptions<'_> {
 
 /// Validates the `SignedData` of the KDC reply and extracts the KDC key agreement public key from it.
 ///
-/// The signing certificate is checked against `ca_cert` and `now`, and the signature
-/// and the `content-type` signed attribute are verified.
+/// The signing certificate is checked against `ca_cert` and `now`.
+/// The signature and the `content-type` signed attribute are verified.
 /// `extract_public_key` is expected to check the expiration of the key against `now`.
 #[cfg(feature = "scard")]
 fn verify_kdc_reply(
@@ -104,7 +104,8 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
     SmartCard {
         key_agreement: &'a mut crate::pk_init::KeyAgreement,
         enc_params: &'a mut EncryptionParams,
-        /// CA certificate that the KDC certificate must chain up to. The system trust store is used if it is not set.
+        /// CA certificate that the KDC certificate must chain up to.
+        /// The system trust store is used if it is not set.
         ca_cert: Option<&'a crate::CertificateRaw>,
         /// The time to validate the KDC certificate and the KDC DH key against.
         now: OffsetDateTime,
@@ -270,14 +271,15 @@ mod tests {
     }
 
     fn kdc_fixture(kdc_valid_to: u16) -> KdcFixture {
-        let root_key = PrivateKey::generate_rsa(2048).unwrap();
+        // RSA-1024 keeps key generation fast in debug builds. Nothing in the validation depends on the key size.
+        let root_key = PrivateKey::generate_rsa(1024).unwrap();
         let root = CertificateBuilder::new()
             .validity(date(2026), date(2030))
             .self_signed(DirectoryName::new_common_name("Test Root"), &root_key)
             .ca(true)
             .build()
             .unwrap();
-        let kdc_key = PrivateKey::generate_rsa(2048).unwrap();
+        let kdc_key = PrivateKey::generate_rsa(1024).unwrap();
         let kdc_cert = CertificateBuilder::new()
             .validity(date(2026), date(kdc_valid_to))
             .subject(DirectoryName::new_common_name("kdc"), kdc_key.to_public_key().unwrap())
@@ -364,14 +366,11 @@ mod tests {
         picky_asn1_der::from_bytes(&picky_asn1_der::to_vec(&signed_data).unwrap()).unwrap()
     }
 
-    fn verify(
-        signed_data: &SignedData,
-        ca_cert: Option<&picky_asn1_x509::Certificate>,
-        now: OffsetDateTime,
-    ) -> crate::Result<Vec<u8>> {
+    fn verify(signed_data: &SignedData, ca_cert: Option<&Certificate>, now: OffsetDateTime) -> crate::Result<Vec<u8>> {
         verify_kdc_reply(signed_data, ca_cert, now, extract_server_dh_public_key)
     }
 
+    // oracle: spec RFC 4556 §3.2.4 (the client verifies the KDC reply signature and certificate chain)
     #[test]
     fn well_formed_dh_reply_is_accepted_and_yields_the_dh_key() {
         let fixture = kdc_fixture(2028);
@@ -382,6 +381,7 @@ mod tests {
         assert_eq!(key, DH_PUBLIC_KEY);
     }
 
+    // oracle: spec RFC 5652 §11.1 (the content-type attribute MUST be present)
     #[test]
     fn dh_reply_without_content_type_attribute_is_rejected() {
         let fixture = kdc_fixture(2028);
@@ -392,6 +392,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 
+    // oracle: spec RFC 4556 §3.2.3.1 (the KDC key MUST NOT be used past its expiration)
     #[test]
     fn dh_reply_with_expired_dh_key_is_rejected() {
         let fixture = kdc_fixture(2028);
@@ -402,6 +403,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 
+    // oracle: spec RFC 5280 §4.1.2.5 (an expired certificate is not valid)
     #[test]
     fn dh_reply_signed_with_an_expired_kdc_certificate_is_rejected() {
         let fixture = kdc_fixture(2027);
@@ -412,6 +414,7 @@ mod tests {
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
     }
 
+    // oracle: spec RFC 5280 §6.1 (a chain that does not end in the configured trust anchor is not valid)
     #[test]
     fn dh_reply_signed_by_a_certificate_outside_the_ca_certificate_is_rejected() {
         let fixture = kdc_fixture(2028);

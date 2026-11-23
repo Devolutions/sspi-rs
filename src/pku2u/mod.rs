@@ -14,9 +14,11 @@ use std::sync::LazyLock;
 pub(crate) use cert_utils::validation::extract_signing_certificate;
 #[cfg(feature = "scard")]
 pub(crate) use cert_utils::validation::is_valid_at;
+#[cfg(feature = "scard")]
+pub(crate) use cert_utils::validation::signing_certificate_der;
 pub use cert_utils::validation::validate_server_p2p_certificate;
 pub use config::{Pku2uConfig, Pku2uCredential, Pku2uPrivateKey};
-pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce};
+pub use extractors::{extract_pa_pk_as_rep, extract_server_nonce, extract_session_key_from_as_rep};
 pub use generators::{generate_authenticator, generate_authenticator_extension, generate_client_dh_parameters};
 use picky_asn1_x509::Certificate;
 use picky_asn1_x509::signed_data::SignedData;
