@@ -283,6 +283,9 @@ impl SmartCard {
 /// A token can contain several keys of the same type, and any of them produces a valid signature, which the
 /// KDC rejects afterwards. So, only the key with the same `CKA_ID` as the certificate has must be used.
 /// All keys of the required type are returned only if the token does not link the certificate to a key.
+// UNTESTED: A non-empty certificate `CKA_ID` with matching private keys must restrict signing to those keys.
+// Another same-type key can produce a signature that the KDC rejects.
+// Check matching, missing, empty, and unmatched IDs on a token with multiple same-type keys when changing this lookup.
 #[cfg(not(target_arch = "wasm32"))]
 fn find_private_keys(session: &Session, key_type: KeyType, certificate: &Certificate) -> Result<Vec<ObjectHandle>> {
     let certificates = session.find_objects(&[
