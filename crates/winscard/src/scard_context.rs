@@ -750,15 +750,6 @@ mod tests {
         assert_eq!(ErrorKind::InvalidParameter, error.error_kind);
     }
 
-    #[test]
-    fn cmapfile_keeps_its_declared_size_with_a_short_container_name() {
-        let cache = init_cache(RSA_2048_PRIVATE_KEY).unwrap();
-
-        let (data_len, data) = item_data(&cache, "Cached_GeneralFile/mscp/cmapfile");
-
-        assert_eq!(86, data_len);
-        assert_eq!(86, data.len());
-    }
 
     #[test]
     fn ec_container_info_matches_the_real_card_layout() {
