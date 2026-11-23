@@ -3,6 +3,7 @@ The goal is to provide scard logon without a need of a real smart card or even a
 
 The implementation follows the PIV smart card specification.
 Thus, Windows is able to authorize the logon using its built-in minidriver.
+When using ECC, the target Windows server must have YubiKey Smart Card Minidriver installed.
 
 ## Specifications
 
