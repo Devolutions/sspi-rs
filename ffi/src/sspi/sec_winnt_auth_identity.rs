@@ -39,6 +39,11 @@ pub const SCARD_CA_CERT_PATH_ENV: &str = "SSPI_SCARD_CA_CERT_PATH";
 #[cfg(feature = "scard")]
 pub const SCARD_CA_CERT_DATA_ENV: &str = "SSPI_SCARD_CA_CERT_DATA";
 
+/// Environment variable that makes the KDC certificate verification of the smart card logon mandatory.
+///
+/// It is read when a Kerberos or Negotiate context is created, and only `1` or `true` (case-insensitive) enable it.
+pub(crate) const SCARD_ENFORCE_CA_ENV: &str = "SSPI_SCARD_ENFORCE_CA";
+
 /// Returns auth identity version and flags.
 ///
 /// # Safety
@@ -469,6 +474,18 @@ fn collect_smart_card_creds(
 
 /// Reads the optional KDC CA certificate from the environment.
 ///
+/// Reads the [SCARD_ENFORCE_CA_ENV] environment variable.
+pub(crate) fn enforce_kdc_ca_cert_from_env() -> bool {
+    std::env::var(SCARD_ENFORCE_CA_ENV).is_ok_and(|value| enforce_kdc_ca_cert_from_value(&value))
+}
+
+/// Only an explicit truthy value enables the requirement.
+fn enforce_kdc_ca_cert_from_value(value: &str) -> bool {
+    let value = value.trim();
+
+    value == "1" || value.eq_ignore_ascii_case("true")
+}
+
 /// See [SCARD_CA_CERT_DATA_ENV] and [SCARD_CA_CERT_PATH_ENV].
 #[cfg(feature = "scard")]
 fn ca_cert_from_env() -> Result<Option<sspi::CertificateRaw>> {
@@ -1422,6 +1439,28 @@ mod tests {
             let status = SspiFreeAuthIdentity(null_mut::<c_void>());
 
             assert_eq!(status, 0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod enforce_kdc_ca_cert_tests {
+    use super::enforce_kdc_ca_cert_from_value;
+
+    // oracle: mutant only the explicit values 1 and true enable the requirement, so that a flag like 0 does not
+    #[test]
+    fn only_explicit_values_enable_the_kdc_ca_requirement() {
+        for (value, expected) in [
+            ("1", true),
+            ("true", true),
+            ("TRUE", true),
+            (" True ", true),
+            ("0", false),
+            ("false", false),
+            ("", false),
+            ("yes", false),
+        ] {
+            assert_eq!(enforce_kdc_ca_cert_from_value(value), expected, "value {value:?}");
         }
     }
 }

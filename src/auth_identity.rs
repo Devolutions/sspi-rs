@@ -603,7 +603,7 @@ mod scard_credentials {
         /// If it is set, the KDC certificate must chain up to it.
         /// If it is not set, the KDC certificate is verified against the system trust store.
         /// If the store does not vouch for the certificate, the logon continues with a warning.
-        /// Setting the `SSPI_SCARD_ENFORCE_CA` environment variable to `1` or `true` makes the logon fail instead.
+        /// The `enforce_kdc_ca_cert` policy of the Kerberos configuration makes the logon fail instead.
         /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
         /// The validity period of the KDC certificate is always checked.
         pub ca_cert: Option<CertificateRaw>,
@@ -636,7 +636,7 @@ mod scard_credentials {
         /// If it is set, the KDC certificate must chain up to it.
         /// If it is not set, the KDC certificate is verified against the system trust store.
         /// If the store does not vouch for the certificate, the logon continues with a warning.
-        /// Setting the `SSPI_SCARD_ENFORCE_CA` environment variable to `1` or `true` makes the logon fail instead.
+        /// The `enforce_kdc_ca_cert` policy of the Kerberos configuration makes the logon fail instead.
         /// The system trust store is not available on wasm, so the certificate is required there when the variable is set.
         /// The validity period of the KDC certificate is always checked.
         pub ca_cert: Option<Certificate>,

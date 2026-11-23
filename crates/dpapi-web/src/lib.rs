@@ -168,10 +168,7 @@ impl DpapiConfig {
         // if kdc_proxy_url does not exit, give url parser a empty string, it will fail anyway and map to a None
         let kerberos_config = Url::parse(kdc_proxy_url.unwrap_or_default().as_str())
             .ok()
-            .map(|url| KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(Some(url)),
-                client_computer_name: computer_name.clone(),
-            });
+            .map(|url| KerberosConfig::new(KdcResolution::KdcUrl(Some(url)), computer_name.clone()));
 
         match command {
             Command::Encrypt { sid, secret } => Ok(Box::pin(dpapi::n_crypt_protect_secret::<WasmTransport>(

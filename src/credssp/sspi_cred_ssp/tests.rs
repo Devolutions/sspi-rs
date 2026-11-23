@@ -9,10 +9,10 @@ const SENTINEL: &[u8] = b"unchanged output";
 fn negotiate(package_list: Option<&str>) -> SspiContext {
     SspiContext::Negotiate(
         Negotiate::new_client(NegotiateConfig::new(
-            Box::new(KerberosConfig {
-                kdc_resolution: crate::KdcResolution::KdcUrl(None),
-                client_computer_name: COMPUTER.to_owned(),
-            }),
+            Box::new(KerberosConfig::new(
+                crate::KdcResolution::KdcUrl(None),
+                COMPUTER.to_owned(),
+            )),
             package_list.map(str::to_owned),
             COMPUTER.to_owned(),
         ))
@@ -81,10 +81,10 @@ fn sspi_credssp_new_client_with_mode_accepts_credential_less_and_remote_guard() 
 fn sspi_credssp_remote_guard_rejects_non_negotiate_contexts_before_tls() {
     let ntlm = SspiContext::Ntlm(Ntlm::with_config(NtlmConfig::new(COMPUTER.to_owned())));
     let kerberos = SspiContext::Kerberos(
-        Kerberos::new_client_from_config(KerberosConfig {
-            kdc_resolution: crate::KdcResolution::KdcUrl(None),
-            client_computer_name: COMPUTER.to_owned(),
-        })
+        Kerberos::new_client_from_config(KerberosConfig::new(
+            crate::KdcResolution::KdcUrl(None),
+            COMPUTER.to_owned(),
+        ))
         .unwrap(),
     );
     for context in [ntlm, kerberos] {

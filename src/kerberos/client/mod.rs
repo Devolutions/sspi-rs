@@ -419,6 +419,7 @@ pub async fn initialize_security_context<'a>(
                                 key_agreement: client.key_agreement.as_mut().unwrap(),
                                 enc_params: &mut client.encryption_params,
                                 ca_cert: scard.ca_cert.as_ref(),
+                                enforce_ca_cert: client.config.enforce_kdc_ca_cert,
                                 now: time::OffsetDateTime::now_utc(),
                             },
                         };

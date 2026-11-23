@@ -345,16 +345,16 @@ fn kerberos_auth() {
     );
     let mut network_client = NetworkClientMock { kdc };
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        SERVER_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -432,16 +432,16 @@ fn kerberos_auth_with_environment_and_kdc(environment: KrbEnvironment, configure
     ));
     let mut network_client = NetworkClientMock { kdc };
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        SERVER_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -529,15 +529,15 @@ fn kerberos_auth_recovers_from_kdc_clock_skew() {
         .with_clock_offset(clock_offset);
         let mut network_client = NetworkClientMock { kdc };
 
-        let client_config = KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        };
+        let client_config = KerberosConfig::new(
+            KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            CLIENT_COMPUTER_NAME.into(),
+        );
         let kerberos_client = Kerberos::new_client_from_config(client_config).unwrap();
-        let server_config = KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: SERVER_COMPUTER_NAME.into(),
-        };
+        let server_config = KerberosConfig::new(
+            KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            SERVER_COMPUTER_NAME.into(),
+        );
         let server_properties = ServerProperties {
             mech_types: MechTypeList::from(Vec::new()),
             max_time_skew: std::time::Duration::from_secs(30),
@@ -649,10 +649,10 @@ fn kerberos_skew_retry_is_bounded_and_does_not_retry_other_errors() {
         };
         let network_client = NetworkClientMock { kdc };
         let mut client = SspiContext::Kerberos(
-            Kerberos::new_client_from_config(KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-                client_computer_name: CLIENT_COMPUTER_NAME.into(),
-            })
+            Kerberos::new_client_from_config(KerberosConfig::new(
+                KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+                CLIENT_COMPUTER_NAME.into(),
+            ))
             .unwrap(),
         );
         let mut credentials_handle = Some(CredentialsBuffers::try_from(credentials).unwrap());
@@ -751,10 +751,10 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
     );
     let mut network_client = NetworkClientMock { kdc };
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
         Box::new(client_config.clone()),
         Some(String::from("kerberos,!ntlm")),
@@ -785,10 +785,10 @@ fn run_spnego_kerberos_u2u(acceptor_credentials: AcceptorCredentials) {
     };
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        SERVER_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -903,10 +903,10 @@ fn run_spnego(
     );
     let mut network_client = get_network_client(kdc);
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let mut spnego_client = SspiContext::Negotiate(
         Negotiate::new_client(NegotiateConfig::new(
             Box::new(client_config.clone()),
@@ -916,10 +916,10 @@ fn run_spnego(
         .unwrap(),
     );
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -1173,10 +1173,10 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
     );
     let mut network_client = NetworkClientMock { kdc };
 
-    let client_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let client_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        CLIENT_COMPUTER_NAME.into(),
+    );
     let spnego_client = Negotiate::new_client(NegotiateConfig::new(
         Box::new(client_config.clone()),
         Some(String::from("kerberos,ntlm")),
@@ -1186,10 +1186,10 @@ fn spnego_kerberos_ntlm_fallback_spn_ip_address() {
 
     let credentials = CredentialsBuffers::try_from(credentials).unwrap();
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(
+        KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+        SERVER_COMPUTER_NAME.into(),
+    );
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -1400,10 +1400,10 @@ mod salt_regressions {
             as_requests: AtomicUsize::new(0),
             inspected_password_requests: AtomicUsize::new(0),
         };
-        let mut client = Kerberos::new_client_from_config(KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        })
+        let mut client = Kerberos::new_client_from_config(KerberosConfig::new(
+            KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            CLIENT_COMPUTER_NAME.into(),
+        ))
         .unwrap();
         // change_password uses the context's previously resolved realm. Initialize it
         // through the public context API, stopping at the mocked transport boundary.
@@ -1475,10 +1475,10 @@ mod salt_regressions {
             .omit_as_rep_etype_info2(),
         };
         let credentials = CredentialsBuffers::try_from(credentials).unwrap();
-        let config = KerberosConfig {
-            kdc_resolution: KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
-            client_computer_name: CLIENT_COMPUTER_NAME.into(),
-        };
+        let config = KerberosConfig::new(
+            KdcResolution::KdcUrl(Some(Url::parse(KDC_URL).unwrap())),
+            CLIENT_COMPUTER_NAME.into(),
+        );
         let mut client = SspiContext::Kerberos(Kerberos::new_client_from_config(config.clone()).unwrap());
         let mut server = SspiContext::Kerberos(
             Kerberos::new_server_from_config(

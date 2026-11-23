@@ -203,10 +203,7 @@ fn iakerb_auth_with_kdc(configure_kdc: fn(KdcMock) -> KdcMock) {
     let client_config = KerberosConfig::new_with_iakerb(CLIENT_COMPUTER_NAME.into());
     let mut kerberos_client = SspiContext::Kerberos(Kerberos::new_client_from_config(client_config).unwrap());
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::IAKerb,
-        client_computer_name: SERVER_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(KdcResolution::IAKerb, SERVER_COMPUTER_NAME.into());
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,
@@ -338,10 +335,7 @@ fn spnego_iakerb() {
         .unwrap(),
     );
 
-    let server_config = KerberosConfig {
-        kdc_resolution: KdcResolution::IAKerb,
-        client_computer_name: CLIENT_COMPUTER_NAME.into(),
-    };
+    let server_config = KerberosConfig::new(KdcResolution::IAKerb, CLIENT_COMPUTER_NAME.into());
     let server_properties = ServerProperties {
         mech_types: MechTypeList::from(Vec::new()),
         max_time_skew: MAX_TIME_SKEW,

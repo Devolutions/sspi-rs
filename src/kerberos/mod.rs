@@ -1026,10 +1026,7 @@ pub mod test_data {
     pub fn fake_client() -> Kerberos {
         Kerberos {
             state: KerberosState::Final,
-            config: KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(None),
-                client_computer_name: "hostname".into(),
-            },
+            config: KerberosConfig::new(KdcResolution::KdcUrl(None), "hostname".into()),
             auth_identity: Some(CredentialsBuffers::AuthIdentity(AuthIdentityBuffers {
                 user: Utf16String::from_str("fake_user"),
                 domain: Utf16String::from_str("FAKE_DOMAIN"),
@@ -1082,10 +1079,7 @@ pub mod test_data {
     pub fn fake_server() -> Kerberos {
         Kerberos {
             state: KerberosState::Final,
-            config: KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(None),
-                client_computer_name: "hostname".into(),
-            },
+            config: KerberosConfig::new(KdcResolution::KdcUrl(None), "hostname".into()),
             auth_identity: None,
             encryption_params: EncryptionParams {
                 encryption_type: Some(CipherSuite::Aes256CtsHmacSha196),

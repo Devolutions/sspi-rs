@@ -8,36 +8,20 @@ use time::OffsetDateTime;
 use crate::pku2u::{extract_signing_certificate, is_valid_at, signing_certificate_der};
 use crate::{Error, ErrorKind, Result};
 
-/// If this environment variable is set to `1` or `true` (case-insensitive), the KDC certificate must be verified.
-/// Otherwise, a failed verification against the system trust store only logs a warning.
-const ENFORCE_CA_ENV: &str = "SSPI_SCARD_ENFORCE_CA";
-
-/// Only an explicit truthy value enables the requirement.
-fn is_enforce_requested(value: &str) -> bool {
-    let value = value.trim();
-
-    value == "1" || value.eq_ignore_ascii_case("true")
-}
-
-// UNTESTED: the variable is read on every validation, so changing it at runtime takes effect on the next logon.
-// Tests cover `is_enforce_requested` and pass the flag explicitly, so check this wiring when changing it.
-fn is_ca_enforced() -> bool {
-    std::env::var(ENFORCE_CA_ENV).is_ok_and(|value| is_enforce_requested(&value))
-}
-
 /// Validates the certificate the KDC used to sign its PKINIT reply.
 ///
 /// The validity period of the KDC certificate is always checked against `now`.
 /// If `ca_cert` is provided, the certificate must chain up to it.
 /// Otherwise, the chain is checked against the system trust store.
-/// If the store does not vouch for the certificate, validation fails when `SSPI_SCARD_ENFORCE_CA` is set
-/// to `1` or `true`, and only logs a warning otherwise.
+/// If the store does not vouch for the certificate, validation fails when `enforce_ca` is set,
+/// and only logs a warning otherwise.
 pub(crate) fn validate_kdc_certificate(
     signed_data: &SignedData,
     ca_cert: Option<&Certificate>,
+    enforce_ca: bool,
     now: OffsetDateTime,
 ) -> Result<()> {
-    validate_kdc_certificate_with(signed_data, ca_cert, system_trust_anchors, is_ca_enforced(), now)
+    validate_kdc_certificate_with(signed_data, ca_cert, system_trust_anchors, enforce_ca, now)
 }
 
 /// Same as [`validate_kdc_certificate`], but the system trust anchors and the enforcement are provided by the caller.
@@ -62,13 +46,13 @@ fn validate_kdc_certificate_with(
         Err(error) if enforce_ca => Err(Error::new(
             error.error_type,
             format!(
-                "no CA certificate is configured and {ENFORCE_CA_ENV} requires the system trust store to vouch for the KDC certificate: {error}"
+                "no CA certificate is configured and the KDC certificate policy requires the system trust store to vouch for the KDC certificate: {error}"
             ),
         )),
         Err(error) => {
             warn!(
                 %error,
-                "The KDC certificate chain is not verified; set {ENFORCE_CA_ENV}=1 to reject an unverified KDC certificate"
+                "The KDC certificate chain is not verified; enable `enforce_kdc_ca_cert` to reject an unverified KDC certificate"
             );
 
             Ok(())
@@ -335,7 +319,7 @@ mod tests {
     use picky_asn1_x509::{AlgorithmIdentifier, KeyUsage, ShaVariant, oids};
     use time::{Date, Month, OffsetDateTime};
 
-    use super::{is_enforce_requested, validate_kdc_certificate_with};
+    use super::validate_kdc_certificate_with;
     use crate::ErrorKind;
     use crate::log_capture::LogCapture;
 
@@ -812,23 +796,6 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::Pku2uCertFailure);
-    }
-
-    // oracle: mutant only the explicit values 1 and true enable the requirement
-    #[test]
-    fn only_explicit_values_enable_the_ca_requirement() {
-        for (value, expected) in [
-            ("1", true),
-            ("true", true),
-            ("TRUE", true),
-            (" True ", true),
-            ("0", false),
-            ("false", false),
-            ("", false),
-            ("yes", false),
-        ] {
-            assert_eq!(is_enforce_requested(value), expected, "value {value:?}");
-        }
     }
 
     // oracle: spec RFC 5652 §5.1 (the certificates are a collection in no required order; §5.3 sid names the signer)

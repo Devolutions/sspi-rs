@@ -73,12 +73,13 @@ impl AsReqPaDataOptions<'_> {
 fn verify_kdc_reply(
     signed_data: &picky_asn1_x509::signed_data::SignedData,
     ca_cert: Option<&picky_asn1_x509::Certificate>,
+    enforce_ca_cert: bool,
     now: OffsetDateTime,
 ) -> Result<()> {
     use super::kdc_cert::{validate_content_type_attribute, validate_kdc_certificate};
     use crate::pku2u::{validate_server_p2p_certificate, validate_signed_data};
 
-    validate_kdc_certificate(signed_data, ca_cert, now)?;
+    validate_kdc_certificate(signed_data, ca_cert, enforce_ca_cert, now)?;
     let rsa_public_key = validate_server_p2p_certificate(signed_data)?;
     validate_signed_data(signed_data, &rsa_public_key)?;
     validate_content_type_attribute(signed_data)
@@ -104,6 +105,8 @@ pub(super) enum AsRepSessionKeyExtractor<'a> {
         /// CA certificate that the KDC certificate must chain up to.
         /// The system trust store is used if it is not set.
         ca_cert: Option<&'a crate::CertificateRaw>,
+        /// Whether the KDC certificate must be verified. See [`crate::KerberosConfig::enforce_kdc_ca_cert`].
+        enforce_ca_cert: bool,
         /// The time to validate the KDC certificate and the KDC DH key against.
         now: OffsetDateTime,
     },
@@ -126,6 +129,7 @@ impl AsRepSessionKeyExtractor<'_> {
                 key_agreement,
                 enc_params,
                 ca_cert,
+                enforce_ca_cert,
                 now,
             } => {
                 use picky_asn1_x509::signed_data::SignedData;
@@ -165,7 +169,7 @@ impl AsRepSessionKeyExtractor<'_> {
                     KeyAgreement::Dh(dh_parameters) => {
                         dh_parameters.server_nonce = Some(server_nonce);
 
-                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now)?;
+                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *enforce_ca_cert, *now)?;
                         let public_key = extract_server_dh_public_key(&signed_data, Some(*now))?;
                         dh_parameters.other_public_key = Some(public_key);
 
@@ -187,7 +191,7 @@ impl AsRepSessionKeyExtractor<'_> {
                         )?
                     }
                     KeyAgreement::Ecdh(ecdh_parameters) => {
-                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now)?;
+                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *enforce_ca_cert, *now)?;
                         let server_public_key = extract_server_ecdh_public_key(&signed_data, Some(*now))?;
                         let shared_secret = ecdh_parameters.shared_secret(&server_public_key)?;
 
@@ -365,7 +369,7 @@ mod tests {
 
     /// Verifies the reply and extracts the DH key the way the smart card logon does.
     fn verify(signed_data: &SignedData, ca_cert: Option<&Certificate>, now: OffsetDateTime) -> crate::Result<Vec<u8>> {
-        verify_kdc_reply(signed_data, ca_cert, now)?;
+        verify_kdc_reply(signed_data, ca_cert, false, now)?;
         extract_server_dh_public_key(signed_data, Some(now))
     }
 

@@ -30,6 +30,7 @@ pub enum KdcResolution {
 
 /// Kerberos client configuration.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct KerberosConfig {
     /// Strategy for resolving the KDC to use for Kerberos authentication.
     pub kdc_resolution: KdcResolution,
@@ -37,6 +38,13 @@ pub struct KerberosConfig {
     ///
     /// This is also referred to as the "Source Workstation", i.e.: the name of the computer attempting to logon.
     pub client_computer_name: String,
+    /// Requires the KDC certificate of a smart card logon to be verified.
+    ///
+    /// If it is set, the logon fails when the KDC certificate does not chain up to the configured CA certificate,
+    /// or to the system trust store if no CA certificate is configured.
+    /// If it is not set, the logon continues with a warning when the system trust store does not vouch for the
+    /// KDC certificate. A configured CA certificate is always enforced.
+    pub enforce_kdc_ca_cert: bool,
 }
 
 impl ProtocolConfig for KerberosConfig {
@@ -60,20 +68,30 @@ pub fn parse_kdc_url(kdc_url: &str) -> Option<Url> {
 }
 
 impl KerberosConfig {
-    pub fn new_with_kdc_url(kdc_url: &str, client_computer_name: String) -> Self {
-        let kdc_url = parse_kdc_url(kdc_url);
-
+    /// Creates a configuration that does not enforce the KDC certificate verification.
+    pub fn new(kdc_resolution: KdcResolution, client_computer_name: String) -> Self {
         Self {
-            kdc_resolution: KdcResolution::KdcUrl(kdc_url),
+            kdc_resolution,
             client_computer_name,
+            enforce_kdc_ca_cert: false,
         }
     }
 
+    pub fn new_with_kdc_url(kdc_url: &str, client_computer_name: String) -> Self {
+        let kdc_url = parse_kdc_url(kdc_url);
+
+        Self::new(KdcResolution::KdcUrl(kdc_url), client_computer_name)
+    }
+
     pub fn new_with_iakerb(client_computer_name: String) -> Self {
-        Self {
-            kdc_resolution: KdcResolution::IAKerb,
-            client_computer_name,
-        }
+        Self::new(KdcResolution::IAKerb, client_computer_name)
+    }
+
+    /// Sets [`KerberosConfig::enforce_kdc_ca_cert`].
+    #[must_use]
+    pub fn with_enforce_kdc_ca_cert(mut self, enforce_kdc_ca_cert: bool) -> Self {
+        self.enforce_kdc_ca_cert = enforce_kdc_ca_cert;
+        self
     }
 
     pub fn get_kdc_url(self, domain: &str) -> Option<Url> {
