@@ -755,7 +755,7 @@ impl SmartCard<'_> {
                 None => Status::KeyReferenceNotFound.into(),
             },
             _ => {
-                error!(instruction, "unimplemented YubiKey instruction");
+                trace!(instruction, "Unimplemented YubiKey instruction");
 
                 Status::InstructionNotSupported.into()
             }
