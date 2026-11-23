@@ -64,27 +64,24 @@ impl AsReqPaDataOptions<'_> {
     }
 }
 
-/// Validates the `SignedData` of the KDC reply and extracts the KDC key agreement public key from it.
+/// Validates the `SignedData` of the KDC reply.
 ///
 /// The signing certificate is checked against `ca_cert` and `now`.
 /// The signature and the `content-type` signed attribute are verified.
-/// `extract_public_key` is expected to check the expiration of the key against `now`.
+/// The caller extracts the KDC public key afterwards, with the expiration checked against `now`.
 #[cfg(feature = "scard")]
 fn verify_kdc_reply(
     signed_data: &picky_asn1_x509::signed_data::SignedData,
     ca_cert: Option<&picky_asn1_x509::Certificate>,
     now: OffsetDateTime,
-    extract_public_key: fn(&picky_asn1_x509::signed_data::SignedData, Option<OffsetDateTime>) -> Result<Vec<u8>>,
-) -> Result<Vec<u8>> {
+) -> Result<()> {
     use super::kdc_cert::{validate_content_type_attribute, validate_kdc_certificate};
     use crate::pku2u::{validate_server_p2p_certificate, validate_signed_data};
 
     validate_kdc_certificate(signed_data, ca_cert, now)?;
     let rsa_public_key = validate_server_p2p_certificate(signed_data)?;
     validate_signed_data(signed_data, &rsa_public_key)?;
-    validate_content_type_attribute(signed_data)?;
-
-    extract_public_key(signed_data, Some(now))
+    validate_content_type_attribute(signed_data)
 }
 
 // ApRep session key extraction process is different for the Kerberos logon using username+password and smart card.
@@ -168,8 +165,8 @@ impl AsRepSessionKeyExtractor<'_> {
                     KeyAgreement::Dh(dh_parameters) => {
                         dh_parameters.server_nonce = Some(server_nonce);
 
-                        let public_key =
-                            verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now, extract_server_dh_public_key)?;
+                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now)?;
+                        let public_key = extract_server_dh_public_key(&signed_data, Some(*now))?;
                         dh_parameters.other_public_key = Some(public_key);
 
                         generate_key(
@@ -190,8 +187,8 @@ impl AsRepSessionKeyExtractor<'_> {
                         )?
                     }
                     KeyAgreement::Ecdh(ecdh_parameters) => {
-                        let server_public_key =
-                            verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now, extract_server_ecdh_public_key)?;
+                        verify_kdc_reply(&signed_data, ca_cert.as_ref(), *now)?;
+                        let server_public_key = extract_server_ecdh_public_key(&signed_data, Some(*now))?;
                         let shared_secret = ecdh_parameters.shared_secret(&server_public_key)?;
 
                         generate_key_from_shared_secret(
@@ -366,8 +363,10 @@ mod tests {
         picky_asn1_der::from_bytes(&picky_asn1_der::to_vec(&signed_data).unwrap()).unwrap()
     }
 
+    /// Verifies the reply and extracts the DH key the way the smart card logon does.
     fn verify(signed_data: &SignedData, ca_cert: Option<&Certificate>, now: OffsetDateTime) -> crate::Result<Vec<u8>> {
-        verify_kdc_reply(signed_data, ca_cert, now, extract_server_dh_public_key)
+        verify_kdc_reply(signed_data, ca_cert, now)?;
+        extract_server_dh_public_key(signed_data, Some(now))
     }
 
     // oracle: spec RFC 4556 §3.2.4 (the client verifies the KDC reply signature and certificate chain)
