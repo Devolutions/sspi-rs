@@ -349,6 +349,9 @@ impl SmartCard<'_> {
             });
         } else if self.state == SCardState::PivAppSelected
             && cmd.instruction() == Instruction::GeneralAuthenticate
+            // UNTESTED: Without a verified PIN, only YubiKey management authentication may proceed.
+            // EC signing and ECDH must remain PIN-gated to protect the private key.
+            // Check both branches on a selected-but-locked EC card when changing this guard.
             && !(self.key.yubikey().is_some() && is_management_authentication(&cmd))
         {
             // GENERAL AUTHENTICATE can only be used if the smart card has already been unlocked using the PIN code
