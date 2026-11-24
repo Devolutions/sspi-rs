@@ -100,7 +100,7 @@ dns_resolver = ["dep:hickory-resolver", "dep:hickory-proto","dep:tokio"]
 # TSSSP should be used only on Windows as a native CredSSP replacement.
 tsssp = ["dep:rustls", "__rustls-used"]
 # Turns on Kerberos smart card logon.
-scard = ["dep:winscard", "dep:cryptoki"]
+scard = ["dep:winscard", "dep:cryptoki", "dep:rustls-native-certs"]
 # Use AWS LC as TLS cryptography provider.
 aws-lc-rs = ["rustls?/aws-lc-rs", "__install-crypto-provider"]
 # Use ring as TLS cryptography provider.
@@ -157,7 +157,6 @@ hickory-resolver = { version = "0.25", optional = true }
 hickory-proto = { version = "0.25", optional = true }
 portpicker = { version = "0.1", optional = true }
 rustls = { version = "0.23", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
-rustls-native-certs = { version = "0.8", optional = true }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 async-recursion = "1.1"
 bytemuck = "1.24"
@@ -173,6 +172,7 @@ time = { version = "0.3", default-features = false, features = ["wasm-bindgen"] 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cryptoki = { version = "0.12", optional = true }
+rustls-native-certs = { version = "0.8", optional = true }
 time = { version = "0.3", features = ["std"] }
 
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]

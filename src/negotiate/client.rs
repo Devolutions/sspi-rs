@@ -75,10 +75,8 @@ pub(crate) async fn initialize_security_context<'a>(
             let kdc_url = detect_kdc_url(&get_client_principal_realm(&username, ""));
             debug!("Negotiate: try Kerberos");
 
-            let config = KerberosConfig {
-                kdc_resolution: KdcResolution::KdcUrl(kdc_url),
-                client_computer_name: negotiate.client_computer_name.clone(),
-            };
+            let config = KerberosConfig::new(KdcResolution::KdcUrl(kdc_url), negotiate.client_computer_name.clone())
+                .with_enforce_kdc_ca_cert(negotiate.enforce_kdc_ca_cert);
 
             negotiate.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(config)?);
         }

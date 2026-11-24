@@ -211,6 +211,8 @@ pub struct Negotiate {
     package_list: PackageListConfig,
     auth_identity: Option<CredentialsBuffers>,
     client_computer_name: String,
+    /// Policy of the Kerberos instances that Negotiate creates. See [`NegotiateConfig::enforce_kdc_ca_cert`].
+    enforce_kdc_ca_cert: bool,
     mode: NegotiateMode,
     /// Encoded [MechTypeList]. Used for `mechListMIC` token verification.
     mech_types: Vec<u8>,
@@ -304,9 +306,13 @@ impl Negotiate {
         };
 
         let package_list = PackageListConfig::parse(&config.package_list);
-        if let Some(filtered_protocol) =
-            Self::filter_protocol(&protocol, package_list, &config.client_computer_name, mode.is_client())?
-        {
+        if let Some(filtered_protocol) = Self::filter_protocol(
+            &protocol,
+            package_list,
+            &config.client_computer_name,
+            config.enforce_kdc_ca_cert,
+            mode.is_client(),
+        )? {
             protocol = filtered_protocol;
         }
 
@@ -316,6 +322,7 @@ impl Negotiate {
             package_list,
             auth_identity: None,
             client_computer_name: config.client_computer_name,
+            enforce_kdc_ca_cert: config.enforce_kdc_ca_cert,
             mode,
             mech_types: Default::default(),
             mic_verified: false,
@@ -350,10 +357,10 @@ impl Negotiate {
         }
 
         if !self.protocol.is_kerberos() {
-            self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                client_computer_name: self.client_computer_name.clone(),
-                kdc_resolution: KdcResolution::KdcUrl(None),
-            })?);
+            self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
+                KerberosConfig::new(KdcResolution::KdcUrl(None), self.client_computer_name.clone())
+                    .with_enforce_kdc_ca_cert(self.enforce_kdc_ca_cert),
+            )?);
         }
         let NegotiatedProtocol::Kerberos(kerberos) = &mut self.protocol else {
             return Err(Error::new(
@@ -502,14 +509,17 @@ impl Negotiate {
             }
 
             if self.protocol_name() != kerberos::PKG_NAME {
-                let kerberos = Kerberos::new_client_from_config(KerberosConfig {
-                    client_computer_name: self.client_computer_name.clone(),
-                    kdc_resolution: if mech_type == &oids::iakerb5() {
-                        KdcResolution::IAKerb
-                    } else {
-                        KdcResolution::KdcUrl(None)
-                    },
-                })?;
+                let kerberos = Kerberos::new_client_from_config(
+                    KerberosConfig::new(
+                        if mech_type == &oids::iakerb5() {
+                            KdcResolution::IAKerb
+                        } else {
+                            KdcResolution::KdcUrl(None)
+                        },
+                        self.client_computer_name.clone(),
+                    )
+                    .with_enforce_kdc_ca_cert(self.enforce_kdc_ca_cert),
+                )?;
                 self.protocol = NegotiatedProtocol::Kerberos(kerberos);
 
                 // When the server changes the protocol from the most preferred for the client to
@@ -606,10 +616,10 @@ impl Negotiate {
             {
                 debug!("Negotiate: try Kerberos");
 
-                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(KerberosConfig {
-                    kdc_resolution: KdcResolution::KdcUrl(Some(host)),
-                    client_computer_name: self.client_computer_name.clone(),
-                })?);
+                self.protocol = NegotiatedProtocol::Kerberos(Kerberos::new_client_from_config(
+                    KerberosConfig::new(KdcResolution::KdcUrl(Some(host)), self.client_computer_name.clone())
+                        .with_enforce_kdc_ca_cert(self.enforce_kdc_ca_cert),
+                )?);
             }
         }
 
@@ -617,6 +627,7 @@ impl Negotiate {
             &self.protocol,
             self.package_list,
             &self.client_computer_name,
+            self.enforce_kdc_ca_cert,
             self.mode.is_client(),
         )? {
             self.protocol = filtered_protocol;
@@ -629,6 +640,7 @@ impl Negotiate {
         negotiated_protocol: &NegotiatedProtocol,
         package_list: PackageListConfig,
         client_computer_name: &str,
+        enforce_kdc_ca_cert: bool,
         is_client: bool,
     ) -> Result<Option<NegotiatedProtocol>> {
         let mut filtered_protocol = None;
@@ -660,10 +672,8 @@ impl Negotiate {
             }
             NegotiatedProtocol::Ntlm(_) => {
                 if !is_ntlm {
-                    let config = KerberosConfig {
-                        client_computer_name: client_computer_name.to_owned(),
-                        kdc_resolution: KdcResolution::KdcUrl(None),
-                    };
+                    let config = KerberosConfig::new(KdcResolution::KdcUrl(None), client_computer_name.to_owned())
+                        .with_enforce_kdc_ca_cert(enforce_kdc_ca_cert);
 
                     if is_client {
                         let kerberos_client = Kerberos::new_client_from_config(config)?;
@@ -1105,6 +1115,7 @@ mod u2u_tests {
             },
             auth_identity: None,
             client_computer_name: "acceptor".to_owned(),
+            enforce_kdc_ca_cert: false,
             mode: NegotiateMode::Server(identities),
             mech_types: Vec::new(),
             mic_verified: false,

@@ -62,7 +62,7 @@ use super::sec_buffer::{
     sec_buffer_desc_to_security_buffers,
 };
 use super::sec_pkg_info::{RawSecPkgInfoA, RawSecPkgInfoW, SecNegoInfoA, SecNegoInfoW, SecPkgInfoA, SecPkgInfoW};
-use super::sec_winnt_auth_identity::auth_data_to_identity_buffers;
+use super::sec_winnt_auth_identity::{auth_data_to_identity_buffers, enforce_kdc_ca_cert_from_env};
 use super::utils::{hostname, log_sec_handle};
 use crate::utils::into_raw_ptr;
 
@@ -436,9 +436,11 @@ pub(crate) fn release_credentials(handle: c_ulonglong) -> Result<bool> {
 
 fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negotiate> {
     let client_computer_name = attributes.hostname()?;
+    let enforce_kdc_ca_cert = enforce_kdc_ca_cert_from_env();
 
     let negotiate_config = if let Some(kdc_url) = attributes.kdc_url() {
-        let kerberos_config = KerberosConfig::new_with_kdc_url(&kdc_url, client_computer_name.clone());
+        let kerberos_config = KerberosConfig::new_with_kdc_url(&kdc_url, client_computer_name.clone())
+            .with_enforce_kdc_ca_cert(enforce_kdc_ca_cert);
 
         NegotiateConfig::new(
             Box::new(kerberos_config),
@@ -446,14 +448,14 @@ fn create_negotiate_context(attributes: &CredentialsAttributes) -> Result<Negoti
             client_computer_name,
         )
     } else {
-        NegotiateConfig {
-            protocol_config: Box::new(NtlmConfig::new(client_computer_name.clone())),
-            package_list: attributes.package_list.clone(),
+        NegotiateConfig::new(
+            Box::new(NtlmConfig::new(client_computer_name.clone())),
+            attributes.package_list.clone(),
             client_computer_name,
-        }
+        )
     };
 
-    Negotiate::new_client(negotiate_config)
+    Negotiate::new_client(negotiate_config.with_enforce_kdc_ca_cert(enforce_kdc_ca_cert))
 }
 
 /// Transforms [&mut PCtxtHandle] to [*mut SspiHandle].
@@ -505,15 +507,13 @@ pub(crate) unsafe fn p_ctxt_handle_to_sspi_context(
                 let client_computer_name = attributes.hostname()?;
 
                 if let Some(kdc_url) = attributes.kdc_url() {
-                    SspiContext::Kerberos(Kerberos::new_client_from_config(KerberosConfig::new_with_kdc_url(
-                        &kdc_url,
-                        client_computer_name,
-                    ))?)
+                    SspiContext::Kerberos(Kerberos::new_client_from_config(
+                        KerberosConfig::new_with_kdc_url(&kdc_url, client_computer_name)
+                            .with_enforce_kdc_ca_cert(enforce_kdc_ca_cert_from_env()),
+                    )?)
                 } else {
-                    let krb_config = KerberosConfig {
-                        client_computer_name,
-                        kdc_resolution: KdcResolution::KdcUrl(None),
-                    };
+                    let krb_config = KerberosConfig::new(KdcResolution::KdcUrl(None), client_computer_name)
+                        .with_enforce_kdc_ca_cert(enforce_kdc_ca_cert_from_env());
                     SspiContext::Kerberos(Kerberos::new_client_from_config(krb_config)?)
                 }
             }
@@ -1770,18 +1770,12 @@ pub unsafe extern "system" fn ChangeAccountPasswordA(
 
         let mut sspi_context = match security_package_name {
             negotiate::PKG_NAME => {
-                let negotiate_config = NegotiateConfig {
-                    protocol_config: Box::new(NtlmConfig::new(try_execute!(hostname()))),
-                    package_list: None,
-                    client_computer_name: try_execute!(hostname()),
-                };
+                let negotiate_config = NegotiateConfig::new(Box::new(NtlmConfig::new(try_execute!(hostname()))), None, try_execute!(hostname()));
                 SspiContext::Negotiate(try_execute!(Negotiate::new_client(negotiate_config)))
             },
             kerberos::PKG_NAME => {
-                let krb_config = KerberosConfig {
-                    client_computer_name: try_execute!(hostname()),
-                    kdc_resolution: KdcResolution::KdcUrl(None),
-                };
+                let krb_config = KerberosConfig::new(KdcResolution::KdcUrl(None), try_execute!(hostname()))
+                    .with_enforce_kdc_ca_cert(enforce_kdc_ca_cert_from_env());
                 SspiContext::Kerberos(try_execute!(Kerberos::new_client_from_config(
                     krb_config
                 )))

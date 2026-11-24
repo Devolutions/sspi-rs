@@ -13,11 +13,11 @@ pub fn credssp_client() {
         Vec::new(),
         Credentials::AuthIdentity(identity),
         credssp::CredSspMode::WithCredentials,
-        credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
-            protocol_config: Box::<NtlmConfig>::default(),
-            package_list: None,
-            client_computer_name: "win2017".into(),
-        }),
+        credssp::ClientMode::Negotiate(sspi::NegotiateConfig::new(
+            Box::<NtlmConfig>::default(),
+            None,
+            "win2017".into(),
+        )),
         String::new(),
     )
     .unwrap();

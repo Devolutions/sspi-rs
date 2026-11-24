@@ -1,6 +1,7 @@
 use crypto_bigint::BoxedUint;
 use picky::key::PublicKey as RsaPublicKey;
 use picky_asn1_x509::signed_data::{CertificateChoices, SignedData};
+use picky_asn1_x509::signer_info::SignerIdentifier;
 use picky_asn1_x509::validity::Time;
 use picky_asn1_x509::{Certificate, ExtensionView, PublicKey, oids};
 use time::{Date, Month, OffsetDateTime};
@@ -34,10 +35,17 @@ pub fn validate_server_p2p_certificate(signed_data: &SignedData) -> Result<RsaPu
     ))
 }
 
+/// Returns whether `now` lies within the validity period of the certificate, bounds included.
+pub(crate) fn is_valid_at(certificate: &Certificate, now: OffsetDateTime) -> Result<bool> {
+    let validity = &certificate.tbs_certificate.validity;
+    let not_before = certificate_time(&validity.not_before)?;
+    let not_after = certificate_time(&validity.not_after)?;
+
+    Ok(not_before <= now && now <= not_after)
+}
+
 pub(crate) fn validate_peer_p2p_certificate(certificate: &Certificate, now: OffsetDateTime) -> Result<()> {
-    let not_before = certificate_time(&certificate.tbs_certificate.validity.not_before)?;
-    let not_after = certificate_time(&certificate.tbs_certificate.validity.not_after)?;
-    if now < not_before || now > not_after {
+    if !is_valid_at(certificate, now)? {
         return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
             format!("PKU2U peer certificate is not valid at {now}"),
@@ -118,19 +126,45 @@ fn certificate_time(time: &Time) -> Result<OffsetDateTime> {
         .assume_utc())
 }
 
-pub(crate) fn extract_signing_certificate(signed_data: &SignedData) -> Result<Certificate> {
-    match signed_data.certificates.0.0.first() {
-        Some(CertificateChoices::Certificate(cert)) => Ok(picky_asn1_der::from_bytes(&cert.0)?),
-        Some(cert) => {
-            error!(?cert, "Server sent unsupported certificate format");
-            Err(Error::new(
-                ErrorKind::Pku2uCertFailure,
-                "Received unknown certificate format",
-            ))
-        }
-        None => Err(Error::new(
+/// Returns the DER encoding of the certificate that signed `signed_data`.
+///
+/// The certificates of `SignedData` form an unordered set, so the signer is identified by the `SignerInfo`.
+pub(crate) fn signing_certificate_der(signed_data: &SignedData) -> Result<&[u8]> {
+    let signer_info = signed_data
+        .signers_infos
+        .0
+        .0
+        .first()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidToken, "SignedData has no signers_infos"))?;
+    let SignerIdentifier::IssuerAndSerialNumber(signer) = &signer_info.sid else {
+        return Err(Error::new(
             ErrorKind::Pku2uCertFailure,
-            "Received invalid server certificates",
-        )),
-    }
+            "SignedData signer identifier is not an issuer and serial number",
+        ));
+    };
+
+    signed_data
+        .certificates
+        .0
+        .0
+        .iter()
+        .find_map(|choice| match choice {
+            CertificateChoices::Certificate(raw) => {
+                let certificate = picky_asn1_der::from_bytes::<Certificate>(&raw.0).ok()?;
+                (signer.issuer == certificate.tbs_certificate.issuer
+                    && signer.serial_number.0 == certificate.tbs_certificate.serial_number)
+                    .then_some(raw.0.as_slice())
+            }
+            _ => None,
+        })
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Pku2uCertFailure,
+                "no certificate of the SignedData matches its signer identifier",
+            )
+        })
+}
+
+pub(crate) fn extract_signing_certificate(signed_data: &SignedData) -> Result<Certificate> {
+    Ok(picky_asn1_der::from_bytes(signing_certificate_der(signed_data)?)?)
 }
