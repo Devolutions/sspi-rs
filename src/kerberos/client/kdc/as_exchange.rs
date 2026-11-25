@@ -7,7 +7,7 @@ use picky_krb::messages::{AsRep, AsReq, KdcReqBody, KrbError};
 use time::{Duration, OffsetDateTime};
 
 use crate::kerberos::EncryptionParams;
-use crate::kerberos::client::extractors::extract_preauth_hint;
+use crate::kerberos::client::extractors::{default_salt, extract_preauth_hint};
 use crate::kerberos::client::generators::{GenerateAsPaDataOptions, GenerateKeytabPaDataOptions, generate_as_req};
 use crate::kerberos::client::kdc::decode_kdc_reply;
 use crate::kerberos::pa_datas::{AsReqPaDataOptions, AsRequestNonces};
@@ -104,11 +104,8 @@ impl AsExchange {
                             // Active Directory does so for accounts that do not require Kerberos pre-authentication.
                             debug!("KDC replied with AS_REP to the AS_REQ without pre-authentication data");
 
-                            return Ok(AsExchangeOutput::Done(
-                                as_rep,
-                                String::from_utf8_lossy(&self.salt).into_owned(),
-                                self.nonces,
-                            ));
+                            let salt = default_salt(&as_rep.0.crealm.0.to_string(), &as_rep.0.cname.0);
+                            return Ok(AsExchangeOutput::Done(as_rep, salt, self.nonces));
                         }
                         Err(krb_error) => krb_error,
                     };
@@ -282,6 +279,11 @@ mod tests {
 
     /// The exchange of `myuser@EXAMPLE.COM` with the request nonce 1.
     fn as_exchange() -> AsExchange {
+        as_exchange_with_salt(b"EXAMPLE.COMmyuser")
+    }
+
+    /// The exchange of `myuser@EXAMPLE.COM` with the request nonce 1, and the salt that the caller guessed.
+    fn as_exchange_with_salt(salt: &[u8]) -> AsExchange {
         let kdc_req_body = generate_as_req_kdc_body(&GenerateAsReqOptions {
             realm: "EXAMPLE.COM",
             username: "myuser",
@@ -301,12 +303,33 @@ mod tests {
                 pk_authenticator: 2,
             },
             Secret::new("password".to_owned()),
-            b"EXAMPLE.COMmyuser".to_vec(),
+            salt.to_vec(),
             #[cfg(feature = "scard")]
             crate::pk_init::KeyAgreement::Dh(crate::pku2u::generate_client_dh_parameters(
                 &mut <rand::rngs::StdRng as rand_core::SeedableRng>::seed_from_u64(1),
             )),
         )
+    }
+
+    // RFC 4120 §3.1.3: the KDC replies with the AS-REP right away if it does not require pre-authentication.
+    // Without an ETYPE-INFO2 the salt is the default one of the realm of the reply, not the name the caller typed.
+    #[test]
+    fn an_as_rep_without_etype_info_takes_the_salt_of_its_realm() {
+        let mut client = fake_client();
+        let credentials = client.auth_identity.clone().unwrap();
+        let mut exchange = as_exchange_with_salt(b"EXAMPLEmyuser");
+        assert!(matches!(
+            exchange.step(&mut client, &credentials, &[]).unwrap(),
+            AsExchangeOutput::SendRequest(_)
+        ));
+        let mut reply = vec![0, 0, 0, 0];
+        reply.extend_from_slice(&as_rep_raw());
+
+        let AsExchangeOutput::Done(_, salt, _) = exchange.step(&mut client, &credentials, &reply).unwrap() else {
+            panic!("the AS-REP must complete the exchange");
+        };
+
+        assert_eq!(salt, "EXAMPLE.COMmyuser");
     }
 
     // RFC 4120 §3.1.3: the KDC replies with the AS-REP right away if it does not require pre-authentication.

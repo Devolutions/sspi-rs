@@ -8,7 +8,9 @@ use time::OffsetDateTime;
 
 use crate::generator::YieldPointLocal;
 use crate::kerberos::TGT_SERVICE_NAME;
-use crate::kerberos::client::extractors::{extract_encryption_params_from_as_rep_with_salt, extract_preauth_hint};
+use crate::kerberos::client::extractors::{
+    default_salt, extract_encryption_params_from_as_rep_with_salt, extract_preauth_hint,
+};
 use crate::kerberos::client::generators::{
     GenerateAsPaDataOptions, GenerateAsReqOptions, GenerateKeytabPaDataOptions, generate_as_req,
     generate_as_req_kdc_body, generate_nonce,
@@ -212,7 +214,8 @@ pub(crate) async fn as_exchange(
             Ok(as_rep) => {
                 // [3.1.3.  Receipt of KRB_AS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3)
                 // If pre-authentication is not required, the KDC replies with the AS-REP right away.
-                return Ok((as_rep, String::from_utf8_lossy(pa_data_options.salt()).into_owned()));
+                let salt = default_salt(&as_rep.0.crealm.0.to_string(), &as_rep.0.cname.0);
+                return Ok((as_rep, salt));
             }
             Err(krb_error) => krb_error,
         };

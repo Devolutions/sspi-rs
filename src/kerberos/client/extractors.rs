@@ -168,6 +168,18 @@ pub fn extract_session_key_from_as_rep(
     extract_session_key_from_as_rep_with_key(as_rep, &key, enc_params)
 }
 
+/// Returns the default salt of a principal: the realm, followed by the name components without separators.
+///
+/// [RFC 4120, section 3.1.3](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3): the KDC gives no salt when the
+/// reply carries no ETYPE-INFO2, and the default salt is the one that the realm and the name define.
+pub(crate) fn default_salt(realm: &str, name: &PrincipalName) -> String {
+    name.name_string
+        .0
+        .0
+        .iter()
+        .fold(realm.to_owned(), |salt, component| salt + &component.0.as_utf8())
+}
+
 /// Derives the long-term key from the password with the negotiated encryption type.
 pub(crate) fn password_key(password: &str, salt: &str, enc_params: &EncryptionParams) -> Result<Vec<u8>> {
     Ok(enc_params
