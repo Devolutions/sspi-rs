@@ -22,7 +22,11 @@ fn component_eq(name_1: &PrincipalName, name_2: &PrincipalName) -> bool {
     let names_1 = &name_1.name_string.0.0;
     let names_2 = &name_2.name_string.0.0;
 
-    names_1.len() == names_2.len() && names_1.iter().zip(names_2.iter()).all(|(name_1, name_2)| name_1.0 == name_2.0)
+    names_1.len() == names_2.len()
+        && names_1
+            .iter()
+            .zip(names_2.iter())
+            .all(|(name_1, name_2)| name_1.0 == name_2.0)
 }
 
 // https://doc.rust-lang.org/std/hash/trait.Hash.html#hash-and-eq

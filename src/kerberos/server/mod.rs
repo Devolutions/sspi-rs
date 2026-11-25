@@ -563,6 +563,8 @@ pub async fn accept_security_context(
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             // The clock is read under the lock, because another context may have expired the record in the meantime.
+            // UNTESTED: the time is read after the lock is taken, so a replay that waits for the lock is rejected once its
+            // record has expired. Check that the read stays after the lock when this code changes.
             let insertion_time = OffsetDateTime::now_utc();
             if (insertion_time - client_time).abs() > max_time_skew {
                 return Err(Error::new(
@@ -1312,8 +1314,7 @@ mod tests {
             let mut kerberos = acceptor();
             let token = picky_asn1_der::to_vec(&ap_req(&spec)).unwrap();
 
-            accept_token(&mut kerberos, &token)
-                .expect("the initiator subkey of a mutual authentication is not used");
+            accept_token(&mut kerberos, &token).expect("the initiator subkey of a mutual authentication is not used");
         }
 
         #[test]
