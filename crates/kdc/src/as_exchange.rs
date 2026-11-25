@@ -28,6 +28,15 @@ use crate::{
     validate_request_from_and_till, validate_request_sname,
 };
 
+/// Derives the long-term key of the user for `etype` from the password.
+fn derive_user_key(domain_user: &DomainUser, etype: &CipherSuite) -> Result<Zeroizing<Vec<u8>>, KdcError> {
+    etype
+        .cipher()
+        .generate_key_from_password(domain_user.password.as_ref().as_bytes(), domain_user.salt.as_bytes())
+        .map(Zeroizing::new)
+        .map_err(|_| KdcError::InternalError("failed to generate user's key"))
+}
+
 /// Validates AS-REQ PA-DATAs.
 ///
 /// The current implementation accepts only [PA_ENC_TIMESTAMP] pa-data (i.e. password-based logon).
@@ -36,7 +45,7 @@ fn validate_pa_data_timestamp(
     domain_user: &DomainUser,
     max_time_skew: u64,
     pa_datas: &[PaData],
-) -> Result<(Zeroizing<Vec<u8>>, CipherSuite), KdcError> {
+) -> Result<(), KdcError> {
     let pa_data = pa_datas
         .iter()
         .find_map(|pa_data| {
@@ -55,11 +64,7 @@ fn validate_pa_data_timestamp(
 
     let etype = supported_cipher_suite(encrypted_timestamp.etype.0.0.as_slice())?;
     let cipher = etype.cipher();
-    let key = Zeroizing::new(
-        cipher
-            .generate_key_from_password(domain_user.password.as_ref().as_bytes(), domain_user.salt.as_bytes())
-            .map_err(|_| KdcError::InternalError("failed to generate user's key"))?,
-    );
+    let key = derive_user_key(domain_user, &etype)?;
 
     let timestamp_data = cipher
         .decrypt(
@@ -79,7 +84,7 @@ fn validate_pa_data_timestamp(
         return Err(KdcError::ClockSkew("invalid pa-data: clock skew too great"));
     }
 
-    Ok((key, etype))
+    Ok(())
 }
 
 /// Performs AS exchange according to the RFC 4120.
@@ -157,16 +162,22 @@ pub(super) fn handle_as_req(as_req: &AsReq, kdc_config: &KerberosServer) -> Resu
         .0
         .0;
 
-    let (user_key, etype_of_user_key) = validate_pa_data_timestamp(domain_user, kdc_config.max_time_skew, pa_datas)?;
+    validate_pa_data_timestamp(domain_user, kdc_config.max_time_skew, pa_datas)?;
     let as_req_nonce = nonce.0.0.clone();
 
-    // The reply is encrypted with the user key, so its etype is the one the pre-authentication data was derived for.
-    // It is supported (see `supported_cipher_suite`) and must be offered by the client.
-    let etype_raw = [u8::from(etype_of_user_key.clone())];
-    if !etype.0.0.iter().any(|offered| offered.0 == etype_raw) {
-        return Err(KdcError::PreAuthEtypeNotRequested);
-    }
-    let etype = etype_of_user_key;
+    // RFC 4120 (https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3):
+    // > the KDC SHOULD use the first valid strong etype for which an encryption key is available.
+    //
+    // The user's key can be derived for any etype from the password, so the etype of the pre-authentication
+    // timestamp does not limit the reply.
+    let etype = etype
+        .0
+        .0
+        .iter()
+        .find_map(|offered| supported_cipher_suite(&offered.0).ok())
+        .ok_or(KdcError::NoSuitableEtype)?;
+    let user_key = derive_user_key(domain_user, &etype)?;
+    let etype_raw = [u8::from(etype.clone())];
     let cipher = etype.cipher();
     let realm = realm_asn1.0.clone();
     let (auth_time, end_time) = validate_request_from_and_till(from.0.as_deref(), &till.0, kdc_config.max_time_skew)?;

@@ -53,9 +53,6 @@ pub(super) enum KdcError {
     #[error("KDC_ERR_ETYPE_NOSUPP: only AES256_CTS_HMAC_SHA1_96 and AES128_CTS_HMAC_SHA1_96 etypes are supported")]
     NoSuitableEtype,
 
-    #[error("KDC_ERR_ETYPE_NOSUPP: the etype of the pre-authentication data is not in the requested etype list")]
-    PreAuthEtypeNotRequested,
-
     #[error("KRB_AP_ERR_BADVERSION: unsupported ticket version number")]
     BadTicketVersion,
 
@@ -171,7 +168,7 @@ impl KdcError {
             KdcError::ClientPrincipalUnknown(_) => KDC_ERR_C_PRINCIPAL_UNKNOWN,
             KdcError::InvalidCnameType(_) => KDC_ERR_C_PRINCIPAL_UNKNOWN,
             KdcError::InvalidSname(_) => KDC_ERR_S_PRINCIPAL_UNKNOWN,
-            KdcError::NoSuitableEtype | KdcError::PreAuthEtypeNotRequested => KDC_ERR_ETYPE_NOSUPP,
+            KdcError::NoSuitableEtype => KDC_ERR_ETYPE_NOSUPP,
             KdcError::BadOption(_) => KDC_ERR_BADOPTION,
             KdcError::ServerNoMatch(_) => KDC_ERR_SERVER_NOMATCH,
             KdcError::PreAuthFailed(_) => KDC_ERR_PREAUTH_FAILED,

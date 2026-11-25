@@ -11,7 +11,7 @@ use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, ExplicitContextTag3, ExplicitContextTag9, IntegerAsn1,
     OctetStringAsn1, Optional,
 };
-use picky_krb::constants::error_codes::{KDC_ERR_ETYPE_NOSUPP, KDC_ERR_PREAUTH_FAILED};
+use picky_krb::constants::error_codes::KDC_ERR_PREAUTH_FAILED;
 use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96, RC4_HMA};
 use picky_krb::constants::types::{
     NET_BIOS_ADDR_TYPE, NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ETYPE_INFO2_TYPE,
@@ -269,36 +269,33 @@ fn kdc_options_with_an_impossible_unused_bits_count_are_answered() {
 }
 
 #[test]
-fn reply_uses_the_etype_of_the_pre_authentication_key() {
-    // The user key is derived for the etype of the PA-ENC-TIMESTAMP.
-    // The reply must use that etype even when the request lists a more preferred one.
-    // oracle: mutant the reply is encrypted with an etype that does not match the user key
-    let etype = CipherSuite::Aes128CtsHmacSha196;
-    let key = user_key(&etype);
+fn reply_uses_the_first_supported_etype_of_the_request() {
+    // oracle: spec RFC 4120 §3.1.3 - the KDC uses the first valid strong etype of the request for which a key is available.
+    // The pre-authentication timestamp is AES128 and the request prefers AES256.
+    let pa_etype = CipherSuite::Aes128CtsHmacSha196;
     let mut body = as_req_body();
-    body.etype.0 = etype_list(&[CipherSuite::Aes256CtsHmacSha196, etype.clone()]);
-    let req = as_req(Some(vec![enc_timestamp(&etype, &key, OffsetDateTime::now_utc())]), body);
+    body.etype.0 = etype_list(&[CipherSuite::Aes256CtsHmacSha196, pa_etype.clone()]);
+    let timestamp = enc_timestamp(&pa_etype, &user_key(&pa_etype), OffsetDateTime::now_utc());
+    let req = as_req(Some(vec![timestamp]), body);
 
     let rep = send_as(&req, &kdc_config()).unwrap_ok();
 
-    assert_eq!(rep.0.enc_part.0.etype.0.0, etype_number(AES128_CTS_HMAC_SHA1_96));
-    decrypt_as_rep_part(&rep, &key);
+    assert_eq!(rep.0.enc_part.0.etype.0.0, etype_number(AES256_CTS_HMAC_SHA1_96));
+    decrypt_as_rep_part(&rep, &user_key(&CipherSuite::Aes256CtsHmacSha196));
 }
 
 #[test]
-fn pre_authentication_etype_missing_from_the_request_list_is_rejected() {
-    // oracle: mutant the reply is encrypted with an etype the client did not offer
-    let etype = CipherSuite::Aes128CtsHmacSha196;
-    let req = as_req(
-        Some(vec![enc_timestamp(
-            &etype,
-            &user_key(&etype),
-            OffsetDateTime::now_utc(),
-        )]),
-        as_req_body(), // offers AES256 only
-    );
+fn reply_etype_comes_from_the_request_when_the_timestamp_uses_another_etype() {
+    // oracle: spec RFC 4120 §3.1.3 - the reply etype is chosen from the request's etype list. The pre-authentication
+    // timestamp is still checked with its own etype.
+    let pa_etype = CipherSuite::Aes128CtsHmacSha196;
+    let timestamp = enc_timestamp(&pa_etype, &user_key(&pa_etype), OffsetDateTime::now_utc());
+    let req = as_req(Some(vec![timestamp]), as_req_body()); // the request offers AES256 only
 
-    assert_eq!(send_as(&req, &kdc_config()).unwrap_err_code(), KDC_ERR_ETYPE_NOSUPP);
+    let rep = send_as(&req, &kdc_config()).unwrap_ok();
+
+    assert_eq!(rep.0.enc_part.0.etype.0.0, etype_number(AES256_CTS_HMAC_SHA1_96));
+    decrypt_as_rep_part(&rep, &user_key(&CipherSuite::Aes256CtsHmacSha196));
 }
 
 #[test]
