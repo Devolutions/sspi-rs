@@ -38,7 +38,24 @@ pub fn install_default_crypto_provider_if_necessary() -> Result<(), ()> {
     }
 }
 
-#[cfg(feature = "network_client")]
+/// Configures the client to verify server certificates with the operating system verifier.
+///
+/// `rustls-native-certs` has no iOS loader and yields an empty root store there,
+/// which rejects every server certificate.
+#[cfg(all(feature = "network_client", target_os = "ios"))]
+pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
+    use rustls_platform_verifier::ConfigVerifierExt as _;
+
+    match rustls::ClientConfig::with_platform_verifier() {
+        Ok(config) => builder.use_preconfigured_tls(config),
+        Err(error) => {
+            warn!(%error, "failed to create the platform certificate verifier");
+            builder
+        }
+    }
+}
+
+#[cfg(all(feature = "network_client", not(target_os = "ios")))]
 pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
     #[cfg(feature = "aws-lc-rs")]
     {
