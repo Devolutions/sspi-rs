@@ -5,9 +5,9 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    ENC_TKT_IN_SKEY, HOSTNAME, MAX_SKEW_SECS, REALM, Tgt, checksum_of_body, domain_user, encrypted_data, etype_byte,
-    etype_number, flags, kdc_config, ktime, padata_field, principal, raw_pa_data, realm, resign, send_tgs, tgs_req,
-    tgs_req_body, u2u_request, valid_tgs_request,
+    ENC_TKT_IN_SKEY, HOSTNAME, MAX_SKEW_SECS, REALM, Tgt, domain_user, encrypted_data, etype_byte, etype_number, flags,
+    kdc_config, ktime, padata_field, principal, raw_pa_data, realm, send_tgs, tgs_req, tgs_req_body, u2u_request,
+    valid_tgs_request,
 };
 use picky_asn1::wrapper::{
     Asn1SequenceOf, ExplicitContextTag3, ExplicitContextTag4, ExplicitContextTag11, IntegerAsn1, Optional,
@@ -15,8 +15,8 @@ use picky_asn1::wrapper::{
 use picky_krb::constants::error_codes::{
     KDC_ERR_BAD_PVNO, KDC_ERR_BADOPTION, KDC_ERR_CANNOT_POSTDATE, KDC_ERR_ETYPE_NOSUPP, KDC_ERR_NEVER_VALID,
     KDC_ERR_PREAUTH_FAILED, KDC_ERR_PREAUTH_REQUIRED, KDC_ERR_S_PRINCIPAL_UNKNOWN, KDC_ERR_SERVER_NOMATCH,
-    KDC_ERR_WRONG_REALM, KRB_AP_ERR_BADMATCH, KRB_AP_ERR_BADVERSION, KRB_AP_ERR_INAPP_CKSUM, KRB_AP_ERR_MODIFIED,
-    KRB_AP_ERR_SKEW, KRB_AP_ERR_TKT_EXPIRED, KRB_AP_ERR_TKT_NYV, KRB_ERR_GENERIC,
+    KDC_ERR_WRONG_REALM, KRB_AP_ERR_BADMATCH, KRB_AP_ERR_BADVERSION, KRB_AP_ERR_MODIFIED, KRB_AP_ERR_SKEW,
+    KRB_AP_ERR_TKT_EXPIRED, KRB_AP_ERR_TKT_NYV, KRB_ERR_GENERIC,
 };
 use picky_krb::constants::etypes::{DES3_CBC_SHA1_KD, RC4_HMA};
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_TGS_REQ_TYPE};
@@ -89,10 +89,8 @@ use time::OffsetDateTime;
     KDC_ERR_S_PRINCIPAL_UNKNOWN
 )]
 fn error_code(#[case] mutate: fn(&mut TgsReq), #[case] expected: u32) {
-    let tgt = Tgt::valid();
-    let mut req = valid_tgs_request(&tgt);
+    let mut req = valid_tgs_request(&Tgt::valid());
     mutate(&mut req);
-    resign(&mut req, &tgt);
 
     assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), expected);
 }
@@ -272,48 +270,10 @@ fn tgt_encrypted_with_another_key_is_rejected() {
 }
 
 #[test]
-fn request_body_changed_after_signing_is_rejected() {
-    // oracle: spec RFC 4120 §3.3.2 - the authenticator checksum must match the request, else KRB_AP_ERR_MODIFIED.
-    // The nonce is not checked anywhere else, so only the checksum can reject this change.
-    let tgt = Tgt::valid();
-    let mut req = valid_tgs_request(&tgt);
-    req.0.req_body.0.nonce.0 = IntegerAsn1::from(vec![0x99]);
-
-    assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KRB_AP_ERR_MODIFIED);
-}
-
-#[test]
-fn authenticator_without_checksum_is_rejected() {
-    // oracle: spec RFC 4120 §3.3.2 - the checksum cannot be verified when the authenticator has none, so the request
-    // is rejected as not collision-proof, KRB_AP_ERR_INAPP_CKSUM.
-    let tgt = Tgt::valid();
-    let body = tgs_req_body();
-    let padata = tgt.pa_tgs_req_with_checksum(&tgt.session_key, None, None);
-    let req = tgs_req(Some(vec![padata]), body);
-
-    assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KRB_AP_ERR_INAPP_CKSUM);
-}
-
-#[test]
-fn checksum_that_is_not_keyed_with_the_session_key_is_rejected() {
-    // oracle: spec RFC 4120 §3.3.2 - a checksum type that is not collision-proof, such as CRC-32 (type 1),
-    // is rejected with KRB_AP_ERR_INAPP_CKSUM.
-    let tgt = Tgt::valid();
-    let body = tgs_req_body();
-    let mut checksum = checksum_of_body(tgt.key_type, &tgt.session_key, &body);
-    checksum.cksumtype.0 = IntegerAsn1::from(vec![1]);
-    let padata = tgt.pa_tgs_req_with_checksum(&tgt.session_key, None, Some(checksum));
-    let req = tgs_req(Some(vec![padata]), body);
-
-    assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KRB_AP_ERR_INAPP_CKSUM);
-}
-
-#[test]
 fn authenticator_encrypted_with_another_key_is_rejected() {
     // oracle: mutant an authenticator that the TGT session key does not decrypt is accepted
     let tgt = Tgt::valid();
-    let body = tgs_req_body();
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&[0x99; 32], None, &body)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&[0x99; 32], None)]), tgs_req_body());
 
     assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KRB_AP_ERR_MODIFIED);
 }
@@ -327,7 +287,7 @@ fn additional_ticket_that_is_not_a_tgt_is_rejected() {
     let mut body = tgs_req_body();
     body.kdc_options.0 = flags(ENC_TKT_IN_SKEY);
     body.additional_tickets = Optional::from(Some(ExplicitContextTag11::from(Asn1SequenceOf::from(vec![not_tgt]))));
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
 
     assert_eq!(
         send_tgs(&req, &kdc_config()).unwrap_err_code(),

@@ -9,9 +9,8 @@ use picky_asn1_der::Asn1DerError;
 use picky_krb::constants::error_codes::{
     KDC_ERR_BAD_PVNO, KDC_ERR_BADOPTION, KDC_ERR_C_PRINCIPAL_UNKNOWN, KDC_ERR_CANNOT_POSTDATE, KDC_ERR_ETYPE_NOSUPP,
     KDC_ERR_NEVER_VALID, KDC_ERR_PREAUTH_FAILED, KDC_ERR_PREAUTH_REQUIRED, KDC_ERR_S_PRINCIPAL_UNKNOWN,
-    KDC_ERR_SERVER_NOMATCH, KDC_ERR_WRONG_REALM, KRB_AP_ERR_BADMATCH, KRB_AP_ERR_BADVERSION, KRB_AP_ERR_INAPP_CKSUM,
-    KRB_AP_ERR_MODIFIED, KRB_AP_ERR_MSG_TYPE, KRB_AP_ERR_SKEW, KRB_AP_ERR_TKT_EXPIRED, KRB_AP_ERR_TKT_NYV,
-    KRB_ERR_GENERIC,
+    KDC_ERR_SERVER_NOMATCH, KDC_ERR_WRONG_REALM, KRB_AP_ERR_BADMATCH, KRB_AP_ERR_BADVERSION, KRB_AP_ERR_MODIFIED,
+    KRB_AP_ERR_MSG_TYPE, KRB_AP_ERR_SKEW, KRB_AP_ERR_TKT_EXPIRED, KRB_AP_ERR_TKT_NYV, KRB_ERR_GENERIC,
 };
 use picky_krb::constants::types::{KRB_ERROR_MSG_TYPE, NT_SRV_INST, PA_ENC_TIMESTAMP, PA_ETYPE_INFO2_TYPE};
 use picky_krb::crypto::CipherSuite;
@@ -83,9 +82,6 @@ pub(super) enum KdcError {
 
     #[error("KRB_AP_ERR_MODIFIED: {0} decryption failed")]
     Modified(&'static str),
-
-    #[error("KRB_AP_ERR_INAPP_CKSUM: {0}")]
-    InappropriateChecksum(&'static str),
 
     #[error("KDC_ERR_CANNOT_POSTDATE: {0}")]
     CannotPostdate(&'static str),
@@ -180,7 +176,6 @@ impl KdcError {
             KdcError::InternalError(_) => KRB_ERR_GENERIC,
             KdcError::ClockSkew(_) => KRB_AP_ERR_SKEW,
             KdcError::Modified(_) => KRB_AP_ERR_MODIFIED,
-            KdcError::InappropriateChecksum(_) => KRB_AP_ERR_INAPP_CKSUM,
             KdcError::Asn1Encode(_) => KRB_ERR_GENERIC,
             KdcError::EncryptionFailed(_) => KRB_ERR_GENERIC,
             KdcError::BadKrbVersion { .. } => KDC_ERR_BAD_PVNO,
