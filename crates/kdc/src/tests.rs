@@ -1,10 +1,11 @@
 //! Unit tests for the request validators shared by the AS and TGS exchanges.
 
+use crate::KerberosFlagsExt;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag0, ExplicitContextTag1, GeneralizedTimeAsn1, IntegerAsn1};
 use picky_krb::constants::types::{NT_PRINCIPAL, NT_SRV_INST};
-use picky_krb::data_types::{KerberosStringAsn1, PrincipalName};
+use picky_krb::data_types::{KerberosFlags, KerberosStringAsn1, PrincipalName};
 use rstest::rstest;
 use time::OffsetDateTime;
 
@@ -66,4 +67,13 @@ fn start_time_within_skew_is_treated_as_now() {
     let (auth_time, _) = validate_request_from_and_till(Some(&at(100)), &at(600), 300).unwrap();
 
     assert!((OffsetDateTime::now_utc() - auth_time).abs() < time::Duration::seconds(5));
+}
+
+// oracle: spec X.690 §8.6.2.2 - the number of unused bits is between 0 and 7, so 0xff is not a valid BIT STRING.
+// The bit lookup must still answer, and a panic here fails the test.
+#[test]
+fn bit_lookup_does_not_panic_on_an_unused_bits_count_above_the_payload() {
+    let flags: KerberosFlags = picky_asn1_der::from_bytes(&[0x03, 0x05, 0xff, 0x00, 0x00, 0x00, 0x00]).unwrap();
+
+    let _ = flags.is_bit_set(0);
 }

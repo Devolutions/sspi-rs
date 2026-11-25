@@ -2,13 +2,13 @@
 //!
 //! It does not use `sspi`, so the message builder is independent of the code under test.
 
-#![allow(dead_code, reason = "each test binary uses a different subset of the helpers")]
-#![allow(
+#![expect(dead_code, reason = "each test binary uses a different subset of the helpers")]
+#![expect(
     unreachable_pub,
     reason = "the module is private to each test binary; `pub` marks the helper API"
 )]
-#![allow(clippy::panic, reason = "test helpers fail the test by panicking")]
-#![allow(clippy::large_enum_variant, reason = "test-only reply wrapper")]
+#![expect(clippy::panic, reason = "test helpers fail the test by panicking")]
+#![expect(clippy::large_enum_variant, reason = "test-only reply wrapper")]
 
 use std::time::Duration;
 

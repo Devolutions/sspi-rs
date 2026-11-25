@@ -1,8 +1,6 @@
 mod as_exchange;
 pub mod config;
 mod error;
-#[cfg(test)]
-mod tests;
 mod tgs_exchange;
 mod ticket;
 
@@ -139,23 +137,19 @@ const UNSUPPORTED_KDC_OPTIONS: [usize; 5] = [2, 4, 6, 30, 31];
 /// `enc-tkt-in-skey` bit number of `KDCOptions`.
 pub(crate) const KDC_OPTION_ENC_TKT_IN_SKEY: usize = 28;
 
-/// Returns whether the KDC issues keys of the `etype`: only AES256 and AES128 (CTS-HMAC-SHA1-96).
+/// Returns the cipher suite for the etype number from the network if the KDC issues keys of it.
 ///
-/// [RFC 4120 §3.1.3](https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3) forbids weak session key etypes.
-fn is_supported_etype(etype: &CipherSuite) -> bool {
-    matches!(
-        etype,
-        CipherSuite::Aes256CtsHmacSha196 | CipherSuite::Aes128CtsHmacSha196
-    )
-}
-
-/// Returns the cipher suite for the etype number from the network if the KDC supports it.
-///
-/// Check the etype before decrypting untrusted data: unsupported ciphers (for example DES3 in `picky-krb`) panic on malformed input.
+/// Only AES256 and AES128 (CTS-HMAC-SHA1-96) are issued, because [RFC 4120 §3.1.3](https://datatracker.ietf.org/doc/html/rfc4120#section-3.1.3) forbids weak session key etypes.
+/// The etype of untrusted data must be checked before decrypting with it, because unsupported ciphers (for example DES3 in `picky-krb`) panic on malformed input.
 fn supported_cipher_suite(etype: &[u8]) -> Result<CipherSuite, KdcError> {
     CipherSuite::try_from(etype)
         .ok()
-        .filter(is_supported_etype)
+        .filter(|suite| {
+            matches!(
+                suite,
+                CipherSuite::Aes256CtsHmacSha196 | CipherSuite::Aes128CtsHmacSha196
+            )
+        })
         .ok_or(KdcError::NoSuitableEtype)
 }
 
@@ -181,8 +175,8 @@ impl KerberosFlagsExt for KerberosFlags {
 /// Rejects `KDCOptions` that the KDC cannot honor.
 ///
 /// `enc-tkt-in-skey` is meaningful only for the TGS exchange (user-to-user authentication).
-/// The other options are accepted and ignored. In particular, `renewable` is accepted because `sspi` always sends it,
-/// but the issued tickets are never renewable.
+/// The other options are accepted and ignored.
+/// In particular, `renewable` is accepted because `sspi` always sends it, but the issued tickets are never renewable.
 ///
 /// RFC: [KDC_ERR_BADOPTION](https://www.rfc-editor.org/rfc/rfc4120#section-5.9.1).
 fn validate_kdc_options(options: &KerberosFlags, allow_enc_tkt_in_skey: bool) -> Result<(), KdcError> {
@@ -252,7 +246,7 @@ pub fn handle_kdc_proxy_message(
         .split_first_chunk::<4>()
         .ok_or(Asn1DerError::TruncatedData)?;
     let declared_len = usize::try_from(u32::from_be_bytes(*length_prefix)).map_err(|_| Asn1DerError::InvalidData)?;
-    if declared_len > raw_krb_message.len() {
+    if raw_krb_message.len() < declared_len {
         return Err(Asn1DerError::TruncatedData);
     }
     if declared_len < raw_krb_message.len() {
@@ -284,3 +278,6 @@ pub fn handle_kdc_proxy_message(
         dclocator_hint,
     })
 }
+
+#[cfg(test)]
+mod tests;
