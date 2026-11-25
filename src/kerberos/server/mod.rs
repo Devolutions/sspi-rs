@@ -567,11 +567,15 @@ pub async fn accept_security_context(
                 .authenticators_cache
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            authenticators_cache.retain(|record| {
-                OffsetDateTime::try_from(record.ctime.0.clone())
-                    .is_ok_and(|record_time| (now - record_time).abs() <= max_time_skew)
-            });
-            if !authenticators_cache.insert(cache_record) {
+            // The clock is read under the lock, because another context may have expired the record in the meantime.
+            let insertion_time = OffsetDateTime::now_utc();
+            if (insertion_time - client_time).abs() > max_time_skew {
+                return Err(Error::new(
+                    ErrorKind::TimeSkew,
+                    "invalid authenticator ctime: time skew is too big",
+                ));
+            }
+            if !authenticators_cache.insert(cache_record, client_time, insertion_time, max_time_skew) {
                 return Err(Error::new(
                     ErrorKind::InvalidToken,
                     "ApReq Authenticator replay detected",
@@ -1431,16 +1435,17 @@ mod tests {
             let server_data = kerberos.server.as_mut().unwrap();
             let max_time_skew = server_data.max_time_skew;
             let stale_ctime = OffsetDateTime::now_utc() - max_time_skew - TimeDuration::minutes(1);
-            server_data
-                .authenticators_cache
-                .lock()
-                .unwrap()
-                .insert(AuthenticatorCacheRecord {
+            server_data.authenticators_cache.lock().unwrap().insert(
+                AuthenticatorCacheRecord {
                     cname: alice(),
                     sname: server_data.service_name.clone(),
                     ctime: GeneralizedTime::from(stale_ctime).into(),
                     microseconds: IntegerAsn1::from(vec![0]),
-                });
+                },
+                stale_ctime,
+                OffsetDateTime::now_utc(),
+                max_time_skew,
+            );
 
             let token = picky_asn1_der::to_vec(&ap_req(&Spec::default())).unwrap();
             accept_token(&mut kerberos, &token).unwrap();
