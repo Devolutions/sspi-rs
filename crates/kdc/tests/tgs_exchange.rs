@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use common::{
     ENC_TKT_IN_SKEY, HOSTNAME, MAX_SKEW_SECS, REALM, SERVICE_KEY, Tgt, USER, decrypt_tgs_rep_part, decrypt_ticket,
-    domain_user, etype_byte, etype_list, etype_number, flags, kdc_config, ktime, principal, realm, send_tgs, tgs_req,
-    tgs_req_body, u2u_config, u2u_request, valid_tgs_request,
+    domain_user, etype_byte, etype_list, etype_number, flags, kdc_config, ktime, principal, realm, resign, send_tgs,
+    tgs_req, tgs_req_body, u2u_config, u2u_request, valid_tgs_request,
 };
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag11, Optional};
 use picky_krb::constants::error_codes::{KDC_ERR_BADOPTION, KDC_ERR_ETYPE_NOSUPP, KDC_ERR_NEVER_VALID};
@@ -37,10 +37,8 @@ fn tgs_req_reply_uses_authenticator_subkey_when_present() {
     // Key usages: 8 for the session key and 9 for the subkey (§7.5.1).
     let tgt = Tgt::valid();
     let subkey = vec![0x44; 32];
-    let req = tgs_req(
-        Some(vec![tgt.pa_tgs_req(&tgt.session_key, Some(&subkey))]),
-        tgs_req_body(),
-    );
+    let body = tgs_req_body();
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, Some(&subkey), &body)]), body);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -83,7 +81,7 @@ fn empty_additional_tickets_list_is_rejected() {
     let mut body = tgs_req_body();
     body.kdc_options.0 = flags(ENC_TKT_IN_SKEY);
     body.additional_tickets = Optional::from(Some(ExplicitContextTag11::from(Asn1SequenceOf::from(vec![]))));
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
 
     assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KDC_ERR_BADOPTION);
 }
@@ -97,7 +95,7 @@ fn requested_options_are_not_copied_to_the_service_ticket_flags() {
     let tgt = Tgt::valid();
     let mut body = tgs_req_body();
     body.kdc_options.0 = flags(0x4080_0000); // forwardable | renewable
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -162,7 +160,7 @@ fn requested_lifetime_is_capped_at_one_hour() {
     tgt.end_time = OffsetDateTime::now_utc() + Duration::from_secs(24 * 3600);
     let mut body = tgs_req_body();
     body.till.0 = ktime(OffsetDateTime::now_utc() + Duration::from_secs(24 * 3600));
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -182,7 +180,7 @@ fn requested_lifetime_below_the_limits_is_honored() {
     let tgt = Tgt::valid();
     let mut body = tgs_req_body();
     body.till.0 = ktime(OffsetDateTime::now_utc() + Duration::from_secs(1800));
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -315,6 +313,7 @@ fn client_realm_is_copied_from_the_tgt_and_not_from_the_request() {
     let tgt = Tgt::valid();
     let mut req = valid_tgs_request(&tgt);
     req.0.req_body.0.realm.0 = realm(&REALM.to_lowercase());
+    resign(&mut req, &tgt);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -340,7 +339,7 @@ fn requested_etype_selects_the_new_session_key_and_not_the_reply_key() {
     let tgt = Tgt::valid();
     let mut body = tgs_req_body();
     body.etype.0 = etype_list(&[CipherSuite::Aes128CtsHmacSha196]);
-    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body);
+    let req = tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body);
 
     let rep = send_tgs(&req, &kdc_config()).unwrap_ok();
 
@@ -356,9 +355,10 @@ fn unsupported_subkey_etype_is_rejected() {
     // oracle: spec RFC 4120 §5.9.1 - KDC_ERR_ETYPE_NOSUPP, "KDC has no support for encryption type".
     let mut tgt = Tgt::valid();
     tgt.subkey_type = etype_byte(DES3_CBC_SHA1_KD);
+    let body = tgs_req_body();
     let req = tgs_req(
-        Some(vec![tgt.pa_tgs_req(&tgt.session_key, Some(&[0x44; 24]))]),
-        tgs_req_body(),
+        Some(vec![tgt.pa_tgs_req(&tgt.session_key, Some(&[0x44; 24]), &body)]),
+        body,
     );
 
     assert_eq!(send_tgs(&req, &kdc_config()).unwrap_err_code(), KDC_ERR_ETYPE_NOSUPP);

@@ -23,7 +23,8 @@ use picky_asn1::wrapper::{
 };
 use picky_asn1_der::application_tag::ApplicationTag;
 use picky_krb::constants::key_usages::{
-    AS_REP_ENC, AS_REQ_TIMESTAMP, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TICKET_REP,
+    AS_REP_ENC, AS_REQ_TIMESTAMP, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
+    TICKET_REP,
 };
 use picky_krb::constants::types::{
     AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, ENC_AS_REP_PART_TYPE, ENC_TGS_REP_PART_TYPE, NT_PRINCIPAL, NT_SRV_INST,
@@ -31,8 +32,9 @@ use picky_krb::constants::types::{
 };
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
-    Authenticator, AuthenticatorInner, EncTicketPart, EncTicketPartInner, EncryptedData, EncryptionKey, KerberosFlags,
-    KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PrincipalName, Realm, Ticket, TicketInner, TransitedEncoding,
+    Authenticator, AuthenticatorInner, Checksum, EncTicketPart, EncTicketPartInner, EncryptedData, EncryptionKey,
+    KerberosFlags, KerberosStringAsn1, KerberosTime, PaData, PaEncTsEnc, PrincipalName, Realm, Ticket, TicketInner,
+    TransitedEncoding,
 };
 use picky_krb::messages::{
     ApReq, ApReqInner, AsRep, AsReq, EncKdcRepPart, KdcProxyMessage, KdcReq, KdcReqBody, KrbError, TgsRep, TgsReq,
@@ -384,12 +386,24 @@ impl Tgt {
 
     /// PA-TGS-REQ for this TGT.
     /// `auth_key` encrypts the authenticator; `subkey` goes into it.
-    pub fn pa_tgs_req(&self, auth_key: &[u8], subkey: Option<&[u8]>) -> PaData {
+    /// Builds the PA-TGS-REQ for `body`, with the authenticator checksum of `body` keyed with `auth_key`.
+    pub fn pa_tgs_req(&self, auth_key: &[u8], subkey: Option<&[u8]>, body: &KdcReqBody) -> PaData {
+        let checksum = checksum_of_body(self.key_type, auth_key, body);
+        self.pa_tgs_req_with_checksum(auth_key, subkey, Some(checksum))
+    }
+
+    /// Builds the PA-TGS-REQ with the given authenticator checksum, or with no checksum at all.
+    pub fn pa_tgs_req_with_checksum(
+        &self,
+        auth_key: &[u8],
+        subkey: Option<&[u8]>,
+        checksum: Option<Checksum>,
+    ) -> PaData {
         let authenticator = Authenticator::from(AuthenticatorInner {
             authenticator_vno: ExplicitContextTag0::from(IntegerAsn1::from(vec![5])),
             crealm: ExplicitContextTag1::from(realm(self.auth_crealm)),
             cname: ExplicitContextTag2::from(self.auth_cname.clone()),
-            cksum: Optional::from(None),
+            cksum: Optional::from(checksum.map(ExplicitContextTag3::from)),
             cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0])),
             ctime: ExplicitContextTag5::from(ktime(self.auth_ctime)),
             subkey: Optional::from(subkey.map(|k| {
@@ -443,6 +457,28 @@ pub fn padata_field(list: Vec<PaData>) -> Optional<Option<ExplicitContextTag3<As
 }
 
 /// A well-formed TGS-REQ body for `TERMSRV/HOSTNAME`.
+/// The authenticator checksum of the KDC-REQ-BODY `body`, keyed with `key` of the etype `etype`.
+///
+/// RFC 4120 (https://www.rfc-editor.org/rfc/rfc4120#section-7.5.1): key usage 6 is the PA-TGS-REQ authenticator checksum.
+pub fn checksum_of_body(etype: u8, key: &[u8], body: &KdcReqBody) -> Checksum {
+    let checksum_type = CipherSuite::try_from(&[etype][..]).unwrap().cipher().checksum_type();
+    let value = checksum_type
+        .hasher()
+        .checksum(
+            key,
+            TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
+            &picky_asn1_der::to_vec(body).unwrap(),
+        )
+        .unwrap();
+
+    Checksum {
+        cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(vec![
+            u8::try_from(usize::from(checksum_type)).unwrap(),
+        ])),
+        checksum: ExplicitContextTag1::from(OctetStringAsn1::from(value)),
+    }
+}
+
 pub fn tgs_req_body() -> KdcReqBody {
     let mut body = as_req_body();
     body.cname = Optional::from(None);
@@ -455,7 +491,25 @@ pub fn tgs_req_body() -> KdcReqBody {
 
 /// A TGS-REQ for `TERMSRV/HOSTNAME` with a valid PA-TGS-REQ for `tgt`.
 pub fn valid_tgs_request(tgt: &Tgt) -> TgsReq {
-    tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), tgs_req_body())
+    let body = tgs_req_body();
+    tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body)
+}
+
+/// Signs the PA-TGS-REQ of `req` again for its current body.
+///
+/// A test that changes the body of a request uses this, so that the change reaches the check it targets and not
+/// the authenticator checksum. PA-TGS-REQ data that does not decode as an AP-REQ is left as it is.
+pub fn resign(req: &mut TgsReq, tgt: &Tgt) {
+    let signed = tgt.pa_tgs_req(&tgt.session_key, None, &req.0.req_body.0);
+    let Some(pa_datas) = req.0.padata.0.as_mut() else {
+        return;
+    };
+    for pa_data in pa_datas.0.0.iter_mut() {
+        let is_ap_req = picky_asn1_der::from_bytes::<ApReq>(&pa_data.padata_data.0.0).is_ok();
+        if pa_data.padata_type.0.0 == PA_TGS_REQ_TYPE && is_ap_req {
+            pa_data.padata_data = signed.padata_data.clone();
+        }
+    }
 }
 
 /// A user-to-user TGS-REQ that carries the TGT of the service as the additional ticket.
@@ -465,5 +519,5 @@ pub fn u2u_request(tgt: &Tgt, additional: &Tgt) -> TgsReq {
     body.additional_tickets = Optional::from(Some(ExplicitContextTag11::from(Asn1SequenceOf::from(vec![
         additional.ticket(),
     ]))));
-    tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None)]), body)
+    tgs_req(Some(vec![tgt.pa_tgs_req(&tgt.session_key, None, &body)]), body)
 }

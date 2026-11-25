@@ -6,12 +6,14 @@ use picky_asn1::wrapper::{
     ExplicitContextTag4, ExplicitContextTag5, ExplicitContextTag6, IntegerAsn1, OctetStringAsn1, Optional,
 };
 use picky_krb::constants::key_usages::{
-    TGS_REP_ENC_SESSION_KEY, TGS_REP_ENC_SUB_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR, TICKET_REP,
+    TGS_REP_ENC_SESSION_KEY, TGS_REP_ENC_SUB_KEY, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
+    TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM, TICKET_REP,
 };
 use picky_krb::constants::types::{ENC_TGS_REP_PART_TYPE, PA_TGS_REQ_TYPE, TGS_REP_MSG_TYPE, TGS_REQ_MSG_TYPE};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{
-    Authenticator, EncTicketPart, EncTicketPartInner, EncryptedData, PaData, PrincipalName, Realm, TicketInner,
+    Authenticator, AuthenticatorInner, EncTicketPart, EncTicketPartInner, EncryptedData, PaData, PrincipalName, Realm,
+    TicketInner,
 };
 use picky_krb::messages::{ApReq, ApReqInner, KdcRep, KdcReq, KdcReqBody, TgsRep, TgsReq};
 use time::OffsetDateTime;
@@ -125,12 +127,67 @@ fn open_tgt(
     Ok((enc_part, end_time))
 }
 
+/// Verifies the checksum of the PA-TGS-REQ authenticator over the KDC-REQ-BODY.
+///
+/// RFC: [Receipt of KRB_TGS_REQ Message](https://www.rfc-editor.org/rfc/rfc4120#section-3.3.2).
+fn verify_authenticator_checksum(
+    authenticator: &AuthenticatorInner,
+    session_key: &[u8],
+    session_key_type: &[u8],
+    req_body: &KdcReqBody,
+) -> Result<(), KdcError> {
+    // RFC 4120 (https://www.rfc-editor.org/rfc/rfc4120#section-3.3.2):
+    // > the user-supplied checksum in the Authenticator MUST be verified against the contents of the request,
+    // > and the message MUST be rejected if the checksums do not match (with an error code of KRB_AP_ERR_MODIFIED)
+    // > or if the checksum is not collision-proof (with an error code of KRB_AP_ERR_INAPP_CKSUM).
+    let cipher = supported_cipher_suite(session_key_type)?.cipher();
+    let checksum = &authenticator
+        .cksum
+        .0
+        .as_ref()
+        .ok_or(KdcError::InappropriateChecksum(
+            "the TGS_REQ authenticator has no checksum",
+        ))?
+        .0;
+
+    // The keyed checksum of the session key is the only one that is collision-proof here.
+    let cksumtype = checksum
+        .cksumtype
+        .0
+        .0
+        .iter()
+        .fold(0usize, |acc, byte| (acc << 8) | usize::from(*byte));
+    if cksumtype != usize::from(cipher.checksum_type()) {
+        return Err(KdcError::InappropriateChecksum(
+            "the TGS_REQ authenticator checksum is not keyed with the session key",
+        ));
+    }
+
+    let expected = cipher
+        .checksum_type()
+        .hasher()
+        .checksum(
+            session_key,
+            TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
+            &picky_asn1_der::to_vec(req_body)?,
+        )
+        .map_err(|_| KdcError::InternalError("failed to compute the TGS_REQ authenticator checksum"))?;
+    if checksum.checksum.0.0 != expected {
+        return Err(KdcError::Modified(
+            "the TGS_REQ does not match the authenticator checksum",
+        ));
+    }
+
+    Ok(())
+}
+
 /// Performs TGS pre-authentication: validates incoming PA-DATAs and extracts needed parameters.
 fn tgs_preauth(
     realm: &str,
     pa_datas: &Asn1SequenceOf<PaData>,
     krbtgt_key: &[u8],
     max_time_skew: u64,
+    req_body: &KdcReqBody,
 ) -> Result<TgsPreAuth, KdcError> {
     let ap_req: ApReq = picky_asn1_der::from_bytes(
         &pa_datas
@@ -189,6 +246,8 @@ fn tgs_preauth(
     )
     .map_err(|_| KdcError::PreAuthFailed("failed to decode TGS_REQ PA-DATA Authenticator"))?;
 
+    verify_authenticator_checksum(&authenticator.0, &session_key, &session_key_type, req_body)?;
+
     // RFC 4120 Receipt of KRB_AP_REQ Message (https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3):
     // > The name and realm of the client from the ticket are compared against the same fields in the authenticator.
     // > If they don't match, the KRB_AP_ERR_BADMATCH error is returned.
@@ -215,12 +274,7 @@ fn tgs_preauth(
         return Err(KdcError::ClockSkew("TGS_REQ authenticator: clock skew too great"));
     }
 
-    // Known deviation from RFC 4120 (https://www.rfc-editor.org/rfc/rfc4120#section-3.3.2): the KDC does not verify
-    // the authenticator checksum against the KDC-REQ-BODY, on purpose. The sspi client sends an unkeyed RSA-MD5
-    // checksum (type 7), which a keyed-checksum verification would reject.
-    // UNTESTED: a request body changed after the PA-TGS-REQ was signed is accepted. Check it when changing this code,
-    // and when the sspi client switches to a keyed checksum (key usage 6), verify the checksum and add a test.
-    // Without a replay cache, a replayed authenticator only yields tickets for the same client within the clock skew.
+    // No replay cache and no authenticator checksum verification: a replayed authenticator only yields tickets for the same client within the clock skew.
 
     let (session_key, reply_key_type, tgs_rep_key_usage) = if let Some(key) = authenticator.0.subkey.0 {
         (key.0.key_value.0.0, key.0.key_type.0.0, TGS_REP_ENC_SUB_KEY)
@@ -325,6 +379,7 @@ pub(super) fn handle_tgs_req(
         pa_datas,
         kdc_config.krbtgt_key.as_ref(),
         kdc_config.max_time_skew,
+        &req_body.0,
     )?;
 
     // [RFC 4120: KRB_KDC_REQ Definition](https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1):
