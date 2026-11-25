@@ -40,23 +40,32 @@ pub fn install_default_crypto_provider_if_necessary() -> Result<(), ()> {
 
 /// Configures the client to verify server certificates with the operating system verifier.
 ///
-/// `rustls-native-certs` has no iOS loader and yields an empty root store there,
-/// which rejects every server certificate.
+/// `rustls-native-certs` has no iOS loader and yields an empty root store there.
+/// That store rejects every server certificate.
+// UNTESTED: system trust on iOS. CAs installed by MDM or a user profile must be trusted,
+// while untrusted and wrong-host certificates must be rejected. A KDC proxy behind an
+// untrusted certificate would otherwise silently fall back to NTLM. When changing this code,
+// repeat on a device: reach `/jet/KdcProxy` through a Gateway, then retry with an untrusted certificate.
 #[cfg(all(feature = "network_client", target_os = "ios"))]
-pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
+pub(crate) fn load_native_certs(
+    builder: reqwest::blocking::ClientBuilder,
+) -> crate::Result<reqwest::blocking::ClientBuilder> {
     use rustls_platform_verifier::ConfigVerifierExt as _;
 
-    match rustls::ClientConfig::with_platform_verifier() {
-        Ok(config) => builder.use_preconfigured_tls(config),
-        Err(error) => {
-            warn!(%error, "failed to create the platform certificate verifier");
-            builder
-        }
-    }
+    let config = rustls::ClientConfig::with_platform_verifier().map_err(|error| {
+        crate::Error::new(
+            crate::ErrorKind::NoAuthenticatingAuthority,
+            format!("Failed to create the platform certificate verifier: {error}"),
+        )
+    })?;
+
+    Ok(builder.use_preconfigured_tls(config))
 }
 
 #[cfg(all(feature = "network_client", not(target_os = "ios")))]
-pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
+pub(crate) fn load_native_certs(
+    builder: reqwest::blocking::ClientBuilder,
+) -> crate::Result<reqwest::blocking::ClientBuilder> {
     #[cfg(feature = "aws-lc-rs")]
     {
         let mut builder = builder;
@@ -79,12 +88,12 @@ pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> re
             };
         }
 
-        builder
+        Ok(builder)
     }
 
     // We enable the rustls-tls-native-roots feature of reqwest when ring is used.
     #[cfg(all(not(feature = "aws-lc-rs"), feature = "ring"))]
     {
-        builder
+        Ok(builder)
     }
 }
