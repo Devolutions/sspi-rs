@@ -47,9 +47,6 @@ pub(super) enum KdcError {
     #[error("invalid cname type: {0:?}")]
     InvalidCnameType(Vec<u8>),
 
-    #[error("invalid sname type: {0:?}")]
-    InvalidSnameType(Vec<u8>),
-
     #[error("invalid sname: {0}")]
     InvalidSname(String),
 
@@ -173,7 +170,6 @@ impl KdcError {
         let error_code = match self {
             KdcError::ClientPrincipalUnknown(_) => KDC_ERR_C_PRINCIPAL_UNKNOWN,
             KdcError::InvalidCnameType(_) => KDC_ERR_C_PRINCIPAL_UNKNOWN,
-            KdcError::InvalidSnameType(_) => KDC_ERR_S_PRINCIPAL_UNKNOWN,
             KdcError::InvalidSname(_) => KDC_ERR_S_PRINCIPAL_UNKNOWN,
             KdcError::NoSuitableEtype | KdcError::PreAuthEtypeNotRequested => KDC_ERR_ETYPE_NOSUPP,
             KdcError::BadOption(_) => KDC_ERR_BADOPTION,

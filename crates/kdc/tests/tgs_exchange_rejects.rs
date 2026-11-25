@@ -219,6 +219,19 @@ fn additional_ticket_error_code(#[case] mutate: fn(&mut Tgt), #[case] expected: 
 }
 
 #[test]
+fn user_to_user_without_a_configured_service_user_is_rejected() {
+    // oracle: spec RFC 4120 §3.3.3 - the name of the requested server is compared with the client of the additional
+    // ticket. Without a configured service identity there is nothing to compare with, so the request is refused.
+    let tgt = Tgt::valid();
+    let additional = Tgt::valid();
+
+    assert_eq!(
+        send_tgs(&u2u_request(&tgt, &additional), &kdc_config()).unwrap_err_code(),
+        KDC_ERR_BADOPTION
+    );
+}
+
+#[test]
 fn additional_ticket_of_another_client_than_the_service_user_is_rejected() {
     // oracle: spec RFC 4120 §3.3.3 - the client of the additional ticket must be the requested server;
     // the configured service user is that server.

@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use picky_asn1::wrapper::{ExplicitContextTag0, GeneralizedTimeAsn1, OctetStringAsn1};
 use picky_asn1_der::Asn1DerError;
-use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL, NT_SRV_INST};
+use picky_krb::constants::types::{NT_ENTERPRISE, NT_PRINCIPAL};
 use picky_krb::crypto::CipherSuite;
 use picky_krb::data_types::{KerberosFlags, PrincipalName};
 use picky_krb::messages::{AsReq, KdcProxyMessage, TgsReq};
@@ -199,10 +199,7 @@ fn validate_kdc_options(options: &KerberosFlags, allow_enc_tkt_in_skey: bool) ->
 
 /// Validates the service name of the incoming [KdcReqBody].
 fn validate_request_sname(sname: &PrincipalName, expected_snames: &[&str]) -> Result<(), KdcError> {
-    if sname.name_type.0.0 != [NT_SRV_INST] {
-        return Err(KdcError::InvalidSnameType(sname.name_type.0.0.clone()));
-    }
-
+    // RFC 4120 §6.2: the name-type is a hint, so only the name components are compared.
     let mut sname = sname.name_string.0.0.iter().map(|name| name.to_string());
 
     for expected_sname in expected_snames {

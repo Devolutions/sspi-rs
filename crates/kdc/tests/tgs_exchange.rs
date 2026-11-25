@@ -5,15 +5,15 @@ mod common;
 use std::time::Duration;
 
 use common::{
-    ENC_TKT_IN_SKEY, HOSTNAME, MAX_SKEW_SECS, REALM, SERVICE_KEY, Tgt, decrypt_tgs_rep_part, decrypt_ticket,
+    ENC_TKT_IN_SKEY, HOSTNAME, MAX_SKEW_SECS, REALM, SERVICE_KEY, Tgt, USER, decrypt_tgs_rep_part, decrypt_ticket,
     domain_user, etype_byte, etype_list, etype_number, flags, kdc_config, ktime, principal, realm, send_tgs, tgs_req,
-    tgs_req_body, u2u_request, valid_tgs_request,
+    tgs_req_body, u2u_config, u2u_request, valid_tgs_request,
 };
 use picky_asn1::wrapper::{Asn1SequenceOf, ExplicitContextTag11, Optional};
 use picky_krb::constants::error_codes::{KDC_ERR_BADOPTION, KDC_ERR_ETYPE_NOSUPP, KDC_ERR_NEVER_VALID};
 use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96, DES3_CBC_SHA1_KD};
 use picky_krb::constants::key_usages::{TGS_REP_ENC_SESSION_KEY, TGS_REP_ENC_SUB_KEY};
-use picky_krb::constants::types::NT_SRV_INST;
+use picky_krb::constants::types::{NT_ENTERPRISE, NT_SRV_INST};
 use picky_krb::crypto::CipherSuite;
 use time::OffsetDateTime;
 
@@ -236,7 +236,7 @@ fn user_to_user_service_ticket_is_encrypted_with_the_additional_tgt_session_key(
     let mut service_tgt = Tgt::valid();
     service_tgt.session_key = vec![0x55; 32];
 
-    let rep = send_tgs(&u2u_request(&tgt, &service_tgt), &kdc_config()).unwrap_ok();
+    let rep = send_tgs(&u2u_request(&tgt, &service_tgt), &u2u_config()).unwrap_ok();
 
     decrypt_ticket(&rep.0.ticket.0, &service_tgt.session_key);
 }
@@ -262,7 +262,7 @@ fn user_to_user_does_not_need_the_service_key() {
     let tgt = Tgt::valid();
     let mut service_tgt = Tgt::valid();
     service_tgt.session_key = vec![0x55; 32];
-    let mut config = kdc_config();
+    let mut config = u2u_config();
     config.ticket_decryption_key = None;
 
     let rep = send_tgs(&u2u_request(&tgt, &service_tgt), &config).unwrap_ok();
@@ -279,7 +279,7 @@ fn user_to_user_ticket_is_encrypted_with_the_etype_of_the_additional_tgt_session
     service_tgt.key_type = etype_byte(AES128_CTS_HMAC_SHA1_96);
     service_tgt.session_key = vec![0x55; 16];
 
-    let rep = send_tgs(&u2u_request(&tgt, &service_tgt), &kdc_config()).unwrap_ok();
+    let rep = send_tgs(&u2u_request(&tgt, &service_tgt), &u2u_config()).unwrap_ok();
 
     assert_eq!(
         rep.0.ticket.0.0.enc_part.0.etype.0.0,
@@ -321,6 +321,15 @@ fn client_realm_is_copied_from_the_tgt_and_not_from_the_request() {
     assert_eq!(rep.0.crealm.0.to_string(), REALM);
     let ticket = decrypt_ticket(&rep.0.ticket.0, &SERVICE_KEY);
     assert_eq!(ticket.crealm.0.to_string(), REALM);
+}
+
+#[test]
+fn authenticator_name_type_is_not_part_of_the_client_identity() {
+    // oracle: spec RFC 4120 §6.2 - the name-type is a hint; names that differ only in the name-type are the same principal.
+    let mut tgt = Tgt::valid();
+    tgt.auth_cname = principal(NT_ENTERPRISE, &[USER]);
+
+    send_tgs(&valid_tgs_request(&tgt), &kdc_config()).unwrap_ok();
 }
 
 #[test]

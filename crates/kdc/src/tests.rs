@@ -35,8 +35,8 @@ fn at(offset_secs: i64) -> GeneralizedTimeAsn1 {
 #[case::exact(NT_SRV_INST, &["krbtgt", "EXAMPLE.COM"], true)]
 // oracle: mutant the components are compared case-sensitively
 #[case::case_insensitive(NT_SRV_INST, &["KRBTGT", "example.com"], true)]
-// oracle: mutant the name type is not checked
-#[case::wrong_name_type(NT_PRINCIPAL, &["krbtgt", "EXAMPLE.COM"], false)]
+// oracle: spec RFC 4120 §6.2 - the name-type is only a hint and does not change which principal a name identifies.
+#[case::name_type_is_only_a_hint(NT_PRINCIPAL, &["krbtgt", "EXAMPLE.COM"], true)]
 // oracle: mutant the first component is not checked
 #[case::wrong_first_component(NT_SRV_INST, &["host", "EXAMPLE.COM"], false)]
 // oracle: mutant the second component is not checked

@@ -59,6 +59,14 @@ pub fn domain_user(name: &str) -> DomainUser {
     }
 }
 
+/// A KDC configured for user-to-user authentication: the service user is the client of the TGTs in these tests.
+pub fn u2u_config() -> KerberosServer {
+    KerberosServer {
+        service_user: Some(domain_user(USER)),
+        ..kdc_config()
+    }
+}
+
 pub fn kdc_config() -> KerberosServer {
     KerberosServer {
         realm: REALM.to_owned(),

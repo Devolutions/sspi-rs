@@ -192,7 +192,17 @@ fn tgs_preauth(
     // RFC 4120 Receipt of KRB_AP_REQ Message (https://www.rfc-editor.org/rfc/rfc4120#section-3.2.3):
     // > The name and realm of the client from the ticket are compared against the same fields in the authenticator.
     // > If they don't match, the KRB_AP_ERR_BADMATCH error is returned.
-    if authenticator.0.crealm.0.to_string() != ticket_crealm.0.to_string() || authenticator.0.cname.0 != cname.0 {
+    // The name-type is not compared: RFC 4120 §6.2 says it is only a hint.
+    let same_name = authenticator
+        .0
+        .cname
+        .0
+        .name_string
+        .0
+        .0
+        .iter()
+        .eq(cname.0.name_string.0.0.iter());
+    if authenticator.0.crealm.0.to_string() != ticket_crealm.0.to_string() || !same_name {
         return Err(KdcError::BadMatch(
             "the authenticator client name does not match the TGT client name",
         ));
@@ -340,15 +350,16 @@ pub(super) fn handle_tgs_req(
         // > If it is different, the request will be rejected.
         //
         // The requested server is always `TERMSRV/<hostname>`, so the additional ticket is compared with
-        // the configured service user instead. Without a service user, the TGT of any client is accepted:
-        // the issued ticket is then encrypted with a key that the requester may choose.
-        if let Some(service_user) = &kdc_config.service_user {
-            let additional_client = client_username(&additional_tgt.cname.0, &additional_tgt.crealm.0.to_string())?;
-            if !additional_client.eq_ignore_ascii_case(&service_user.username) {
-                return Err(KdcError::ServerNoMatch(
-                    "the additional ticket is not the TGT of the user-to-user service",
-                ));
-            }
+        // the configured service user instead. Without one, any client's TGT would be accepted, and the
+        // issued ticket would be encrypted with a key that the requester chose.
+        let service_user = kdc_config.service_user.as_ref().ok_or(KdcError::BadOption(
+            "user-to-user authentication requires a configured service user",
+        ))?;
+        let additional_client = client_username(&additional_tgt.cname.0, &additional_tgt.crealm.0.to_string())?;
+        if !additional_client.eq_ignore_ascii_case(&service_user.username) {
+            return Err(KdcError::ServerNoMatch(
+                "the additional ticket is not the TGT of the user-to-user service",
+            ));
         }
 
         // The ticket is encrypted with the session key of the additional TGT, in the etype of that key.
