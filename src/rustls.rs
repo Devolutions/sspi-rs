@@ -38,8 +38,37 @@ pub fn install_default_crypto_provider_if_necessary() -> Result<(), ()> {
     }
 }
 
-#[cfg(feature = "network_client")]
-pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> reqwest::blocking::ClientBuilder {
+/// Configures the client to verify server certificates with the operating system verifier.
+///
+/// `rustls-native-certs` has no iOS loader and yields an empty root store there.
+/// That store rejects every server certificate.
+// UNTESTED: system trust on iOS.
+// CAs installed by MDM or a user profile must be trusted.
+// Rejecting a trusted CA makes Negotiate fall back to NTLM.
+// Untrusted and wrong-host certificates must be rejected.
+// Accepting one permits KDC proxy impersonation.
+// When changing this code, repeat on a device:
+// reach `/jet/KdcProxy` through a Gateway, then retry with an untrusted certificate.
+#[cfg(all(feature = "network_client", target_os = "ios"))]
+pub(crate) fn load_native_certs(
+    builder: reqwest::blocking::ClientBuilder,
+) -> crate::Result<reqwest::blocking::ClientBuilder> {
+    use rustls_platform_verifier::ConfigVerifierExt as _;
+
+    let config = rustls::ClientConfig::with_platform_verifier().map_err(|error| {
+        crate::Error::new(
+            crate::ErrorKind::NoAuthenticatingAuthority,
+            format!("failed to create the platform certificate verifier: {error}"),
+        )
+    })?;
+
+    Ok(builder.use_preconfigured_tls(config))
+}
+
+#[cfg(all(feature = "network_client", not(target_os = "ios")))]
+pub(crate) fn load_native_certs(
+    builder: reqwest::blocking::ClientBuilder,
+) -> crate::Result<reqwest::blocking::ClientBuilder> {
     #[cfg(feature = "aws-lc-rs")]
     {
         let mut builder = builder;
@@ -62,12 +91,12 @@ pub(crate) fn load_native_certs(builder: reqwest::blocking::ClientBuilder) -> re
             };
         }
 
-        builder
+        Ok(builder)
     }
 
     // We enable the rustls-tls-native-roots feature of reqwest when ring is used.
     #[cfg(all(not(feature = "aws-lc-rs"), feature = "ring"))]
     {
-        builder
+        Ok(builder)
     }
 }
