@@ -116,6 +116,15 @@ fn the_acceptor_accepts_an_as_rep_to_the_request_without_pre_authentication() {
     assert!(seen.timestamp_etypes.is_empty(), "no pre-authentication is sent");
 }
 
+/// [RFC 4120, section 3.1.3](https://www.rfc-editor.org/rfc/rfc4120#section-3.1.3):
+/// without an ETYPE-INFO2 the key of the account is derived from the salt of its realm, not from the domain that was given.
+#[test]
+fn the_acceptor_derives_the_salt_from_the_realm_when_the_as_rep_has_no_etype_info() {
+    let seen = acceptor_acquires_tgt(|kdc| kdc.no_preauth_required().omit_as_rep_etype_info2());
+
+    assert_eq!(seen.count, 1, "no second AS-REQ is needed");
+}
+
 /// [RFC 4120, section 5.2.7.5](https://www.rfc-editor.org/rfc/rfc4120#section-5.2.7.5):
 /// the ETYPE-INFO2 entry of the pre-authentication error names the key type of the account.
 #[test]
