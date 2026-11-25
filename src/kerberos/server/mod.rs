@@ -458,11 +458,6 @@ pub async fn accept_security_context(
             // The AP-REP and the acceptor subkey follow it, and a subkey of the initiator brings its own type.
             // The per-message tokens are protected with that type.
             let session_key_type = CipherSuite::try_from(ticket_enc_part.0.key.0.key_type.0.0.as_slice())?;
-            let authenticator_subkey_type = subkey
-                .0
-                .as_ref()
-                .map(|key| CipherSuite::try_from(key.0.key_type.0.0.as_slice()))
-                .transpose()?;
 
             // The initiator's Authenticator sequence number.
             // Without a mutual-auth AP-REP to carry an acceptor sequence number, GSS initiators
@@ -672,6 +667,12 @@ pub async fn accept_security_context(
                 // Since we return no acceptor subkey, per-message tokens use the
                 // initiator's Authenticator subkey if it provided one (RFC 4121
                 // §4.2), falling back to the ticket session key otherwise.
+                // Only the type of this subkey is needed, so a subkey of another type is parsed here alone.
+                let authenticator_subkey_type = subkey
+                    .0
+                    .as_ref()
+                    .map(|key| CipherSuite::try_from(key.0.key_type.0.0.as_slice()))
+                    .transpose()?;
                 server.encryption_params.encryption_type = Some(authenticator_subkey_type.unwrap_or(session_key_type));
                 if let Some(subkey) = authenticator_subkey {
                     server.encryption_params.sub_session_key = Some(subkey);
@@ -990,6 +991,8 @@ mod tests {
             cipher_suite: CipherSuite,
             /// The encryption type of the subkey in the authenticator, if the initiator sends one.
             authenticator_subkey: Option<CipherSuite>,
+            /// Adds a subkey of `rc4-hmac`, which the acceptor does not support.
+            unsupported_authenticator_subkey: bool,
             /// The client name in the authenticator.
             /// The ticket names `alice` as an `NT-PRINCIPAL`.
             authenticator_cname: PrincipalName,
@@ -1006,6 +1009,7 @@ mod tests {
                     mutual_auth: false,
                     cipher_suite: CipherSuite::Aes256CtsHmacSha196,
                     authenticator_subkey: None,
+                    unsupported_authenticator_subkey: false,
                     authenticator_cname: alice(),
                 }
             }
@@ -1090,12 +1094,21 @@ mod tests {
                 cksum: Optional::from(None),
                 cusec: ExplicitContextTag4::from(IntegerAsn1::from(vec![0])),
                 ctime: ExplicitContextTag5::from(time(now)),
-                subkey: Optional::from(spec.authenticator_subkey.as_ref().map(|subkey_suite| {
-                    ExplicitContextTag6::from(EncryptionKey {
-                        key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![subkey_suite.into()])),
-                        key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key(&SUBKEY, subkey_suite))),
+                subkey: Optional::from(if spec.unsupported_authenticator_subkey {
+                    Some(ExplicitContextTag6::from(EncryptionKey {
+                        key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![
+                            u8::try_from(picky_krb::constants::etypes::RC4_HMA).unwrap(),
+                        ])),
+                        key_value: ExplicitContextTag1::from(OctetStringAsn1::from(vec![0x33; 16])),
+                    }))
+                } else {
+                    spec.authenticator_subkey.as_ref().map(|subkey_suite| {
+                        ExplicitContextTag6::from(EncryptionKey {
+                            key_type: ExplicitContextTag0::from(IntegerAsn1::from(vec![subkey_suite.into()])),
+                            key_value: ExplicitContextTag1::from(OctetStringAsn1::from(key(&SUBKEY, subkey_suite))),
+                        })
                     })
-                })),
+                }),
                 seq_number: Optional::from(None),
                 authorization_data: Optional::from(None),
             });
@@ -1287,6 +1300,22 @@ mod tests {
         }
 
         // RFC 4121 §2: a subkey in the authenticator protects the per-message tokens, whatever the ticket encryption type.
+        // RFC 4121 §4.2: a mutual authentication replaces the initiator subkey with the subkey of the acceptor,
+        // so a subkey of a type the acceptor does not support must not fail the request.
+        #[test]
+        fn a_mutual_authentication_ignores_an_unsupported_initiator_subkey() {
+            let spec = Spec {
+                mutual_auth: true,
+                unsupported_authenticator_subkey: true,
+                ..Spec::default()
+            };
+            let mut kerberos = acceptor();
+            let token = picky_asn1_der::to_vec(&ap_req(&spec)).unwrap();
+
+            accept_token(&mut kerberos, &token)
+                .expect("the initiator subkey of a mutual authentication is not used");
+        }
+
         #[test]
         fn an_integrity_only_wrap_token_follows_the_encryption_type_of_the_authenticator_subkey() {
             let spec = Spec {
