@@ -465,4 +465,34 @@ mod sealed_wrap_rotation {
 
         decrypt(&mut server, token).unwrap_err();
     }
+
+    // RFC 4121 §4.2.4: the header in the encrypted body repeats the outer header, with RRC zero.
+    // A changed outer EC moves the boundary between plaintext and header, and the checksum covers the same bytes,
+    // so only this comparison detects the truncated plaintext.
+    #[test]
+    fn sealed_wrap_rejects_an_outer_header_with_another_extra_count() {
+        let plaintext = b"sealed payload";
+        let mut token = sealed_token(&test_data::fake_server(), plaintext, 0, 28, 28);
+        // Same rotation (RRC + EC stays 28), but the last plaintext octet would be dropped.
+        token[5] = 1;
+        token[7] = 27;
+        let mut server = test_data::fake_server();
+
+        let error = decrypt(&mut server, token).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::MessageAltered);
+    }
+
+    // RFC 4121 §4.2.4: the sequence number in the outer header is covered by the encrypted header copy.
+    #[test]
+    fn sealed_wrap_rejects_an_outer_header_with_another_sequence_number() {
+        let plaintext = b"sealed payload";
+        let mut token = sealed_token(&test_data::fake_server(), plaintext, 0, 28, 28);
+        token[15] ^= 1;
+        let mut server = test_data::fake_server();
+
+        let error = decrypt(&mut server, token).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::MessageAltered);
+    }
 }

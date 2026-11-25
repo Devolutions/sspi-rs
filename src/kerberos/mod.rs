@@ -591,6 +591,15 @@ impl Sspi for Kerberos {
             return decrypt_integrity_only_wrap(&wrap_token, key.as_ref(), &aes_size, key_usage, message);
         }
 
+        // The header inside the encrypted body repeats the outer header, with RRC zero (RFC 4121 §4.2.4).
+        let expected_header = WrapToken {
+            rrc: 0,
+            checksum: Vec::new(),
+            payload: None,
+            ..wrap_token.clone()
+        }
+        .header();
+
         let mut checksum = wrap_token.checksum;
         if checksum.is_empty() {
             return Err(Error::new(ErrorKind::DecryptFailure, "empty sealed WRAP token"));
@@ -612,6 +621,16 @@ impl Sspi for Kerberos {
 
         if decrypted.len() < usize::from(wrap_token.ec) + WrapToken::header_len() {
             return Err(Error::new(ErrorKind::DecryptFailure, "decrypted data is too short"));
+        }
+
+        // The encrypted header is the last octets of the body. Its position does not depend on the outer EC,
+        // so an outer EC that moves the plaintext boundary is detected by this comparison.
+        let header_start = decrypted.len() - WrapToken::header_len();
+        if decrypted[header_start..] != expected_header {
+            return Err(Error::new(
+                ErrorKind::MessageAltered,
+                "the Wrap token header does not match the encrypted header",
+            ));
         }
 
         let plaintext_len = decrypted.len() - usize::from(wrap_token.ec) - WrapToken::header_len();
