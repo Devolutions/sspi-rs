@@ -515,11 +515,6 @@ pub(crate) fn validate_dh_public_key(public_key: &[u8], modulus: &[u8]) -> Resul
 
     use crate::utils::trim_leading_zeros;
 
-    // Big-endian integers without leading zeros: the longer one is greater.
-    fn compare(left: &[u8], right: &[u8]) -> Ordering {
-        left.len().cmp(&right.len()).then_with(|| left.cmp(right))
-    }
-
     let public_key = trim_leading_zeros(public_key);
     let modulus = trim_leading_zeros(modulus);
 
@@ -542,7 +537,12 @@ pub(crate) fn validate_dh_public_key(public_key: &[u8], modulus: &[u8]) -> Resul
         ));
     }
 
-    Ok(())
+    return Ok(());
+
+    // Big-endian integers without leading zeros: the longer one is greater.
+    fn compare(left: &[u8], right: &[u8]) -> Ordering {
+        left.len().cmp(&right.len()).then_with(|| left.cmp(right))
+    }
 }
 
 fn extract_kdc_dh_key_info(signed_data: &SignedData) -> Result<KdcDhKeyInfo> {
