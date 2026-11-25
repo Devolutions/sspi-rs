@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use picky_krb::constants::etypes::{AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96};
+use picky_krb::constants::etypes::AES128_CTS_HMAC_SHA1_96;
 use picky_krb::constants::types::PA_ENC_TIMESTAMP;
 use picky_krb::data_types::EncryptedData;
 use picky_krb::messages::TgtRep;
@@ -126,5 +126,4 @@ fn the_acceptor_encrypts_the_timestamp_with_the_key_type_of_the_hint() {
         seen.timestamp_etypes,
         [vec![u8::try_from(AES128_CTS_HMAC_SHA1_96).unwrap()]]
     );
-    assert_ne!(AES128_CTS_HMAC_SHA1_96, AES256_CTS_HMAC_SHA1_96);
 }
