@@ -169,7 +169,7 @@ impl AsRepSessionKeyExtractor<'_> {
 
                 let rsa_public_key = validate_server_p2p_certificate(&signed_data)?;
                 validate_signed_data(&signed_data, &rsa_public_key)?;
-                check_kdc_dh_key_info_nonce(&signed_data, nonces.pk_authenticator)?;
+                check_kdc_dh_key_info_nonce(&signed_data, nonces.pk_authenticator, OffsetDateTime::now_utc())?;
 
                 enc_params.encryption_type = Some(CipherSuite::try_from(as_rep.0.enc_part.0.etype.0.0.as_slice())?);
                 let cipher =

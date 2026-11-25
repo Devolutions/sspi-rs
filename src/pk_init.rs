@@ -447,18 +447,51 @@ pub(crate) fn extract_server_ecdh_public_key(signed_data: &SignedData) -> Result
         .to_vec())
 }
 
+/// Checks a KDC DH key that the KDC reuses.
+///
+/// [RFC 4556, Section 3.2.3](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3):
+/// the nonce is 0 for a reused key, and the key MUST NOT be used past `dhKeyExpiration`.
+pub(crate) fn check_reused_kdc_dh_key(
+    nonce_is_zero: bool,
+    expiration: OffsetDateTime,
+    now: OffsetDateTime,
+) -> Result<()> {
+    if !nonce_is_zero {
+        return Err(Error::new(
+            ErrorKind::InvalidToken,
+            "KDC DH key info of a reused key has a nonzero nonce",
+        ));
+    }
+
+    if !(now < expiration) {
+        return Err(Error::new(ErrorKind::InvalidToken, "KDC DH key has expired"));
+    }
+
+    Ok(())
+}
+
 /// Checks that the `KDCDHKeyInfo` nonce echoes the `PKAuthenticator` nonce of the request.
 ///
 /// [RFC 4556, Section 3.2.3](https://www.rfc-editor.org/rfc/rfc4556.html#section-3.2.3):
 /// the nonce is the request nonce if the KDC does not reuse its DH keys, and 0 otherwise.
-/// A reused key is not bound to a request by the nonce, but by the fresh client DH key,
-/// so the nonce is not checked when `dhKeyExpiration` is present.
+/// A reused key is not bound to a request by the nonce, but by the fresh client DH key, so its expiration is checked instead.
 #[cfg(feature = "scard")]
-pub(crate) fn check_kdc_dh_key_info_nonce(signed_data: &SignedData, expected_nonce: u32) -> Result<()> {
+pub(crate) fn check_kdc_dh_key_info_nonce(
+    signed_data: &SignedData,
+    expected_nonce: u32,
+    now: OffsetDateTime,
+) -> Result<()> {
     let kdc_dh_key_info = extract_kdc_dh_key_info(signed_data)?;
 
-    if kdc_dh_key_info.dh_key_expiration.0.is_some() {
-        return Ok(());
+    if let Some(expiration) = kdc_dh_key_info.dh_key_expiration.0 {
+        let expiration = OffsetDateTime::try_from(expiration.0.0).map_err(|err| {
+            Error::new(
+                ErrorKind::InvalidToken,
+                format!("KDC DH key expiration is not valid: {err:?}"),
+            )
+        })?;
+        let nonce_is_zero = crate::kerberos::client::generators::nonce_matches(&kdc_dh_key_info.nonce.0, 0);
+        return check_reused_kdc_dh_key(nonce_is_zero, expiration, now);
     }
 
     if !crate::kerberos::client::generators::nonce_matches(&kdc_dh_key_info.nonce.0, expected_nonce) {
@@ -841,12 +874,21 @@ mod kdc_dh_key_info_nonce_tests {
         }
     }
 
+    /// The `signed_data` helper sets the expiration of a reused key to 1700000000.
+    fn before_expiration() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_600_000_000).unwrap()
+    }
+
+    fn after_expiration() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap()
+    }
+
     // RFC 4556 §3.2.3: the nonce of the KDCDHKeyInfo is the pkAuthenticator nonce when the KDC does not reuse its DH keys.
     #[test]
     fn matching_nonce_is_accepted() {
         let signed_data = signed_data(vec![0x01, 0x02, 0x03, 0x04], false);
 
-        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
+        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304, before_expiration()).unwrap();
     }
 
     // The nonce 0x81020304 has the high bit set, so its minimal DER INTEGER starts with a `00` sign octet.
@@ -855,7 +897,7 @@ mod kdc_dh_key_info_nonce_tests {
     fn nonce_with_a_sign_octet_is_accepted() {
         let signed_data = signed_data(vec![0x00, 0x81, 0x02, 0x03, 0x04], false);
 
-        check_kdc_dh_key_info_nonce(&signed_data, 0x8102_0304).unwrap();
+        check_kdc_dh_key_info_nonce(&signed_data, 0x8102_0304, before_expiration()).unwrap();
     }
 
     // A replayed reply carries the nonce of an earlier request.
@@ -866,20 +908,67 @@ mod kdc_dh_key_info_nonce_tests {
     fn mismatched_nonce_is_rejected_when_dh_keys_are_not_reused(#[case] nonce: Vec<u8>) {
         let signed_data = signed_data(nonce, false);
 
-        let error = check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap_err();
+        let error = check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304, before_expiration()).unwrap_err();
 
         assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 
-    // RFC 4556 §3.2.3: the nonce is 0 when the KDC reuses its DH keys, so it does not echo the request nonce.
-    // The reply is still bound to the request by the fresh client DH key, so the nonce is not checked in this mode.
-    #[rstest]
-    #[case::zero(vec![0x00])]
-    #[case::other_value(vec![0x01, 0x02, 0x03, 0x05])]
-    fn nonce_is_not_checked_when_dh_keys_are_reused(#[case] nonce: Vec<u8>) {
-        let signed_data = signed_data(nonce, true);
+    // RFC 4556 §3.2.3: the nonce of a reused DH key is 0, whatever the request nonce is.
+    #[test]
+    fn reused_key_with_a_zero_nonce_is_accepted_before_its_expiration() {
+        let signed_data = signed_data(vec![0x00], true);
 
-        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304).unwrap();
+        check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304, before_expiration()).unwrap();
+    }
+
+    // RFC 4556 §3.2.3: a reused key with a nonzero nonce echoes the nonce of a request, so it is not a reused key.
+    #[test]
+    fn reused_key_with_a_nonzero_nonce_is_rejected() {
+        let signed_data = signed_data(vec![0x01, 0x02, 0x03, 0x04], true);
+
+        let error = check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304, before_expiration()).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+
+    // RFC 4556 §3.2.3: the KDC's public key MUST NOT be used past the point of `dhKeyExpiration`.
+    #[test]
+    fn reused_key_is_rejected_after_its_expiration() {
+        let signed_data = signed_data(vec![0x00], true);
+
+        let error = check_kdc_dh_key_info_nonce(&signed_data, 0x0102_0304, after_expiration()).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
+    }
+}
+
+// RFC 4556 §3.2.3: the checks of a reused KDC DH key, which need no PKINIT feature.
+#[cfg(test)]
+mod reused_key_tests {
+    use rstest::rstest;
+    use time::OffsetDateTime;
+
+    use super::check_reused_kdc_dh_key;
+    use crate::ErrorKind;
+
+    #[test]
+    fn reused_key_with_a_zero_nonce_is_accepted_before_its_expiration() {
+        let expiration = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+        let now = OffsetDateTime::from_unix_timestamp(1_600_000_000).unwrap();
+
+        check_reused_kdc_dh_key(true, expiration, now).unwrap();
+    }
+
+    #[rstest]
+    #[case::nonzero_nonce(false, 1_800_000_000, 1_600_000_000)]
+    #[case::after_expiration(true, 1_600_000_000, 1_800_000_000)]
+    fn reused_key_is_rejected(#[case] nonce_is_zero: bool, #[case] expiration: i64, #[case] now: i64) {
+        let expiration = OffsetDateTime::from_unix_timestamp(expiration).unwrap();
+        let now = OffsetDateTime::from_unix_timestamp(now).unwrap();
+
+        let error = check_reused_kdc_dh_key(nonce_is_zero, expiration, now).unwrap_err();
+
+        assert_eq!(error.error_type, ErrorKind::InvalidToken);
     }
 }
 
