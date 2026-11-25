@@ -42,10 +42,13 @@ pub fn install_default_crypto_provider_if_necessary() -> Result<(), ()> {
 ///
 /// `rustls-native-certs` has no iOS loader and yields an empty root store there.
 /// That store rejects every server certificate.
-// UNTESTED: system trust on iOS. CAs installed by MDM or a user profile must be trusted,
-// while untrusted and wrong-host certificates must be rejected. A KDC proxy behind an
-// untrusted certificate would otherwise silently fall back to NTLM. When changing this code,
-// repeat on a device: reach `/jet/KdcProxy` through a Gateway, then retry with an untrusted certificate.
+// UNTESTED: system trust on iOS.
+// CAs installed by MDM or a user profile must be trusted.
+// Rejecting a trusted CA makes Negotiate fall back to NTLM.
+// Untrusted and wrong-host certificates must be rejected.
+// Accepting one permits KDC proxy impersonation.
+// When changing this code, repeat on a device:
+// reach `/jet/KdcProxy` through a Gateway, then retry with an untrusted certificate.
 #[cfg(all(feature = "network_client", target_os = "ios"))]
 pub(crate) fn load_native_certs(
     builder: reqwest::blocking::ClientBuilder,
@@ -55,7 +58,7 @@ pub(crate) fn load_native_certs(
     let config = rustls::ClientConfig::with_platform_verifier().map_err(|error| {
         crate::Error::new(
             crate::ErrorKind::NoAuthenticatingAuthority,
-            format!("Failed to create the platform certificate verifier: {error}"),
+            format!("failed to create the platform certificate verifier: {error}"),
         )
     })?;
 
