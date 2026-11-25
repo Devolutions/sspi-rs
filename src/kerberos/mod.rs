@@ -217,11 +217,14 @@ impl Kerberos {
             KdcResolution::KdcUrl(kdc_url) => {
                 let realm = self.realm.to_owned()?;
                 if let Some(kdc_url) = kdc_url {
-                    Some((realm, kdc_url.to_owned()))
-                } else {
-                    let kdc_url = detect_kdc_url(&realm)?;
-                    Some((realm, kdc_url))
+                    return Some((realm, kdc_url.to_owned()));
                 }
+                // The KDC that answered for the realm is preferred over the first detected candidate.
+                if let Some(pinned) = self.kdc_cache.get(&realm.to_ascii_uppercase()) {
+                    return Some((realm, pinned.clone()));
+                }
+                let kdc_url = detect_kdc_url(&realm)?;
+                Some((realm, kdc_url))
             }
         }
     }
@@ -1271,6 +1274,19 @@ mod kdc_failover_tests {
 
     fn pinned(kerberos: &Kerberos) -> Option<&str> {
         kerberos.kdc_cache.get(REALM).map(Url::as_str)
+    }
+
+    // oracle: mutant the password change takes the first detected KDC after another one answered the AS exchange
+    #[test]
+    fn get_kdc_returns_the_kdc_that_answered_for_the_realm() {
+        let mut kerberos = fake_client();
+        kerberos.realm = Some(REALM.to_owned());
+        kerberos.kdc_cache.insert(REALM.to_owned(), url(DC2));
+
+        let (realm, kdc) = kerberos.get_kdc().unwrap();
+
+        assert_eq!(realm, REALM);
+        assert_eq!(kdc, url(DC2));
     }
 
     // oracle: mutant failover stops at the first candidate that answers
