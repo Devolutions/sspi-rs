@@ -23,5 +23,8 @@ argon2 = { version = "0.5", features = ["std"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 secret.workspace = true
 
+[dev-dependencies]
+rstest = { version = "0.26", default-features = false }
+
 [lints]
 workspace = true

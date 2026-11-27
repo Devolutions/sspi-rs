@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use bitflags;
-use md5::{Digest, Md5};
 use picky_asn1::bit_string::BitString;
 use picky_asn1::date::GeneralizedTime;
 use picky_asn1::restricted_string::IA5String;
@@ -14,6 +13,7 @@ use picky_asn1_x509::oids;
 use picky_krb::constants::gss_api::AUTHENTICATOR_CHECKSUM_TYPE;
 use picky_krb::constants::key_usages::{
     AP_REP_ENC, AP_REQ_AUTHENTICATOR, KRB_PRIV_ENC_PART, TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR,
+    TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
 };
 use picky_krb::constants::types::{
     AD_AUTH_DATA_AP_OPTION_TYPE, AP_REP_MSG_TYPE, AP_REQ_MSG_TYPE, AS_REQ_MSG_TYPE, KERB_AP_OPTIONS_CBT, KRB_PRIV,
@@ -77,7 +77,6 @@ const TGT_TICKET_LIFETIME_DAYS: i64 = 3;
 /// Microseconds    ::= INTEGER (0..999999)
 /// ```
 pub const MAX_MICROSECONDS: u32 = 999_999;
-const MD5_CHECKSUM_TYPE: [u8; 1] = [0x07];
 
 // Renewable, Canonicalize, and Renewable-ok are on by default
 // https://www.rfc-editor.org/rfc/rfc4120#section-5.4.1
@@ -439,13 +438,22 @@ pub fn generate_tgs_req(options: GenerateTgsReqOptions<'_>) -> Result<TgsReq> {
         ),
     };
 
-    let mut md5 = Md5::new();
-    md5.update(&picky_asn1_der::to_vec(&req_body)?);
-    let checksum = md5.finalize();
+    // RFC 4120 (https://www.rfc-editor.org/rfc/rfc4120#section-3.3.2): the KDC verifies the authenticator checksum
+    // against the request body. The checksum is keyed with the TGT session key (key usage 6) and uses the checksum
+    // of the etype that encrypts the authenticator, so a KDC accepts it.
+    let encryption_type = enc_params.encryption_type.as_ref().unwrap_or(&DEFAULT_ENCRYPTION_TYPE);
+    let checksum_type = encryption_type.cipher().checksum_type();
+    let checksum = checksum_type.hasher().checksum(
+        session_key.as_ref(),
+        TGS_REQ_PA_DATA_AP_REQ_AUTHENTICATOR_CKSUM,
+        &picky_asn1_der::to_vec(&req_body)?,
+    )?;
 
     authenticator.0.cksum = Optional::from(Some(ExplicitContextTag3::from(Checksum {
-        cksumtype: ExplicitContextTag0::from(IntegerAsn1::from(MD5_CHECKSUM_TYPE.to_vec())),
-        checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum.to_vec())),
+        cksumtype: ExplicitContextTag0::from(IntegerAsn1::from_bytes_be_signed(
+            u32::from(checksum_type).to_be_bytes().to_vec(),
+        )),
+        checksum: ExplicitContextTag1::from(OctetStringAsn1::from(checksum)),
     })));
 
     let pa_tgs_req =
