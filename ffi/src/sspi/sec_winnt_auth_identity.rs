@@ -295,7 +295,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
+        if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -334,7 +334,7 @@ pub unsafe fn auth_data_to_identity_buffers_a(
 
         // Try to collect credentials for the emulated/system-provided smart card.
         #[cfg(feature = "scard")]
-        if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
+        if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
             return Ok(CredentialsBuffers::SmartCard(scard_creds));
         }
 
@@ -433,7 +433,7 @@ pub unsafe fn auth_data_to_identity_buffers_w(
 
     // Try to collect credentials for the emulated/system-provided smart card.
     #[cfg(feature = "scard")]
-    if let Some(scard_creds) = collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
+    if let Some(scard_creds) = try_collect_smart_card_creds(user.clone(), domain.clone(), password.clone())? {
         return Ok(CredentialsBuffers::SmartCard(scard_creds));
     }
 
@@ -444,6 +444,10 @@ pub unsafe fn auth_data_to_identity_buffers_w(
     }))
 }
 
+/// The environment variable that selects the smart card type.
+#[cfg(feature = "scard")]
+const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
+
 /// Converts a UTF-8 password to UTF-16LE. The intermediate UTF-16 string is zeroized on drop.
 fn password_to_utf16le(password: &Secret<Vec<u8>>) -> Result<Secret<Vec<u8>>> {
     let utf16 = Secret::new(ZeroizedUtf16String(Utf16String::from_utf8_bytes(password.as_ref())?));
@@ -451,25 +455,39 @@ fn password_to_utf16le(password: &Secret<Vec<u8>>) -> Result<Secret<Vec<u8>>> {
     Ok(utf16.as_ref().0.to_bytes_le().into())
 }
 
-/// Collects the smart card logon credentials and the optional KDC CA certificate from the environment.
+/// Collects smart card credentials only if the smart card type is selected explicitly.
 ///
-/// Returns `None` if the smart card logon is not configured, so the caller can fall back to the password-based logon.
-/// An unreadable or malformed CA certificate is an error: logging on without the requested KDC verification is unsafe.
+/// Returns `Ok(None)` when `SSPI_SCARD_TYPE` is not set, so the caller falls back to password logon.
+/// Once the smart card type is selected, a collection failure is an error.
+/// The password is never used as a PIN fallback.
+#[cfg(feature = "scard")]
+fn try_collect_smart_card_creds(
+    username: Vec<u8>,
+    domain: Vec<u8>,
+    pin: Secret<Vec<u8>>,
+) -> Result<Option<SmartCardIdentityBuffers>> {
+    if std::env::var_os(SCARD_TYPE_ENV).is_none() {
+        return Ok(None);
+    }
+
+    collect_smart_card_creds(username, domain, pin).map(Some)
+}
+
+/// Collects smart card logon credentials and the optional KDC CA certificate from the environment.
 ///
-/// The CA certificate is read from the [SCARD_CA_CERT_DATA_ENV] or [SCARD_CA_CERT_PATH_ENV] environment variable.
-/// It is shared by the emulated and the system-provided smart cards.
+/// An unreadable or malformed CA certificate is an error.
+/// Logging on without the requested KDC verification is unsafe.
+/// The CA certificate is shared by the emulated and system-provided smart cards.
 #[cfg(feature = "scard")]
 fn collect_smart_card_creds(
     username: Vec<u8>,
     domain: Vec<u8>,
     pin: Secret<Vec<u8>>,
-) -> Result<Option<SmartCardIdentityBuffers>> {
-    let Ok(mut credentials) = collect_smart_card_logon_creds(username, domain, pin) else {
-        return Ok(None);
-    };
+) -> Result<SmartCardIdentityBuffers> {
+    let mut credentials = collect_smart_card_logon_creds(username, domain, pin)?;
     credentials.ca_cert = ca_cert_from_env()?;
 
-    Ok(Some(credentials))
+    Ok(credentials)
 }
 
 /// Reads the optional KDC CA certificate from the environment.
@@ -623,7 +641,6 @@ fn collect_smart_card_logon_creds(
 
     use sspi::{U16CString, U16CStringExt, Utf16String, Utf16StringExt};
 
-    const SCARD_TYPE_ENV: &str = "SSPI_SCARD_TYPE";
     const SCARD_EMULATED: &str = "emulated";
     const SCARD_SYSTEM_PROVIDED: &str = "system";
 
@@ -651,16 +668,20 @@ fn collect_smart_card_logon_creds(
 
     match scard_type.as_str() {
         SCARD_EMULATED => {
-            use winscard::{DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, SmartCardInfo};
+            use winscard::{SmartCardInfo, card_identity};
 
             let SmartCardInfo {
                 container_name,
                 pin: scard_pin,
                 auth_cert_der,
                 auth_pk_pem,
-                auth_pk: _,
+                auth_pk,
                 reader,
             } = SmartCardInfo::try_from_env()?;
+
+            // `card_identity` fails for the keys the emulated smart card cannot work with, so such credentials are
+            // rejected here instead of during the logon.
+            let identity = card_identity(auth_pk.as_ref())?;
 
             info!("Emulated smart card credentials have been collected. Process with scard-based logon.");
 
@@ -668,10 +689,10 @@ fn collect_smart_card_logon_creds(
                 username: Utf16String::from_bytes_le(username)?,
                 certificate: auth_cert_der.clone().try_into()?,
                 ca_cert: None,
-                card_name: NonEmpty::new(DEFAULT_CARD_NAME.into()),
+                card_name: NonEmpty::new(identity.name.into()),
                 reader_name: reader.name.as_ref().into(),
                 container_name: NonEmpty::new(container_name.as_ref().into()),
-                csp_name: MICROSOFT_DEFAULT_CSP.into(),
+                csp_name: identity.provider_name.into(),
                 pin,
                 private_key_pem: NonEmpty::new(ZeroizedUtf16String(auth_pk_pem.as_ref().as_str().into()))
                     .map(Secret::new),
@@ -1159,7 +1180,7 @@ pub unsafe fn unpack_sec_winnt_auth_identity_ex2_w_sized(
 
     // Try to collect credentials for the emulated smart card.
     #[cfg(feature = "scard")]
-    if let Some(scard_creds) = collect_smart_card_creds(
+    if let Some(scard_creds) = try_collect_smart_card_creds(
         auth_identity_buffers.user.to_bytes_le(),
         auth_identity_buffers.domain.to_bytes_le(),
         password.clone(),

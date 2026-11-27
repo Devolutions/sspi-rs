@@ -20,10 +20,13 @@ pub mod env;
 mod piv_cert;
 mod scard;
 mod scard_context;
+#[cfg(test)]
+mod test_keys;
 /// Constants with most popular tags used in this PIV smart card implementation.
 pub mod tlv_tags;
 /// The [winscard] module contains traits for easier interop between WinSCard API and our emulated scard.
 pub mod winscard;
+mod yubikey;
 
 extern crate alloc;
 
@@ -40,12 +43,12 @@ use num_derive::{FromPrimitive, ToPrimitive};
 use picky::key::KeyError;
 use picky::x509::certificate::CertError;
 pub use scard::{
-    ATR, CARD_AUTH_CERT_TAG, CHUNK_SIZE, DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, PIV_AID, PIV_CERT_TAG,
-    SUPPORTED_CONNECTION_PROTOCOL, SmartCard,
+    ATR, CARD_AUTH_CERT_TAG, CHUNK_SIZE, CardIdentity, DIGITAL_SIGNATURE_CERT_TAG, KEY_MANAGEMENT_CERT_TAG, PIV_AID,
+    PIV_CERT_TAG, SUPPORTED_CONNECTION_PROTOCOL, SmartCard, YUBIKEY_ATR, card_identity,
 };
 pub use scard_context::{
     DEFAULT_CARD_NAME, MICROSOFT_DEFAULT_CSP, MICROSOFT_DEFAULT_KSP, MICROSOFT_SCARD_DRIVER_LOCATION, Reader,
-    ScardContext, SmartCardInfo,
+    ScardContext, SmartCardInfo, YUBIKEY_CARD_NAME, YUBIKEY_SCARD_DRIVER_LOCATION,
 };
 
 /// The [WinScardResult] type.

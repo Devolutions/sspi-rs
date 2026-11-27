@@ -25,7 +25,13 @@ pub const CERTIFICATE: u8 = 0x70;
 pub const CERT_INFO: u8 = 0x71;
 /// [Dynamic Authentication Template](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=93).
 pub const DYNAMIC_AUTHENTICATION_TEMPLATE: u8 = 0x7C;
+/// [Witness](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=93).
+pub const DAT_WITNESS: u8 = 0x80;
 /// [Challenge](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=93).
 pub const DAT_CHALLENGE: u8 = 0x81;
 /// [Response](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=93).
 pub const DAT_RESPONSE: u8 = 0x82;
+/// [Exponentiation](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-73-4.pdf#page=93).
+///
+/// It contains the other party public key (an uncompressed EC point) in the ECDH key agreement.
+pub const DAT_EXPONENTIATION: u8 = 0x85;
