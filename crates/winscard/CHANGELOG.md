@@ -6,6 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [[0.5.0](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.4.1...winscard-v0.5.0)] - 2026-11-27
+
+### <!-- 1 -->Features
+
+- [**breaking**] Make `DEBUG` logging safe in production ([#792](https://github.com/Devolutions/sspi-rs/issues/792)) ([2f447436fe](https://github.com/Devolutions/sspi-rs/commit/2f447436fe6ff696aab9284bd18ab5f6410de5c1)) 
+
+  Hi,
+  
+  I made it safe to enable the `DEBUG` log level in production. Logging at
+  the `DEBUG` log level doesn't leak secrets, private keys, passwords, or
+  PIN codes.
+  
+  Notable changes:
+  
+  * Since we use secrets all over the codebase, I moved the `sspi::Secret`
+  type to a separate crate: `crates/secret`. Now `sspi`, `dpapi`,
+  `winscard`, and many other crates reuse the same `Secret` type
+  implementation.
+  
+  > [!WARNING]
+  > Do not enable `TRACE` log level in production. `TRACE` log level can
+  leak unencrypted data.
+  
+  ---------
+
+- [**breaking**] Emulated ECDH smart card logon support ([#793](https://github.com/Devolutions/sspi-rs/issues/793)) ([efb9a7d8e3](https://github.com/Devolutions/sspi-rs/commit/efb9a7d8e31a70489b9695a56e4335276b7aded1)) 
+
+  Adds emulated ECDH smart card logon support.
+  
+  An emulated ECDH smart card is different from an RSA-based one. The
+  Windows built-in Smart Card Minidriver does not support ECC. It supports
+  only RSA 1024 and RSA 2048. We cannot use the Windows built-in Smart
+  Card Minidriver for ECC.
+  
+  I found another solution: we can use the YubiKey Smart Card Minidriver.
+  The implemented approach expects the target machine (only the target
+  one) to have the YubiKey Smart Card Minidriver installed
+  (https://www.yubico.com/support/download/smart-card-drivers-tools/).
+  When our emulated smart card detects an EC private key, it will
+  automatically act as a YubiKey smart card.
+
+
+
 ## [[0.4.1](https://github.com/Devolutions/sspi-rs/compare/winscard-v0.4.0...winscard-v0.4.1)] - 2026-10-27
 
 ### <!-- 0 -->Security
